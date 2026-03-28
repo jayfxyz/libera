@@ -1,0 +1,28 @@
+# Dependencies
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Go build artifacts
+backend/server
+
+# Downloaded audiobooks
+audiobooks/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+
+# Audible tokens
+audible-svc/data/
+
+# Libation source (submodule/reference copy)
+Libation/
+
+# OS
+.DS_Store
