@@ -16,10 +16,19 @@ import (
 	"github.com/web-libation/backend/internal/config"
 	"github.com/web-libation/backend/internal/db"
 	"github.com/web-libation/backend/internal/jobs"
+	"github.com/web-libation/backend/internal/telemetry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
 	cfg := config.Load()
+
+	shutdownTracing := telemetry.Init(context.Background())
+	defer func() {
+		tctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownTracing(tctx)
+	}()
 
 	database, err := db.Open(cfg.DatabasePath)
 	if err != nil {
@@ -31,7 +40,7 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	audibleClient := audible.NewClient(cfg.AudibleSvcURL)
+	audibleClient := audible.NewClient(cfg.AudibleSvcURL, audible.WithTracedTransport())
 	downloadQueue := jobs.NewQueue(cfg.DownloadWorkers, audibleClient, database)
 	downloadQueue.Start()
 	defer downloadQueue.Stop()
@@ -51,7 +60,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      r,
+		Handler:      otelhttp.NewHandler(r, "web-libation"),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,

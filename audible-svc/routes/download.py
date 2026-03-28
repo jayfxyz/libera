@@ -37,19 +37,13 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
         item_data = resp.get("item", {})
         item = LibraryItem(data=item_data, api_client=c, parent=None, response_groups="product_attrs,customer_rights")
 
-        # available_codecs is None → AAXC (newer DRM), present → legacy AAX
-        use_aaxc = item.available_codecs is None
-
-        if use_aaxc:
-            try:
-                url, codec, lr = await item.get_aaxc_url(quality)
-            except Exception as e:
-                log.error("get_aaxc_url failed for %s: %s", asin, e, exc_info=True)
-                raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
-
+        # Try AAXC first — its offline_url is a pre-signed URL that works without
+        # additional auth headers. AAX URLs require the audible session cookies.
+        try:
+            url, codec, lr = await item.get_aaxc_url(quality)
             voucher = lr.get("content_license", {}).get("license_response", {})
             if not isinstance(voucher, dict):
-                raise HTTPException(status_code=502, detail="Failed to decrypt AAXC voucher")
+                raise ValueError("Failed to decrypt AAXC voucher")
 
             return DownloadInfoResponse(
                 download_url=str(url),
@@ -58,19 +52,22 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
                 key=voucher.get("key", ""),
                 iv=voucher.get("iv", ""),
             )
-        else:
-            try:
-                url, codec = await item.get_aax_url_old(quality)
-            except Exception as e:
-                log.error("get_aax_url_old failed for %s: %s", asin, e, exc_info=True)
-                raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
+        except Exception as aaxc_err:
+            log.info("AAXC not available for %s (%s), trying AAX", asin, aaxc_err)
 
-            return DownloadInfoResponse(
-                download_url=str(url),
-                codec=codec,
-                format="aax",
-                activation_bytes=_get_activation_bytes(c),
-            )
+        # Fall back to AAX
+        try:
+            url, codec = await item.get_aax_url_old(quality)
+        except Exception as e:
+            log.error("get_aax_url_old failed for %s: %s", asin, e, exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
+
+        return DownloadInfoResponse(
+            download_url=str(url),
+            codec=codec,
+            format="aax",
+            activation_bytes=_get_activation_bytes(c),
+        )
 
 
 def _get_activation_bytes(client) -> str:

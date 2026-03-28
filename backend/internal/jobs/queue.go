@@ -7,6 +7,10 @@ import (
 	"sync"
 
 	"github.com/web-libation/backend/internal/audible"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DownloadJob struct {
@@ -18,6 +22,7 @@ type DownloadJob struct {
 	Title            string
 	Format           string
 	OutputDir        string
+	TraceCarrier     map[string]string // serialized W3C trace context for cross-goroutine propagation
 }
 
 type ProgressEvent struct {
@@ -74,7 +79,28 @@ func (q *Queue) Stop() {
 	close(q.events)
 }
 
-func (q *Queue) Enqueue(job DownloadJob) {
+func (q *Queue) Enqueue(ctx context.Context, job DownloadJob) {
+	// Serialize trace context onto the job so the worker goroutine can
+	// reconstruct the trace parent and emit child spans.
+	carrier := make(propagation.MapCarrier)
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	job.TraceCarrier = map[string]string(carrier)
+
+	tracer := otel.Tracer("jobs")
+	_, span := tracer.Start(ctx, "job.enqueue",
+		trace.WithAttributes(
+			attribute.String("job.id", job.ID),
+			attribute.String("job.asin", job.AudibleID),
+			attribute.String("job.format", job.Format),
+		),
+	)
+	span.End()
+
+	// Seed state with BookID so setStatus preserves it across all subsequent events.
+	q.stateMu.Lock()
+	q.state[job.ID] = ProgressEvent{JobID: job.ID, BookID: job.BookID}
+	q.stateMu.Unlock()
+
 	q.jobs <- job
 	q.emit(ProgressEvent{JobID: job.ID, BookID: job.BookID, Status: "queued", Percent: 0})
 }

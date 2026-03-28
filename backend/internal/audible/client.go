@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Client calls the Python audible-svc over HTTP (internal only).
@@ -15,13 +17,27 @@ type Client struct {
 	httpClient *http.Client
 }
 
-func NewClient(baseURL string) *Client {
-	return &Client{
+type ClientOption func(*Client)
+
+// WithTracedTransport wraps the HTTP transport with OTel instrumentation so
+// outgoing requests to audible-svc carry W3C traceparent headers.
+func WithTracedTransport() ClientOption {
+	return func(c *Client) {
+		c.httpClient.Transport = otelhttp.NewTransport(http.DefaultTransport)
+	}
+}
+
+func NewClient(baseURL string, opts ...ClientOption) *Client {
+	c := &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // RegisterRequest initiates device registration and returns the Audible login URL.

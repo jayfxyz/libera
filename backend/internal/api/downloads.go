@@ -47,7 +47,7 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		Format:           req.Format,
 		OutputDir:        h.cfg.OutputDir,
 	}
-	h.queue.Enqueue(job)
+	h.queue.Enqueue(r.Context(), job)
 
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]string{"job_id": job.ID})

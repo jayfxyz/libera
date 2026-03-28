@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,17 +13,39 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (q *Queue) process(job DownloadJob) {
+	// Reconstruct the trace context from the enqueuing HTTP request so that
+	// the worker span is a child of the original request trace.
+	carrier := propagation.MapCarrier(job.TraceCarrier)
+	parentCtx := otel.GetTextMapPropagator().Extract(q.cancelCtx, carrier)
+
+	tracer := otel.Tracer("jobs")
+	ctx, span := tracer.Start(parentCtx, "job.process",
+		trace.WithAttributes(
+			attribute.String("job.id", job.ID),
+			attribute.String("job.asin", job.AudibleID),
+			attribute.String("job.title", job.Title),
+			attribute.String("job.format", job.Format),
+		),
+	)
+	defer span.End()
+
 	log.Printf("starting download job %s asin=%s", job.ID, job.AudibleID)
 	q.setStatus(job.ID, "downloading", 0, "")
-
-	ctx := q.cancelCtx
 
 	// Get download URL + decryption info from sidecar
 	info, err := q.audible.GetDownloadInfo(ctx, job.AudibleAccountID, job.AudibleID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("get download info: %v", err))
 		q.markError(job.BookID)
 		return
@@ -30,12 +53,18 @@ func (q *Queue) process(job DownloadJob) {
 
 	isAAXC := info.Format == "aaxc"
 	if !isAAXC && info.ActivationBytes == "" {
-		q.setStatus(job.ID, "error", 0, "no activation bytes — account not fully authorized")
+		err := fmt.Errorf("no activation bytes — account not fully authorized")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		q.setStatus(job.ID, "error", 0, err.Error())
 		q.markError(job.BookID)
 		return
 	}
 	if isAAXC && (info.Key == "" || info.IV == "") {
-		q.setStatus(job.ID, "error", 0, "missing AAXC decryption key/iv")
+		err := fmt.Errorf("missing AAXC decryption key/iv")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		q.setStatus(job.ID, "error", 0, err.Error())
 		q.markError(job.BookID)
 		return
 	}
@@ -49,29 +78,57 @@ func (q *Queue) process(job DownloadJob) {
 	tmpFile := filepath.Join(os.TempDir(), job.ID+srcExt)
 	defer os.Remove(tmpFile)
 
+	_, downloadSpan := tracer.Start(ctx, "job.download",
+		trace.WithAttributes(attribute.Bool("download.aaxc", isAAXC)),
+	)
 	if err := streamDownload(ctx, info.DownloadURL, tmpFile, func(pct float64) {
 		q.setStatus(job.ID, "downloading", pct, "")
 	}); err != nil {
+		downloadSpan.RecordError(err)
+		downloadSpan.SetStatus(codes.Error, err.Error())
+		downloadSpan.End()
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("download: %v", err))
 		q.markError(job.BookID)
 		return
 	}
+	downloadSpan.End()
 
 	// Sanity-check the downloaded file
-	if fi, err := os.Stat(tmpFile); err == nil {
-		log.Printf("job %s: downloaded %d bytes", job.ID, fi.Size())
-		if f, err := os.Open(tmpFile); err == nil {
-			magic := make([]byte, 12)
-			n, _ := f.Read(magic)
+	fi, err := os.Stat(tmpFile)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		q.setStatus(job.ID, "error", 0, fmt.Sprintf("stat downloaded file: %v", err))
+		q.markError(job.BookID)
+		return
+	}
+	log.Printf("job %s: downloaded %d bytes", job.ID, fi.Size())
+	const minAudiobookBytes = 1024 * 1024
+	if fi.Size() < minAudiobookBytes {
+		// Too small to be a real audiobook — peek at content for diagnostics
+		snippet := make([]byte, 512)
+		if f, ferr := os.Open(tmpFile); ferr == nil {
+			n, _ := f.Read(snippet)
 			f.Close()
-			log.Printf("job %s: first %d bytes: %x", job.ID, n, magic[:n])
+			snippet = snippet[:n]
 		}
+		errMsg := fmt.Sprintf("download returned %d bytes (expected an audiobook file): %s", fi.Size(), strings.TrimSpace(string(snippet)))
+		err := errors.New(errMsg)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, errMsg)
+		q.setStatus(job.ID, "error", 0, errMsg)
+		q.markError(job.BookID)
+		return
 	}
 
 	// Decrypt with ffmpeg
 	q.setStatus(job.ID, "decrypting", 100, "")
 
 	if err := os.MkdirAll(job.OutputDir, 0755); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("mkdir: %v", err))
 		return
 	}
@@ -79,6 +136,12 @@ func (q *Queue) process(job DownloadJob) {
 	outName := sanitizeFilename(job.Title) + "." + job.Format
 	outFile := filepath.Join(job.OutputDir, outName)
 
+	_, ffmpegSpan := tracer.Start(ctx, "job.ffmpeg",
+		trace.WithAttributes(
+			attribute.String("ffmpeg.format", job.Format),
+			attribute.Bool("ffmpeg.aaxc", isAAXC),
+		),
+	)
 	var cmd *exec.Cmd
 	if isAAXC {
 		cmd = exec.CommandContext(ctx, "ffmpeg",
@@ -99,10 +162,16 @@ func (q *Queue) process(job DownloadJob) {
 		)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
+		ffmpegSpan.RecordError(err)
+		ffmpegSpan.SetStatus(codes.Error, strings.TrimSpace(string(out)))
+		ffmpegSpan.End()
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("ffmpeg: %s", strings.TrimSpace(string(out))))
 		q.markError(job.BookID)
 		return
 	}
+	ffmpegSpan.End()
 
 	log.Printf("job %s done: %s", job.ID, outFile)
 	q.setStatus(job.ID, "done", 100, outFile)
