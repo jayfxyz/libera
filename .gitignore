@@ -7,7 +7,10 @@ frontend/dist/
 # Go build artifacts
 backend/server
 
-# Downloaded audiobooks
+# Data directory (DB + audiobooks)
+data/
+
+# Downloaded audiobooks (legacy path)
 audiobooks/
 
 # Database

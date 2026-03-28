@@ -5,12 +5,30 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/web-libation/backend/internal/audible"
 )
+
+var unsafeChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
+
+// TODO: find better solution for the app to match library items to files on disk.
+func sanitizeFilename(s string) string {
+	s = unsafeChars.ReplaceAllString(s, "_")
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		s = s[:200]
+	}
+	if s == "" {
+		s = "audiobook"
+	}
+	return s
+}
 
 type bookRow struct {
 	ID               int64  `json:"id"`
@@ -85,9 +103,109 @@ func (h *handlers) getBook(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err, http.StatusBadRequest)
 		return
 	}
-	_ = id
-	// TODO: full book detail with contributors, series, categories
-	writeJSON(w, map[string]any{})
+
+	type bookDetail struct {
+		ID               int64    `json:"id"`
+		AudibleID        string   `json:"audible_id"`
+		Title            string   `json:"title"`
+		Subtitle         string   `json:"subtitle"`
+		Description      string   `json:"description"`
+		CoverURL         string   `json:"cover_url"`
+		LengthMinutes    int      `json:"length_minutes"`
+		Publisher        string   `json:"publisher"`
+		Language         string   `json:"language"`
+		AudibleRating    float32  `json:"audible_rating"`
+		LiberationStatus string   `json:"liberation_status"`
+		IsFinished       bool     `json:"is_finished"`
+		Tags             string   `json:"tags"`
+		UserRating       *float32 `json:"user_rating"`
+		AccountID        int64    `json:"account_id"`
+		Authors          []string `json:"authors"`
+		Narrators        []string `json:"narrators"`
+		Series           []struct {
+			Name  string `json:"name"`
+			Index string `json:"index"`
+		} `json:"series"`
+	}
+
+	var d bookDetail
+	var userRating sql.NullFloat64
+	err = h.db.QueryRowContext(r.Context(), `
+		SELECT b.id, b.audible_id, b.title, COALESCE(b.subtitle,''), COALESCE(b.description,''),
+		       COALESCE(b.cover_url,''), b.length_minutes, COALESCE(b.publisher,''),
+		       COALESCE(b.language,''), COALESCE(b.audible_rating,0),
+		       lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id
+		FROM books b
+		JOIN library_books lb ON lb.book_id = b.id
+		WHERE b.id = ?`, id).Scan(
+		&d.ID, &d.AudibleID, &d.Title, &d.Subtitle, &d.Description,
+		&d.CoverURL, &d.LengthMinutes, &d.Publisher, &d.Language, &d.AudibleRating,
+		&d.LiberationStatus, &d.IsFinished, &d.Tags, &userRating, &d.AccountID)
+	if err == sql.ErrNoRows {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if userRating.Valid {
+		v := float32(userRating.Float64)
+		d.UserRating = &v
+	}
+
+	// Contributors
+	contribRows, err := h.db.QueryContext(r.Context(), `
+		SELECT c.name, bc.role FROM contributors c
+		JOIN book_contributors bc ON bc.contributor_id = c.id
+		WHERE bc.book_id = ? ORDER BY bc.role, bc.sort_order`, id)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+	defer contribRows.Close()
+	d.Authors = []string{}
+	d.Narrators = []string{}
+	for contribRows.Next() {
+		var name, role string
+		if err := contribRows.Scan(&name, &role); err != nil {
+			httpError(w, err, http.StatusInternalServerError)
+			return
+		}
+		if role == "author" {
+			d.Authors = append(d.Authors, name)
+		} else if role == "narrator" {
+			d.Narrators = append(d.Narrators, name)
+		}
+	}
+
+	// Series
+	seriesRows, err := h.db.QueryContext(r.Context(), `
+		SELECT s.name, COALESCE(sb.book_index,'') FROM series s
+		JOIN series_books sb ON sb.series_id = s.id
+		WHERE sb.book_id = ?`, id)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+	defer seriesRows.Close()
+	d.Series = []struct {
+		Name  string `json:"name"`
+		Index string `json:"index"`
+	}{}
+	for seriesRows.Next() {
+		var s struct {
+			Name  string `json:"name"`
+			Index string `json:"index"`
+		}
+		if err := seriesRows.Scan(&s.Name, &s.Index); err != nil {
+			httpError(w, err, http.StatusInternalServerError)
+			return
+		}
+		d.Series = append(d.Series, s)
+	}
+
+	writeJSON(w, d)
 }
 
 // importLibrary upserts books from an Audible library scan into the DB.
@@ -216,6 +334,68 @@ func upsertContributor(ctx context.Context, tx *sql.Tx, bookID int64, name, role
 		`INSERT OR IGNORE INTO book_contributors (book_id, contributor_id, role) VALUES (?, ?, ?)`,
 		bookID, cID, role)
 	return err
+}
+
+func (h *handlers) rescanFiles(w http.ResponseWriter, r *http.Request) {
+	entries, err := os.ReadDir(h.cfg.OutputDir)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Build a map of basename (no ext) → format for audio files on disk
+	onDisk := map[string]string{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext != ".m4b" && ext != ".mp3" {
+			continue
+		}
+		base := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+		onDisk[base] = strings.TrimPrefix(ext, ".")
+	}
+
+	if len(onDisk) == 0 {
+		writeJSON(w, map[string]int{"matched": 0})
+		return
+	}
+
+	// Fetch all non-liberated books and collect matches (must close rows before UPDATE — single connection)
+	rows, err := h.db.QueryContext(r.Context(),
+		`SELECT b.id, b.title FROM books b
+		 JOIN library_books lb ON lb.book_id = b.id
+		 WHERE lb.liberation_status != 'liberated'`)
+	if err != nil {
+		httpError(w, err, http.StatusInternalServerError)
+		return
+	}
+
+	type match struct {
+		id     int64
+		format string
+	}
+	var matches []match
+	for rows.Next() {
+		var id int64
+		var title string
+		if err := rows.Scan(&id, &title); err != nil {
+			continue
+		}
+		if format, found := onDisk[sanitizeFilename(title)]; found {
+			matches = append(matches, match{id, format})
+		}
+	}
+	rows.Close()
+
+	for _, m := range matches {
+		h.db.ExecContext(r.Context(),
+			`UPDATE library_books SET liberation_status = 'liberated', last_downloaded = CURRENT_TIMESTAMP, last_format = ? WHERE book_id = ?`,
+			m.format, m.id)
+	}
+
+	writeJSON(w, map[string]int{"matched": len(matches)})
 }
 
 func (h *handlers) updateBook(w http.ResponseWriter, r *http.Request) {

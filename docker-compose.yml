@@ -23,8 +23,8 @@ services:
       OUTPUT_DIR: /audiobooks
       DOWNLOAD_WORKERS: "3"
     volumes:
-      - libation-data:/data
-      - ${AUDIOBOOKS_DIR:-./audiobooks}:/audiobooks
+      - ./data/db:/data
+      - ./data/audiobooks:/audiobooks
     depends_on:
       audible-svc:
         condition: service_healthy
@@ -47,5 +47,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  libation-data:
   audible-tokens:

@@ -9,8 +9,11 @@ log = logging.getLogger(__name__)
 
 class DownloadInfoResponse(BaseModel):
     download_url: str
-    activation_bytes: str
     codec: str
+    format: str        # "aax" or "aaxc"
+    activation_bytes: str = ""  # AAX only
+    key: str = ""               # AAXC only
+    iv: str = ""                # AAXC only
 
 
 @router.get("/{account_id}/{asin}", response_model=DownloadInfoResponse)
@@ -23,7 +26,6 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
         raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
 
     async with client as c:
-        # Fetch library item with the fields LibraryItem needs
         try:
             resp = await c.get(
                 f"1.0/library/{asin}",
@@ -35,29 +37,48 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
         item_data = resp.get("item", {})
         item = LibraryItem(data=item_data, api_client=c, parent=None, response_groups="product_attrs,customer_rights")
 
-        try:
-            url, codec = await item.get_aax_url_old(quality)
-            download_url = str(url)
-        except Exception as e:
-            log.error("get_aax_url_old failed: %s", e, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
+        # available_codecs is None → AAXC (newer DRM), present → legacy AAX
+        use_aaxc = item.available_codecs is None
 
-        # Get activation bytes
-        activation_bytes = ""
-        try:
-            raw = c.auth.get_activation_bytes(extract=True)
-            log.info("activation_bytes raw type=%s value=%r", type(raw).__name__, raw)
-            # May return bytes or str; ffmpeg needs a lowercase hex string
-            if isinstance(raw, bytes):
-                activation_bytes = raw.hex()
-            elif isinstance(raw, str):
-                activation_bytes = raw
-            log.info("activation_bytes final=%r len=%d", activation_bytes, len(activation_bytes))
-        except Exception as e:
-            log.warning("get_activation_bytes failed: %s", e)
+        if use_aaxc:
+            try:
+                url, codec, lr = await item.get_aaxc_url(quality)
+            except Exception as e:
+                log.error("get_aaxc_url failed for %s: %s", asin, e, exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
 
-    return DownloadInfoResponse(
-        download_url=download_url,
-        activation_bytes=activation_bytes,
-        codec=codec,
-    )
+            voucher = lr.get("content_license", {}).get("license_response", {})
+            if not isinstance(voucher, dict):
+                raise HTTPException(status_code=502, detail="Failed to decrypt AAXC voucher")
+
+            return DownloadInfoResponse(
+                download_url=str(url),
+                codec=codec,
+                format="aaxc",
+                key=voucher.get("key", ""),
+                iv=voucher.get("iv", ""),
+            )
+        else:
+            try:
+                url, codec = await item.get_aax_url_old(quality)
+            except Exception as e:
+                log.error("get_aax_url_old failed for %s: %s", asin, e, exc_info=True)
+                raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
+
+            return DownloadInfoResponse(
+                download_url=str(url),
+                codec=codec,
+                format="aax",
+                activation_bytes=_get_activation_bytes(c),
+            )
+
+
+def _get_activation_bytes(client) -> str:
+    try:
+        raw = client.auth.get_activation_bytes(extract=True)
+        if isinstance(raw, bytes):
+            return raw.hex()
+        return raw or ""
+    except Exception as e:
+        log.warning("get_activation_bytes failed: %s", e)
+        return ""

@@ -16,6 +16,12 @@ export const useAccountsStore = defineStore('accounts', () => {
     }
   }
 
+  async function updateAccount(id: number, patch: { account_name?: string }) {
+    await api.accounts.update(id, patch)
+    const account = accounts.value.find((a) => a.id === id)
+    if (account && patch.account_name !== undefined) account.account_name = patch.account_name
+  }
+
   async function deleteAccount(id: number) {
     await api.accounts.delete(id)
     accounts.value = accounts.value.filter((a) => a.id !== id)
@@ -30,5 +36,5 @@ export const useAccountsStore = defineStore('accounts', () => {
     await api.accounts.scan(id)
   }
 
-  return { accounts, loading, fetchAccounts, deleteAccount, startAuth, scanLibrary }
+  return { accounts, loading, fetchAccounts, updateAccount, deleteAccount, startAuth, scanLibrary }
 })

@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"sync"
 
@@ -20,11 +21,11 @@ type DownloadJob struct {
 }
 
 type ProgressEvent struct {
-	JobID     string  `json:"job_id"`
-	BookID    int64   `json:"book_id"`
-	Status    string  `json:"status"` // queued, downloading, decrypting, done, error
-	Percent   float64 `json:"percent"`
-	Message   string  `json:"message,omitempty"`
+	JobID   string  `json:"job_id"`
+	BookID  int64   `json:"book_id"`
+	Status  string  `json:"status"` // queued, downloading, decrypting, done, error
+	Percent float64 `json:"percent"`
+	Message string  `json:"message,omitempty"`
 }
 
 type Queue struct {
@@ -34,6 +35,7 @@ type Queue struct {
 	subsMu    sync.Mutex
 	workers   int
 	audible   *audible.Client
+	db        *sql.DB
 	wg        sync.WaitGroup
 	cancelCtx context.Context
 	cancel    context.CancelFunc
@@ -41,7 +43,7 @@ type Queue struct {
 	stateMu   sync.Mutex
 }
 
-func NewQueue(workers int, audible *audible.Client) *Queue {
+func NewQueue(workers int, audible *audible.Client, db *sql.DB) *Queue {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Queue{
 		jobs:      make(chan DownloadJob, 100),
@@ -49,6 +51,7 @@ func NewQueue(workers int, audible *audible.Client) *Queue {
 		subs:      make(map[chan ProgressEvent]struct{}),
 		workers:   workers,
 		audible:   audible,
+		db:        db,
 		cancelCtx: ctx,
 		cancel:    cancel,
 		state:     map[string]ProgressEvent{},
@@ -124,6 +127,14 @@ func (q *Queue) setStatus(jobID string, status string, pct float64, msg string) 
 	q.state[jobID] = e
 	q.stateMu.Unlock()
 	q.emit(e)
+}
+
+func (q *Queue) markLiberated(bookID int64, format string) {
+	q.db.Exec(`UPDATE library_books SET liberation_status = 'liberated', last_downloaded = CURRENT_TIMESTAMP, last_format = ? WHERE book_id = ?`, format, bookID)
+}
+
+func (q *Queue) markError(bookID int64) {
+	q.db.Exec(`UPDATE library_books SET liberation_status = 'error' WHERE book_id = ? AND liberation_status != 'liberated'`, bookID)
 }
 
 func (q *Queue) ListJobs() []ProgressEvent {

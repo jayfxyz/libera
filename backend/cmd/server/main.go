@@ -32,7 +32,7 @@ func main() {
 	}
 
 	audibleClient := audible.NewClient(cfg.AudibleSvcURL)
-	downloadQueue := jobs.NewQueue(cfg.DownloadWorkers, audibleClient)
+	downloadQueue := jobs.NewQueue(cfg.DownloadWorkers, audibleClient, database)
 	downloadQueue.Start()
 	defer downloadQueue.Stop()
 

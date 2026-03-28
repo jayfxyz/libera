@@ -37,6 +37,8 @@ func Migrate(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("run schema: %w", err)
 	}
+	// Best-effort column additions for existing databases (SQLite has no IF NOT EXISTS for ALTER TABLE).
+	db.Exec(`ALTER TABLE accounts ADD COLUMN last_scanned_at DATETIME`)
 	return nil
 }
 

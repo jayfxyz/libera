@@ -20,25 +20,40 @@ func (q *Queue) process(job DownloadJob) {
 
 	ctx := q.cancelCtx
 
-	// Get download URL + activation bytes from sidecar
+	// Get download URL + decryption info from sidecar
 	info, err := q.audible.GetDownloadInfo(ctx, job.AudibleAccountID, job.AudibleID)
 	if err != nil {
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("get download info: %v", err))
-		return
-	}
-	if info.ActivationBytes == "" {
-		q.setStatus(job.ID, "error", 0, "no activation bytes — account not fully authorized")
+		q.markError(job.BookID)
 		return
 	}
 
+	isAAXC := info.Format == "aaxc"
+	if !isAAXC && info.ActivationBytes == "" {
+		q.setStatus(job.ID, "error", 0, "no activation bytes — account not fully authorized")
+		q.markError(job.BookID)
+		return
+	}
+	if isAAXC && (info.Key == "" || info.IV == "") {
+		q.setStatus(job.ID, "error", 0, "missing AAXC decryption key/iv")
+		q.markError(job.BookID)
+		return
+	}
+
+	srcExt := ".aax"
+	if isAAXC {
+		srcExt = ".aaxc"
+	}
+
 	// Stream download to temp file
-	tmpFile := filepath.Join(os.TempDir(), job.ID+".aax")
+	tmpFile := filepath.Join(os.TempDir(), job.ID+srcExt)
 	defer os.Remove(tmpFile)
 
 	if err := streamDownload(ctx, info.DownloadURL, tmpFile, func(pct float64) {
 		q.setStatus(job.ID, "downloading", pct, "")
 	}); err != nil {
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("download: %v", err))
+		q.markError(job.BookID)
 		return
 	}
 
@@ -64,20 +79,34 @@ func (q *Queue) process(job DownloadJob) {
 	outName := sanitizeFilename(job.Title) + "." + job.Format
 	outFile := filepath.Join(job.OutputDir, outName)
 
-	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-y",
-		"-activation_bytes", info.ActivationBytes,
-		"-i", tmpFile,
-		"-vn", "-c:a", "copy",
-		outFile,
-	)
+	var cmd *exec.Cmd
+	if isAAXC {
+		cmd = exec.CommandContext(ctx, "ffmpeg",
+			"-y",
+			"-audible_key", info.Key,
+			"-audible_iv", info.IV,
+			"-i", tmpFile,
+			"-vn", "-c:a", "copy",
+			outFile,
+		)
+	} else {
+		cmd = exec.CommandContext(ctx, "ffmpeg",
+			"-y",
+			"-activation_bytes", info.ActivationBytes,
+			"-i", tmpFile,
+			"-vn", "-c:a", "copy",
+			outFile,
+		)
+	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		q.setStatus(job.ID, "error", 0, fmt.Sprintf("ffmpeg: %s", strings.TrimSpace(string(out))))
+		q.markError(job.BookID)
 		return
 	}
 
 	log.Printf("job %s done: %s", job.ID, outFile)
 	q.setStatus(job.ID, "done", 100, outFile)
+	q.markLiberated(job.BookID, job.Format)
 }
 
 func streamDownload(ctx context.Context, url, dest string, onProgress func(float64)) error {

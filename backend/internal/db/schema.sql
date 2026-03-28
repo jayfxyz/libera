@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     locale               TEXT NOT NULL,
     audible_account_id   TEXT NOT NULL DEFAULT '',
     library_scan_enabled INTEGER NOT NULL DEFAULT 1,
+    last_scanned_at      DATETIME,
     created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

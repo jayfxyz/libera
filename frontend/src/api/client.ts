@@ -22,6 +22,7 @@ export interface Account {
   email: string
   locale: string
   library_scan_enabled: boolean
+  last_scanned_at: string | null
 }
 
 export interface BookSummary {
@@ -33,6 +34,27 @@ export interface BookSummary {
   is_finished: boolean
   tags: string
   account_id: number
+}
+
+export interface BookDetail {
+  id: number
+  audible_id: string
+  title: string
+  subtitle: string
+  description: string
+  cover_url: string
+  length_minutes: number
+  publisher: string
+  language: string
+  audible_rating: number
+  liberation_status: 'not_liberated' | 'liberated' | 'error' | 'partial_download'
+  is_finished: boolean
+  tags: string
+  user_rating: number | null
+  account_id: number
+  authors: string[]
+  narrators: string[]
+  series: { name: string; index: string }[]
 }
 
 export interface DownloadJob {
@@ -54,6 +76,8 @@ export interface Settings {
 export const api = {
   accounts: {
     list: () => request<Account[]>('GET', '/accounts'),
+    update: (id: number, patch: { account_name?: string }) =>
+      request<void>('PATCH', `/accounts/${id}`, patch),
     delete: (id: number) => request<void>('DELETE', `/accounts/${id}`),
     authStart: (locale: string, name: string) =>
       request<{ auth_url: string; state: string }>('POST', '/accounts/auth/start', { locale, name }),
@@ -70,7 +94,8 @@ export const api = {
       const query = qs.toString() ? `?${qs}` : ''
       return request<BookSummary[]>('GET', `/library${query}`)
     },
-    get: (id: number) => request<BookSummary>('GET', `/library/${id}`),
+    rescan: () => request<{ matched: number }>('POST', '/library/rescan'),
+    get: (id: number) => request<BookDetail>('GET', `/library/${id}`),
     update: (id: number, patch: Partial<{ tags: string; user_rating: number; is_finished: boolean }>) =>
       request<void>('PATCH', `/library/${id}`, patch),
   },

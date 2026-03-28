@@ -1,13 +1,24 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { BookSummary } from '@/api/client'
 import { api } from '@/api/client'
+
+export type StatusFilter = 'all' | 'liberated' | 'not_liberated' | 'in_progress'
 
 export const useLibraryStore = defineStore('library', () => {
   const books = ref<BookSummary[]>([])
   const loading = ref(false)
   const searchQuery = ref('')
   const currentPage = ref(1)
+  const statusFilter = ref<StatusFilter>('all')
+
+  const filteredBooks = computed(() => {
+    if (statusFilter.value === 'all') return books.value
+    if (statusFilter.value === 'liberated') return books.value.filter((b) => b.liberation_status === 'liberated')
+    if (statusFilter.value === 'not_liberated') return books.value.filter((b) => b.liberation_status === 'not_liberated')
+    if (statusFilter.value === 'in_progress') return books.value.filter((b) => b.liberation_status === 'partial_download')
+    return books.value
+  })
 
   async function fetchBooks() {
     loading.value = true
@@ -36,5 +47,9 @@ export const useLibraryStore = defineStore('library', () => {
     fetchBooks()
   }
 
-  return { books, loading, searchQuery, currentPage, fetchBooks, updateBook, search }
+  function setStatusFilter(f: StatusFilter) {
+    statusFilter.value = f
+  }
+
+  return { books, filteredBooks, loading, searchQuery, currentPage, statusFilter, fetchBooks, updateBook, search, setStatusFilter }
 })

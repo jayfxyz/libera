@@ -24,12 +24,14 @@ func NewRouter(db *sql.DB, audible *audible.Client, queue *jobs.Queue, cfg *conf
 
 	r.Get("/accounts", h.listAccounts)
 	r.Post("/accounts", h.createAccount)
+	r.Patch("/accounts/{id}", h.updateAccount)
 	r.Delete("/accounts/{id}", h.deleteAccount)
 	r.Post("/accounts/auth/start", h.authStart)
 	r.Post("/accounts/auth/complete", h.authComplete)
 	r.Post("/accounts/{id}/scan", h.scanLibrary)
 
 	r.Get("/library", h.listLibrary)
+	r.Post("/library/rescan", h.rescanFiles)
 	r.Get("/library/{id}", h.getBook)
 	r.Patch("/library/{id}", h.updateBook)
 

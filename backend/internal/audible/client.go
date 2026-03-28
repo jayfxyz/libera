@@ -91,8 +91,11 @@ type SeriesDTO struct {
 
 type DownloadInfoResponse struct {
 	DownloadURL     string `json:"download_url"`
-	ActivationBytes string `json:"activation_bytes"`
 	Codec           string `json:"codec"`
+	Format          string `json:"format"`           // "aax" or "aaxc"
+	ActivationBytes string `json:"activation_bytes"` // AAX only
+	Key             string `json:"key"`              // AAXC only
+	IV              string `json:"iv"`               // AAXC only
 }
 
 func (c *Client) GetDownloadInfo(ctx context.Context, audibleAccountID, asin string) (*DownloadInfoResponse, error) {
