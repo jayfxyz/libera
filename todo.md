@@ -72,12 +72,8 @@ Features ranked by value added on top of a bare library viewer.
 
 - [x] **Per-book download status badges** — color-coded in BookCard and BookDetailPanel
 
-- [ ] **Configurable file naming templates** — current output is `sanitizeFilename(title).ext` with no customization. Need:
-  1. A template engine supporting tags: `{title}`, `{author}`, `{narrator}`, `{series}`, `{series_index}`, `{year}`, `{language}`, `{duration_h}`
-  2. Separate templates for: folder path and filename (e.g. `{author}/{series}/{title}`)
-  3. Settings UI to define and preview templates
-  4. Template rendering in `backend/internal/jobs/download.go` before writing the output file
-  - Replaces hardcoded `sanitizeFilename` in `backend/internal/jobs/download.go` and `backend/internal/api/library.go`
+- [x] **Configurable file naming templates** — tags: `{title}` `{author}` `{narrator}` `{series}` `{series_index}` `{year}` `{language}` `{duration_h}`. Empty tags are stripped with their surrounding separators. Persisted in DB, shown in Settings UI. Defaults to `{title}`.
+  - `backend/internal/jobs/filename.go`, `backend/internal/config/config.go`, `backend/internal/api/settings.go`, `frontend/src/views/SettingsView.vue`
 
 - [x] **Settings persistence** — `settings` table in SQLite; `GetSetting`/`SetSetting`/`LoadAllSettings` in `backend/internal/db/settings.go`; DB overrides applied to `Config` at startup via `ApplyDBOverrides`; `PATCH /settings` writes to DB and updates in-memory config atomically (RWMutex). Tests in `backend/internal/db/settings_test.go`.
   - Note: `app_url` field shown in the Settings UI is not yet saved by `PATCH /settings` (not a persisted setting)
@@ -86,23 +82,20 @@ Features ranked by value added on top of a bare library viewer.
 
 ## Tier 3 — Power-user features
 
-- [~] **Locate existing audiobooks** — `POST /library/rescan` scans OutputDir and matches by filename; works for the happy path but filename matching is fragile (different sanitization in API vs jobs layer, and no folder traversal). Needs alignment once file naming templates are implemented.
+- [~] **Locate existing audiobooks** — `POST /library/rescan` scans OutputDir and matches by filename using the same `sanitizeFilename` as the download layer. Works for the happy path; no recursive folder traversal.
   - `backend/internal/api/library.go` → `rescanFiles`
 
-- [ ] **Chapter splitting** — user option at download time to split into one file per chapter. Need:
-  1. Download option: "Split into chapters" checkbox (alongside format picker)
-  2. Backend: after decryption, use `ffmpeg -i` to read chapter metadata, then re-encode each chapter to a separate file with chapter-aware naming (e.g. `{title} - Ch{n} - {chapter_title}.m4b`)
-  3. Progress reporting for multi-file output
-  - `backend/internal/jobs/download.go`
+- [x] **Chapter splitting** — "Chapters" checkbox in the detail panel; when checked, the job probes the decrypted file with ffprobe and extracts each chapter to a separate file (non-fatal if no chapters found). Chapter files use the filename template as a base.
+  - `backend/internal/jobs/chapters.go`, `backend/internal/jobs/download.go`, `frontend/src/components/library/BookDetailPanel.vue`
 
-- [ ] **Library export** — no export endpoint. Need:
-  1. `GET /library/export?format=csv` and `?format=json` endpoints
-  2. Download button in the UI (Settings page or Library header)
-  - `backend/internal/api/library.go`
+- [x] **Library export** — `GET /api/library/export?format=csv|json` returns a denormalized export of all non-deleted books (authors, narrators, series, tags, ratings, status). CSV and JSON download buttons in the Library header.
+  - `backend/internal/api/export.go`, `frontend/src/views/LibraryView.vue`
 
-- [ ] **"Is finished" toggle** — `library_books.is_finished` exists and is patchable via API, but there is no UI control to toggle it in BookDetailPanel
+- [x] **"Is finished" toggle** — toggle switch in BookDetailPanel metadata section PATCHes `is_finished` and syncs the library store.
+  - `frontend/src/components/library/BookDetailPanel.vue`
 
-- [ ] **User rating** — `library_books.user_rating` exists and is patchable via API, but there is no UI control in BookDetailPanel (only Audible's community rating is displayed)
+- [x] **User rating** — 5-star rating widget in BookDetailPanel; clicking the active star clears the rating.
+  - `frontend/src/components/library/BookDetailPanel.vue`
 
 ---
 
