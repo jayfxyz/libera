@@ -139,7 +139,16 @@ func (q *Queue) process(job DownloadJob) {
 		return
 	}
 
-	outName := sanitizeFilename(job.Title) + "." + job.Format
+	outName := renderFilename(job.FilenameTemplate, FilenameData{
+		Title:       job.Title,
+		Authors:     job.Authors,
+		Narrators:   job.Narrators,
+		SeriesName:  job.SeriesName,
+		SeriesIndex: job.SeriesIndex,
+		Year:        job.Year,
+		Language:    job.Language,
+		DurationH:   job.DurationH,
+	}) + "." + job.Format
 	outFile := filepath.Join(job.OutputDir, outName)
 
 	_, ffmpegSpan := tracer.Start(ctx, "job.ffmpeg",
@@ -164,7 +173,9 @@ func (q *Queue) process(job DownloadJob) {
 	q.markLiberated(job.BookID, job.Format)
 
 	// Best-effort PDF companion download — does not affect job status on failure.
-	pdfPath := filepath.Join(job.OutputDir, sanitizeFilename(job.Title)+".pdf")
+	pdfPath := filepath.Join(job.OutputDir, renderFilename(job.FilenameTemplate, FilenameData{
+		Title: job.Title, Authors: job.Authors, SeriesName: job.SeriesName,
+	})+".pdf")
 	if downloaded, pdfErr := q.audible.DownloadPDF(ctx, job.AudibleAccountID, job.AudibleID, pdfPath); pdfErr != nil {
 		log.Printf("job %s: PDF download failed (non-fatal): %v", job.ID, pdfErr)
 	} else if downloaded {

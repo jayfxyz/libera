@@ -9,20 +9,22 @@ import (
 )
 
 func (h *handlers) getSettings(w http.ResponseWriter, r *http.Request) {
-	outputDir, defaultFormat, downloadWorkers := h.cfg.Read()
+	outputDir, defaultFormat, filenameTemplate, downloadWorkers := h.cfg.Read()
 	writeJSON(w, map[string]any{
-		"app_url":          h.cfg.AppURL,
-		"output_dir":       outputDir,
-		"download_workers": downloadWorkers,
-		"default_format":   defaultFormat,
+		"app_url":           h.cfg.AppURL,
+		"output_dir":        outputDir,
+		"download_workers":  downloadWorkers,
+		"default_format":    defaultFormat,
+		"filename_template": filenameTemplate,
 	})
 }
 
 func (h *handlers) updateSettings(w http.ResponseWriter, r *http.Request) {
 	var patch struct {
-		OutputDir       *string `json:"output_dir"`
-		DownloadWorkers *int    `json:"download_workers"`
-		DefaultFormat   *string `json:"default_format"`
+		OutputDir        *string `json:"output_dir"`
+		DownloadWorkers  *int    `json:"download_workers"`
+		DefaultFormat    *string `json:"default_format"`
+		FilenameTemplate *string `json:"filename_template"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		httpError(w, err, http.StatusBadRequest)
@@ -56,6 +58,14 @@ func (h *handlers) updateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.cfg.Update("default_format", *patch.DefaultFormat)
+	}
+
+	if patch.FilenameTemplate != nil {
+		if err := db.SetSetting(h.db, "filename_template", *patch.FilenameTemplate); err != nil {
+			httpError(w, err, http.StatusInternalServerError)
+			return
+		}
+		h.cfg.Update("filename_template", *patch.FilenameTemplate)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

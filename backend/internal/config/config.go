@@ -17,7 +17,8 @@ type Config struct {
 	AppURL          string
 	OutputDir       string
 	DownloadWorkers int
-	DefaultFormat   string // "m4b" or "mp3"
+	DefaultFormat    string // "m4b" or "mp3"
+	FilenameTemplate string // e.g. "{author} - {title}"
 }
 
 func Load() *Config {
@@ -28,6 +29,7 @@ func Load() *Config {
 	viper.SetDefault("OUTPUT_DIR", "./data/audiobooks")
 	viper.SetDefault("DOWNLOAD_WORKERS", 3)
 	viper.SetDefault("DEFAULT_FORMAT", "m4b")
+	viper.SetDefault("FILENAME_TEMPLATE", "{title}")
 
 	viper.SetConfigFile(".env")
 	viper.SetConfigType("env")
@@ -44,7 +46,8 @@ func Load() *Config {
 		AppURL:          viper.GetString("APP_URL"),
 		OutputDir:       viper.GetString("OUTPUT_DIR"),
 		DownloadWorkers: viper.GetInt("DOWNLOAD_WORKERS"),
-		DefaultFormat:   viper.GetString("DEFAULT_FORMAT"),
+		DefaultFormat:    viper.GetString("DEFAULT_FORMAT"),
+		FilenameTemplate: viper.GetString("FILENAME_TEMPLATE"),
 	}
 }
 
@@ -65,6 +68,9 @@ func (c *Config) ApplyDBOverrides(overrides map[string]string) {
 	if v, ok := overrides["default_format"]; ok && (v == "m4b" || v == "mp3") {
 		c.DefaultFormat = v
 	}
+	if v, ok := overrides["filename_template"]; ok {
+		c.FilenameTemplate = v
+	}
 }
 
 // Update applies a settings patch in-memory. Values are already persisted to
@@ -84,11 +90,13 @@ func (c *Config) Update(key, value string) {
 		if value == "m4b" || value == "mp3" {
 			c.DefaultFormat = value
 		}
+	case "filename_template":
+		c.FilenameTemplate = value
 	}
 }
 
-func (c *Config) Read() (outputDir, defaultFormat string, downloadWorkers int) {
+func (c *Config) Read() (outputDir, defaultFormat, filenameTemplate string, downloadWorkers int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.OutputDir, c.DefaultFormat, c.DownloadWorkers
+	return c.OutputDir, c.DefaultFormat, c.FilenameTemplate, c.DownloadWorkers
 }

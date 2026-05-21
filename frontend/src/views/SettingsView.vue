@@ -35,6 +35,19 @@
       </div>
 
       <div>
+        <label class="block text-sm text-gray-400 mb-1">Filename Template</label>
+        <input
+          v-model="settings.filename_template"
+          type="text"
+          class="w-full px-3 py-2 bg-gray-800 rounded-lg text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="{title}"
+        />
+        <p class="text-xs text-gray-500 mt-1">
+          Tags: <code class="text-gray-400">{title} {author} {narrator} {series} {series_index} {year} {language} {duration_h}</code>
+        </p>
+      </div>
+
+      <div>
         <label class="block text-sm text-gray-400 mb-1">Download Workers</label>
         <input
           v-model.number="settings.download_workers"

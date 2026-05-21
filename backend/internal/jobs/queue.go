@@ -20,8 +20,18 @@ type DownloadJob struct {
 	AccountID        int64
 	AudibleAccountID string // sidecar account_id (e.g. amzn1.account.xxx)
 	Title            string
+	Authors          string // comma-separated, used in filename templates
+	Narrators        string
+	SeriesName       string
+	SeriesIndex      string
+	Language         string
+	LengthMinutes    int
+	DateAdded        string
+	Year             string
+	DurationH        string
 	Format           string
 	OutputDir        string
+	FilenameTemplate string
 	TraceCarrier     map[string]string // serialized W3C trace context for cross-goroutine propagation
 }
 
