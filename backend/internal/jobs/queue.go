@@ -32,6 +32,7 @@ type DownloadJob struct {
 	Format           string
 	OutputDir        string
 	FilenameTemplate string
+	SplitChapters    bool
 	TraceCarrier     map[string]string // serialized W3C trace context for cross-goroutine propagation
 }
 

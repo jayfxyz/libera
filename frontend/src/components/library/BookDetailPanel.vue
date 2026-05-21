@@ -67,6 +67,10 @@
             <option value="m4b">M4B</option>
             <option value="mp3">MP3</option>
           </select>
+          <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer" title="Split into one file per chapter">
+            <input type="checkbox" v-model="splitChapters" :disabled="isDownloading" class="accent-indigo-500" />
+            Chapters
+          </label>
         </div>
 
         <!-- Active download progress -->
@@ -188,6 +192,8 @@ const settingsStore = useSettingsStore()
 const libraryStore = useLibraryStore()
 const selectedFormat = ref<'m4b' | 'mp3'>(settingsStore.defaultFormat)
 
+const splitChapters = ref(false)
+
 const addingTag = ref(false)
 const newTag = ref('')
 const tagInputEl = ref<HTMLInputElement | null>(null)
@@ -256,7 +262,7 @@ const isDownloading = computed(() => !!activeJob.value)
 
 async function handleDownload() {
   if (!book.value) return
-  await downloadsStore.enqueue(book.value.id, book.value.audible_id, book.value.account_id, selectedFormat.value)
+  await downloadsStore.enqueue(book.value.id, book.value.audible_id, book.value.account_id, selectedFormat.value, splitChapters.value)
 }
 
 const statusMap: Record<string, { label: string; cls: string }> = {

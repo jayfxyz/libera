@@ -170,6 +170,14 @@ func (q *Queue) process(job DownloadJob) {
 	}
 	ffmpegSpan.End()
 
+	// Optional chapter splitting — best-effort after successful decryption.
+	if job.SplitChapters {
+		q.setStatus(job.ID, "decrypting", 100, "splitting chapters…")
+		if err := splitIntoChapters(ctx, outFile, job.OutputDir, job.Title, job.FilenameTemplate, job); err != nil {
+			log.Printf("job %s: chapter split failed (non-fatal): %v", job.ID, err)
+		}
+	}
+
 	q.markLiberated(job.BookID, job.Format)
 
 	// Best-effort PDF companion download — does not affect job status on failure.

@@ -12,10 +12,11 @@ import (
 
 func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		BookID    int64  `json:"book_id"`
-		AudibleID string `json:"audible_id"`
-		AccountID int64  `json:"account_id"`
-		Format    string `json:"format"`
+		BookID        int64  `json:"book_id"`
+		AudibleID     string `json:"audible_id"`
+		AccountID     int64  `json:"account_id"`
+		Format        string `json:"format"`
+		SplitChapters bool   `json:"split_chapters"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpError(w, err, http.StatusBadRequest)
@@ -99,6 +100,7 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		Format:           req.Format,
 		OutputDir:        outputDir,
 		FilenameTemplate: filenameTemplate,
+		SplitChapters:    req.SplitChapters,
 		DurationH:        durationH,
 		Year:             year,
 	}

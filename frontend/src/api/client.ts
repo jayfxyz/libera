@@ -104,12 +104,13 @@ export const api = {
   },
 
   downloads: {
-    enqueue: (bookId: number, audibleId: string, accountId: number, format = 'm4b') =>
+    enqueue: (bookId: number, audibleId: string, accountId: number, format = 'm4b', splitChapters = false) =>
       request<{ job_id: string }>('POST', '/downloads', {
         book_id: bookId,
         audible_id: audibleId,
         account_id: accountId,
         format,
+        split_chapters: splitChapters,
       }),
     list: () => request<DownloadJob[]>('GET', '/downloads'),
     cancel: (id: string) => request<void>('DELETE', `/downloads/${id}`),

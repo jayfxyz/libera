@@ -10,8 +10,8 @@ export const useDownloadsStore = defineStore('downloads', () => {
     jobs.value.set(event.job_id, event)
   }
 
-  async function enqueue(bookId: number, audibleId: string, accountId: number, format = 'm4b') {
-    const { job_id } = await api.downloads.enqueue(bookId, audibleId, accountId, format)
+  async function enqueue(bookId: number, audibleId: string, accountId: number, format = 'm4b', splitChapters = false) {
+    const { job_id } = await api.downloads.enqueue(bookId, audibleId, accountId, format, splitChapters)
     jobs.value.set(job_id, {
       job_id,
       book_id: bookId,
