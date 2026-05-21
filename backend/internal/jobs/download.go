@@ -8,7 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
+
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -142,25 +142,7 @@ func (q *Queue) process(job DownloadJob) {
 			attribute.Bool("ffmpeg.aaxc", isAAXC),
 		),
 	)
-	var cmd *exec.Cmd
-	if isAAXC {
-		cmd = exec.CommandContext(ctx, "ffmpeg",
-			"-y",
-			"-audible_key", info.Key,
-			"-audible_iv", info.IV,
-			"-i", tmpFile,
-			"-vn", "-c:a", "copy",
-			outFile,
-		)
-	} else {
-		cmd = exec.CommandContext(ctx, "ffmpeg",
-			"-y",
-			"-activation_bytes", info.ActivationBytes,
-			"-i", tmpFile,
-			"-vn", "-c:a", "copy",
-			outFile,
-		)
-	}
+	cmd := buildDecryptCmd(ctx, info, tmpFile, outFile, job.Format)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		ffmpegSpan.RecordError(err)
 		ffmpegSpan.SetStatus(codes.Error, strings.TrimSpace(string(out)))
