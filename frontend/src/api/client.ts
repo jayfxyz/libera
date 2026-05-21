@@ -32,6 +32,7 @@ export interface BookSummary {
   cover_url: string
   liberation_status: 'not_liberated' | 'liberated' | 'error' | 'partial_download'
   is_finished: boolean
+  is_deleted: boolean
   tags: string
   account_id: number
 }

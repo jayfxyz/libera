@@ -94,12 +94,20 @@ function onBookSelect(book: BookSummary) {
 
 type Pill = { label: string; value: StatusFilter; count: number }
 
-const pills = computed<Pill[]>(() => [
-  { label: 'All', value: 'all', count: store.books.length },
-  { label: 'Downloaded', value: 'liberated', count: store.books.filter((b) => b.liberation_status === 'liberated').length },
-  { label: 'Not Downloaded', value: 'not_liberated', count: store.books.filter((b) => b.liberation_status === 'not_liberated').length },
-  { label: 'In Progress', value: 'in_progress', count: store.books.filter((b) => b.liberation_status === 'partial_download').length },
-])
+const removedCount = computed(() => store.books.filter((b) => b.is_deleted).length)
+
+const pills = computed<Pill[]>(() => {
+  const base: Pill[] = [
+    { label: 'All', value: 'all', count: store.books.filter((b) => !b.is_deleted).length },
+    { label: 'Downloaded', value: 'liberated', count: store.books.filter((b) => !b.is_deleted && b.liberation_status === 'liberated').length },
+    { label: 'Not Downloaded', value: 'not_liberated', count: store.books.filter((b) => !b.is_deleted && b.liberation_status === 'not_liberated').length },
+    { label: 'In Progress', value: 'in_progress', count: store.books.filter((b) => !b.is_deleted && b.liberation_status === 'partial_download').length },
+  ]
+  if (removedCount.value > 0 || store.statusFilter === 'removed') {
+    base.push({ label: 'Removed', value: 'removed', count: removedCount.value })
+  }
+  return base
+})
 
 onMounted(() => store.fetchBooks())
 </script>

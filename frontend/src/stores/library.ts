@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import type { BookSummary } from '@/api/client'
 import { api } from '@/api/client'
 
-export type StatusFilter = 'all' | 'liberated' | 'not_liberated' | 'in_progress'
+export type StatusFilter = 'all' | 'liberated' | 'not_liberated' | 'in_progress' | 'removed'
 
 export const useLibraryStore = defineStore('library', () => {
   const books = ref<BookSummary[]>([])
@@ -13,10 +13,11 @@ export const useLibraryStore = defineStore('library', () => {
   const statusFilter = ref<StatusFilter>('all')
 
   const filteredBooks = computed(() => {
-    if (statusFilter.value === 'all') return books.value
-    if (statusFilter.value === 'liberated') return books.value.filter((b) => b.liberation_status === 'liberated')
-    if (statusFilter.value === 'not_liberated') return books.value.filter((b) => b.liberation_status === 'not_liberated')
-    if (statusFilter.value === 'in_progress') return books.value.filter((b) => b.liberation_status === 'partial_download')
+    if (statusFilter.value === 'all') return books.value.filter((b) => !b.is_deleted)
+    if (statusFilter.value === 'liberated') return books.value.filter((b) => !b.is_deleted && b.liberation_status === 'liberated')
+    if (statusFilter.value === 'not_liberated') return books.value.filter((b) => !b.is_deleted && b.liberation_status === 'not_liberated')
+    if (statusFilter.value === 'in_progress') return books.value.filter((b) => !b.is_deleted && b.liberation_status === 'partial_download')
+    if (statusFilter.value === 'removed') return books.value.filter((b) => b.is_deleted)
     return books.value
   })
 

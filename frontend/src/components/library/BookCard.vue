@@ -1,5 +1,5 @@
 <template>
-  <div class="group relative cursor-pointer" @click="emit('select', book)">
+  <div class="group relative cursor-pointer" :class="book.is_deleted ? 'opacity-50' : ''" @click="emit('select', book)">
     <div class="aspect-square bg-gray-800 rounded-lg overflow-hidden">
       <img
         v-if="book.cover_url"
@@ -8,6 +8,11 @@
         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
       />
       <div v-else class="w-full h-full flex items-center justify-center text-gray-600 text-4xl">📖</div>
+    </div>
+
+    <!-- Removed from Audible overlay -->
+    <div v-if="book.is_deleted" class="absolute inset-0 flex items-end justify-center pb-2 pointer-events-none">
+      <span class="text-xs bg-black/70 text-gray-300 px-2 py-0.5 rounded">Removed from Audible</span>
     </div>
 
     <!-- Status badge -->

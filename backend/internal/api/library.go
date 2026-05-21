@@ -37,6 +37,7 @@ type bookRow struct {
 	CoverURL         string `json:"cover_url"`
 	LiberationStatus string `json:"liberation_status"`
 	IsFinished       bool   `json:"is_finished"`
+	IsDeleted        bool   `json:"is_deleted"`
 	Tags             string `json:"tags"`
 	AccountID        int64  `json:"account_id"`
 }
@@ -62,7 +63,7 @@ func (h *handlers) listLibrary(w http.ResponseWriter, r *http.Request) {
 
 	if search != "" {
 		rows, err = h.db.QueryContext(r.Context(), `
-			SELECT b.id, b.audible_id, b.title, b.cover_url, lb.liberation_status, lb.is_finished, lb.tags, lb.account_id
+			SELECT b.id, b.audible_id, b.title, b.cover_url, lb.liberation_status, lb.is_finished, lb.is_deleted, lb.tags, lb.account_id
 			FROM books b
 			JOIN library_books lb ON lb.book_id = b.id
 			JOIN books_fts f ON f.rowid = b.id
@@ -71,11 +72,10 @@ func (h *handlers) listLibrary(w http.ResponseWriter, r *http.Request) {
 			LIMIT ? OFFSET ?`, search, pageSize, offset)
 	} else {
 		rows, err = h.db.QueryContext(r.Context(), `
-			SELECT b.id, b.audible_id, b.title, b.cover_url, lb.liberation_status, lb.is_finished, lb.tags, lb.account_id
+			SELECT b.id, b.audible_id, b.title, b.cover_url, lb.liberation_status, lb.is_finished, lb.is_deleted, lb.tags, lb.account_id
 			FROM books b
 			JOIN library_books lb ON lb.book_id = b.id
-			WHERE lb.is_deleted = 0
-			ORDER BY b.title
+			ORDER BY lb.is_deleted ASC, b.title
 			LIMIT ? OFFSET ?`, pageSize, offset)
 	}
 	if err != nil {
@@ -87,7 +87,7 @@ func (h *handlers) listLibrary(w http.ResponseWriter, r *http.Request) {
 	books := []bookRow{}
 	for rows.Next() {
 		var b bookRow
-		if err := rows.Scan(&b.ID, &b.AudibleID, &b.Title, &b.CoverURL, &b.LiberationStatus, &b.IsFinished, &b.Tags, &b.AccountID); err != nil {
+		if err := rows.Scan(&b.ID, &b.AudibleID, &b.Title, &b.CoverURL, &b.LiberationStatus, &b.IsFinished, &b.IsDeleted, &b.Tags, &b.AccountID); err != nil {
 			httpError(w, err, http.StatusInternalServerError)
 			return
 		}
@@ -209,6 +209,8 @@ func (h *handlers) getBook(w http.ResponseWriter, r *http.Request) {
 }
 
 // importLibrary upserts books from an Audible library scan into the DB.
+// Books present in the previous scan but absent from this one are marked
+// is_deleted=1. Books that reappear are restored to is_deleted=0.
 // Returns the number of books processed.
 func importLibrary(ctx context.Context, db *sql.DB, accountID int64, books []audible.BookDTO) (int, error) {
 	tx, err := db.BeginTx(ctx, nil)
@@ -217,9 +219,15 @@ func importLibrary(ctx context.Context, db *sql.DB, accountID int64, books []aud
 	}
 	defer tx.Rollback()
 
+	// Collect every ASIN seen in this scan for the inactive-detection step.
+	seenASINs := make([]string, 0, len(books))
+
 	for _, b := range books {
-		// Upsert book
-		res, err := tx.ExecContext(ctx, `
+		seenASINs = append(seenASINs, b.AudibleID)
+		// Upsert book — always SELECT afterwards because LastInsertId() returns
+		// the previous INSERT's rowid (not the updated row) when the UPSERT hits
+		// the ON CONFLICT DO UPDATE path in modernc/sqlite.
+		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO books (audible_id, title, subtitle, description, length_minutes, locale, cover_url, publisher, audible_rating)
 			VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)
 			ON CONFLICT(audible_id) DO UPDATE SET
@@ -227,21 +235,16 @@ func importLibrary(ctx context.Context, db *sql.DB, accountID int64, books []aud
 				cover_url = excluded.cover_url,
 				audible_rating = excluded.audible_rating`,
 			b.AudibleID, b.Title, b.Subtitle, b.Description,
-			b.LengthMinutes, b.CoverURL, b.Publisher, b.AudibleRating)
-		if err != nil {
+			b.LengthMinutes, b.CoverURL, b.Publisher, b.AudibleRating); err != nil {
+			return 0, err
+		}
+		var bookID int64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM books WHERE audible_id = ?`, b.AudibleID).Scan(&bookID); err != nil {
 			return 0, err
 		}
 
-		bookID, err := res.LastInsertId()
-		if err != nil {
-			// ON CONFLICT path — fetch existing id
-			if err2 := tx.QueryRowContext(ctx,
-				`SELECT id FROM books WHERE audible_id = ?`, b.AudibleID).Scan(&bookID); err2 != nil {
-				return 0, err2
-			}
-		}
-
-		// Upsert library_books link
+		// Upsert library_books link — also clears is_deleted if a book reappears.
 		dateAdded := b.DateAdded
 		if dateAdded == "" {
 			dateAdded = "1970-01-01"
@@ -251,10 +254,11 @@ func importLibrary(ctx context.Context, db *sql.DB, accountID int64, books []aud
 			isPlus = 1
 		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO library_books (book_id, account_id, date_added, is_audible_plus)
-			VALUES (?, ?, ?, ?)
+			INSERT INTO library_books (book_id, account_id, date_added, is_audible_plus, is_deleted)
+			VALUES (?, ?, ?, ?, 0)
 			ON CONFLICT(book_id, account_id) DO UPDATE SET
-				date_added = excluded.date_added`,
+				date_added = excluded.date_added,
+				is_deleted = 0`,
 			bookID, accountID, dateAdded, isPlus)
 		if err != nil {
 			return 0, err
@@ -310,6 +314,32 @@ func importLibrary(ctx context.Context, db *sql.DB, accountID int64, books []aud
 			 VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 			bookID, b.Title, b.Subtitle, b.Description,
 			authorStr, narratorStr, strings.Join(seriesTitles, ", ")); err != nil {
+			return 0, err
+		}
+	}
+
+	// Mark books absent from this scan as deleted (scoped to this account only).
+	if len(seenASINs) > 0 {
+		placeholders := strings.Repeat("?,", len(seenASINs))
+		placeholders = placeholders[:len(placeholders)-1]
+		args := make([]any, 0, 1+len(seenASINs))
+		args = append(args, accountID)
+		for _, a := range seenASINs {
+			args = append(args, a)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE library_books SET is_deleted = 1
+			 WHERE account_id = ?
+			   AND book_id IN (
+			       SELECT id FROM books WHERE audible_id NOT IN (`+placeholders+`)
+			   )`,
+			args...); err != nil {
+			return 0, err
+		}
+	} else {
+		// Empty scan — mark everything for this account as deleted.
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE library_books SET is_deleted = 1 WHERE account_id = ?`, accountID); err != nil {
 			return 0, err
 		}
 	}
