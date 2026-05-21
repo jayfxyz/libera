@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -121,6 +123,42 @@ func (c *Client) GetDownloadInfo(ctx context.Context, audibleAccountID, asin str
 		return nil, err
 	}
 	return &resp, nil
+}
+
+// DownloadPDF downloads the PDF companion file for a book to destPath.
+// Returns (false, nil) when the title has no PDF; (true, nil) on success.
+func (c *Client) DownloadPDF(ctx context.Context, audibleAccountID, asin, destPath string) (bool, error) {
+	path := fmt.Sprintf("/download/%s/%s/pdf", audibleAccountID, asin)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("audible-svc request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode >= 400 {
+		var e struct{ Detail string `json:"detail"` }
+		json.NewDecoder(resp.Body).Decode(&e)
+		return false, fmt.Errorf("audible-svc %s: %s", resp.Status, e.Detail)
+	}
+
+	f, err := os.Create(destPath)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		os.Remove(destPath)
+		return false, err
+	}
+	return true, nil
 }
 
 func (c *Client) GetLibrary(ctx context.Context, accountID string) ([]BookDTO, error) {

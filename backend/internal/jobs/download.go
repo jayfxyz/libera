@@ -155,9 +155,18 @@ func (q *Queue) process(job DownloadJob) {
 	}
 	ffmpegSpan.End()
 
+	q.markLiberated(job.BookID, job.Format)
+
+	// Best-effort PDF companion download — does not affect job status on failure.
+	pdfPath := filepath.Join(job.OutputDir, sanitizeFilename(job.Title)+".pdf")
+	if downloaded, pdfErr := q.audible.DownloadPDF(ctx, job.AudibleAccountID, job.AudibleID, pdfPath); pdfErr != nil {
+		log.Printf("job %s: PDF download failed (non-fatal): %v", job.ID, pdfErr)
+	} else if downloaded {
+		log.Printf("job %s: PDF saved: %s", job.ID, pdfPath)
+	}
+
 	log.Printf("job %s done: %s", job.ID, outFile)
 	q.setStatus(job.ID, "done", 100, outFile)
-	q.markLiberated(job.BookID, job.Format)
 }
 
 func streamDownload(ctx context.Context, url, dest string, onProgress func(float64)) error {

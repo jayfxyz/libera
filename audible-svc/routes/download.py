@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 import logging
 import storage
@@ -67,6 +68,43 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
             codec=codec,
             format="aax",
             activation_bytes=_get_activation_bytes(c),
+        )
+
+
+@router.get("/{account_id}/{asin}/pdf")
+async def get_pdf(account_id: str, asin: str):
+    from audible_cli.models import LibraryItem
+
+    try:
+        client = storage.load_client(account_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+    async with client as c:
+        try:
+            resp = await c.get(f"1.0/library/{asin}", response_groups="pdf_url")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Library fetch failed: {e}")
+
+        item = LibraryItem(data=resp, api_client=c, parent=None, response_groups="pdf_url")
+
+        try:
+            pdf_url = item.get_pdf_url()
+        except Exception:
+            pdf_url = None
+
+        if pdf_url is None:
+            raise HTTPException(status_code=404, detail="No PDF available for this title")
+
+        pdf_resp = await c.session.get(pdf_url, follow_redirects=True)
+        if pdf_resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"PDF fetch failed: HTTP {pdf_resp.status_code}")
+
+        content_type = pdf_resp.headers.get("content-type", "application/pdf")
+        return Response(
+            content=pdf_resp.content,
+            media_type=content_type,
+            headers={"Content-Disposition": f'attachment; filename="{asin}.pdf"'},
         )
 
 
