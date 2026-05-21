@@ -69,6 +69,7 @@ export interface Settings {
   app_url: string
   output_dir: string
   download_workers: number
+  default_format: 'm4b' | 'mp3'
 }
 
 // --- Accounts ---

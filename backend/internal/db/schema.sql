@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS book_categories (
     PRIMARY KEY (book_id, category_id)
 );
 
+-- User-configurable application settings (key-value store)
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 -- Full-text search (FTS5)
 CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
     title,

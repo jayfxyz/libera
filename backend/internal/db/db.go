@@ -43,5 +43,14 @@ func Migrate(db *sql.DB) error {
 }
 
 func OpenMemory() (*sql.DB, error) {
-	return Open("file::memory:?cache=shared")
+	db, err := sql.Open("sqlite", ":memory:?_foreign_keys=on")
+	if err != nil {
+		return nil, fmt.Errorf("open in-memory sqlite: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("ping in-memory sqlite: %w", err)
+	}
+	return db, nil
 }

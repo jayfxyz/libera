@@ -21,8 +21,9 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err, http.StatusBadRequest)
 		return
 	}
+	outputDir, defaultFormat, _ := h.cfg.Read()
 	if req.Format == "" {
-		req.Format = "m4b"
+		req.Format = defaultFormat
 	}
 
 	var audibleAccountID, title string
@@ -45,7 +46,7 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		AudibleAccountID: audibleAccountID,
 		Title:            title,
 		Format:           req.Format,
-		OutputDir:        h.cfg.OutputDir,
+		OutputDir:        outputDir,
 	}
 	h.queue.Enqueue(r.Context(), job)
 

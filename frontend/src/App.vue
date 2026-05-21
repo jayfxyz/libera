@@ -10,8 +10,11 @@
 <script setup lang="ts">
 import AppSidebar from '@/components/shared/AppSidebar.vue'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useSettingsStore } from '@/stores/settings'
 import { useDownloadProgress } from '@/composables/useWebSocket'
 
 const downloadsStore = useDownloadsStore()
+const settingsStore = useSettingsStore()
 useDownloadProgress((event) => downloadsStore.handleProgressEvent(event))
+settingsStore.load()
 </script>

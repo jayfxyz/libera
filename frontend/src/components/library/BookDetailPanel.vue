@@ -46,17 +46,28 @@
 
       <!-- Download button -->
       <div class="px-5 pb-4 shrink-0">
-        <button
-          @click="handleDownload"
-          :disabled="isDownloading"
-          class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-        >
-          <svg v-if="isDownloading" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-          </svg>
-          {{ isDownloading ? 'Downloading…' : book.liberation_status === 'liberated' ? 'Re-download' : 'Download' }}
-        </button>
+        <div class="flex gap-2">
+          <button
+            @click="handleDownload"
+            :disabled="isDownloading"
+            class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+          >
+            <svg v-if="isDownloading" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            </svg>
+            {{ isDownloading ? 'Downloading…' : book.liberation_status === 'liberated' ? 'Re-download' : 'Download' }}
+          </button>
+          <select
+            v-model="selectedFormat"
+            :disabled="isDownloading"
+            class="px-2 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-xs outline-none"
+            title="Output format"
+          >
+            <option value="m4b">M4B</option>
+            <option value="mp3">MP3</option>
+          </select>
+        </div>
 
         <!-- Active download progress -->
         <div v-if="activeJob" class="mt-3">
@@ -117,6 +128,7 @@ import { ref, computed, onMounted } from 'vue'
 import type { BookDetail } from '@/api/client'
 import { api } from '@/api/client'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{ bookId: number }>()
 const emit = defineEmits<{ close: [] }>()
@@ -126,8 +138,12 @@ const loading = ref(true)
 const error = ref('')
 
 const downloadsStore = useDownloadsStore()
+const settingsStore = useSettingsStore()
+const selectedFormat = ref<'m4b' | 'mp3'>(settingsStore.defaultFormat)
 
 onMounted(async () => {
+  // Sync selected format to latest setting each time the panel opens.
+  selectedFormat.value = settingsStore.defaultFormat
   try {
     book.value = await api.library.get(props.bookId)
   } catch (e: any) {
@@ -149,7 +165,7 @@ const isDownloading = computed(() => !!activeJob.value)
 
 async function handleDownload() {
   if (!book.value) return
-  await downloadsStore.enqueue(book.value.id, book.value.audible_id, book.value.account_id)
+  await downloadsStore.enqueue(book.value.id, book.value.audible_id, book.value.account_id, selectedFormat.value)
 }
 
 const statusMap: Record<string, { label: string; cls: string }> = {

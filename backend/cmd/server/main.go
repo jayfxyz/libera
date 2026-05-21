@@ -40,6 +40,13 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
+	// Overlay any user-persisted settings on top of env-var defaults.
+	if overrides, err := db.LoadAllSettings(database); err == nil {
+		cfg.ApplyDBOverrides(overrides)
+	} else {
+		log.Printf("warning: could not load settings from DB: %v", err)
+	}
+
 	audibleClient := audible.NewClient(cfg.AudibleSvcURL, audible.WithTracedTransport())
 	downloadQueue := jobs.NewQueue(cfg.DownloadWorkers, audibleClient, database)
 	downloadQueue.Start()

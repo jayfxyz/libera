@@ -23,6 +23,18 @@
       </div>
 
       <div>
+        <label class="block text-sm text-gray-400 mb-1">Default Output Format</label>
+        <select
+          v-model="settings.default_format"
+          class="w-48 px-3 py-2 bg-gray-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+        >
+          <option value="m4b">M4B (original, no re-encode)</option>
+          <option value="mp3">MP3 (re-encode with LAME)</option>
+        </select>
+        <p class="text-xs text-gray-500 mt-1">Can be overridden per download.</p>
+      </div>
+
+      <div>
         <label class="block text-sm text-gray-400 mb-1">Download Workers</label>
         <input
           v-model.number="settings.download_workers"
