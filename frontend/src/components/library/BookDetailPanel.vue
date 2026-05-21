@@ -107,15 +107,33 @@
           </div>
         </div>
 
-        <!-- Tags -->
-        <div v-if="tagList.length">
+        <!-- Tags (editable chip input) -->
+        <div>
           <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Tags</h3>
-          <div class="flex gap-1.5 flex-wrap">
+          <div class="flex gap-1.5 flex-wrap items-center">
             <span
               v-for="tag in tagList"
               :key="tag"
-              class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded"
-            >{{ tag }}</span>
+              class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded flex items-center gap-1"
+            >
+              {{ tag }}
+              <button @click="removeTag(tag)" class="text-gray-500 hover:text-white leading-none ml-0.5">×</button>
+            </span>
+            <input
+              v-if="addingTag"
+              ref="tagInputEl"
+              v-model="newTag"
+              @keydown.enter.prevent="commitTag"
+              @keydown.escape="addingTag = false; newTag = ''"
+              @blur="commitTag"
+              class="text-xs bg-gray-700 text-white px-2 py-0.5 rounded outline-none w-24"
+              placeholder="tag name"
+            />
+            <button
+              v-else
+              @click="startAddingTag"
+              class="text-xs text-gray-500 hover:text-gray-300 px-1.5 py-0.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
+            >+ tag</button>
           </div>
         </div>
       </div>
@@ -124,11 +142,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import type { BookDetail } from '@/api/client'
 import { api } from '@/api/client'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useSettingsStore } from '@/stores/settings'
+import { useLibraryStore } from '@/stores/library'
 
 const props = defineProps<{ bookId: number }>()
 const emit = defineEmits<{ close: [] }>()
@@ -139,7 +158,37 @@ const error = ref('')
 
 const downloadsStore = useDownloadsStore()
 const settingsStore = useSettingsStore()
+const libraryStore = useLibraryStore()
 const selectedFormat = ref<'m4b' | 'mp3'>(settingsStore.defaultFormat)
+
+const addingTag = ref(false)
+const newTag = ref('')
+const tagInputEl = ref<HTMLInputElement | null>(null)
+
+function startAddingTag() {
+  addingTag.value = true
+  newTag.value = ''
+  nextTick(() => tagInputEl.value?.focus())
+}
+
+async function commitTag() {
+  const tag = newTag.value.trim().replace(/\s+/g, '_')
+  addingTag.value = false
+  newTag.value = ''
+  if (!tag || tagList.value.includes(tag)) return
+  await saveTags([...tagList.value, tag].join(' '))
+}
+
+async function removeTag(tag: string) {
+  await saveTags(tagList.value.filter((t) => t !== tag).join(' '))
+}
+
+async function saveTags(tags: string) {
+  if (!book.value) return
+  await api.library.update(book.value.id, { tags })
+  book.value.tags = tags
+  libraryStore.updateBook(book.value.id, { tags })
+}
 
 onMounted(async () => {
   // Sync selected format to latest setting each time the panel opens.
