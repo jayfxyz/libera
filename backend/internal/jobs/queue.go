@@ -46,6 +46,8 @@ type Queue struct {
 	cancel    context.CancelFunc
 	state     map[string]ProgressEvent
 	stateMu   sync.Mutex
+	cancels   map[string]context.CancelFunc
+	cancelsMu sync.Mutex
 }
 
 func NewQueue(workers int, audible *audible.Client, db *sql.DB) *Queue {
@@ -60,7 +62,34 @@ func NewQueue(workers int, audible *audible.Client, db *sql.DB) *Queue {
 		cancelCtx: ctx,
 		cancel:    cancel,
 		state:     map[string]ProgressEvent{},
+		cancels:   map[string]context.CancelFunc{},
 	}
+}
+
+func (q *Queue) registerCancel(jobID string, fn context.CancelFunc) {
+	q.cancelsMu.Lock()
+	q.cancels[jobID] = fn
+	q.cancelsMu.Unlock()
+}
+
+func (q *Queue) deregisterCancel(jobID string) {
+	q.cancelsMu.Lock()
+	delete(q.cancels, jobID)
+	q.cancelsMu.Unlock()
+}
+
+// Cancel stops an in-flight download job. Returns false if the job is not running.
+func (q *Queue) Cancel(jobID string) bool {
+	q.cancelsMu.Lock()
+	fn, ok := q.cancels[jobID]
+	if ok {
+		delete(q.cancels, jobID)
+	}
+	q.cancelsMu.Unlock()
+	if ok {
+		fn()
+	}
+	return ok
 }
 
 func (q *Queue) Start() {

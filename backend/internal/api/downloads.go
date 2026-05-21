@@ -59,7 +59,10 @@ func (h *handlers) listDownloads(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) cancelDownload(w http.ResponseWriter, r *http.Request) {
-	_ = chi.URLParam(r, "id")
-	// TODO: cancel in-flight download
-	w.WriteHeader(http.StatusAccepted)
+	id := chi.URLParam(r, "id")
+	if !h.queue.Cancel(id) {
+		http.NotFound(w, r)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

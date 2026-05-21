@@ -38,6 +38,12 @@ func (q *Queue) process(job DownloadJob) {
 	)
 	defer span.End()
 
+	// Register a per-job cancel so DELETE /downloads/{id} can stop this job.
+	ctx, jobCancel := context.WithCancel(ctx)
+	defer jobCancel()
+	q.registerCancel(job.ID, jobCancel)
+	defer q.deregisterCancel(job.ID)
+
 	log.Printf("starting download job %s asin=%s", job.ID, job.AudibleID)
 	q.setStatus(job.ID, "downloading", 0, "")
 
