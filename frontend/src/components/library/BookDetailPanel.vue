@@ -120,6 +120,18 @@
             <span class="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">Audible Rating</span>
             <span class="text-gray-300">★ {{ book.audible_rating.toFixed(1) }}</span>
           </div>
+          <div>
+            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">My Rating</span>
+            <div class="flex gap-0.5">
+              <button
+                v-for="star in 5"
+                :key="star"
+                @click="setRating(star)"
+                class="text-lg leading-none transition-colors"
+                :class="star <= (book.user_rating ?? 0) ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-300'"
+              >★</button>
+            </div>
+          </div>
         </div>
 
         <!-- Tags (editable chip input) -->
@@ -203,6 +215,13 @@ async function saveTags(tags: string) {
   await api.library.update(book.value.id, { tags })
   book.value.tags = tags
   libraryStore.updateBook(book.value.id, { tags })
+}
+
+async function setRating(star: number) {
+  if (!book.value) return
+  const user_rating = book.value.user_rating === star ? null : star
+  await api.library.update(book.value.id, { user_rating: user_rating ?? undefined })
+  book.value.user_rating = user_rating
 }
 
 async function toggleFinished() {
