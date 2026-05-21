@@ -3,6 +3,10 @@
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold">Library</h1>
       <div class="flex items-center gap-3">
+        <a href="/api/library/export?format=csv" download="library.csv"
+           class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300">CSV</a>
+        <a href="/api/library/export?format=json" download="library.json"
+           class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300">JSON</a>
         <button
           @click="rescan"
           :disabled="rescanning"

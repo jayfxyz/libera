@@ -31,6 +31,7 @@ func NewRouter(db *sql.DB, audible *audible.Client, queue *jobs.Queue, cfg *conf
 	r.Post("/accounts/{id}/scan", h.scanLibrary)
 
 	r.Get("/library", h.listLibrary)
+	r.Get("/library/export", h.exportLibrary)
 	r.Post("/library/rescan", h.rescanFiles)
 	r.Get("/library/{id}", h.getBook)
 	r.Patch("/library/{id}", h.updateBook)
