@@ -91,6 +91,21 @@
           <p class="text-sm text-gray-300 leading-relaxed line-clamp-6">{{ book.description }}</p>
         </div>
 
+        <!-- Is finished toggle -->
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-gray-500 uppercase tracking-wider">Finished listening</span>
+          <button
+            @click="toggleFinished"
+            class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
+            :class="book.is_finished ? 'bg-indigo-600' : 'bg-gray-700'"
+          >
+            <span
+              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
+              :class="book.is_finished ? 'translate-x-4' : 'translate-x-1'"
+            />
+          </button>
+        </div>
+
         <!-- Details grid -->
         <div class="grid grid-cols-2 gap-3 text-sm">
           <div v-if="book.publisher">
@@ -188,6 +203,14 @@ async function saveTags(tags: string) {
   await api.library.update(book.value.id, { tags })
   book.value.tags = tags
   libraryStore.updateBook(book.value.id, { tags })
+}
+
+async function toggleFinished() {
+  if (!book.value) return
+  const is_finished = !book.value.is_finished
+  await api.library.update(book.value.id, { is_finished })
+  book.value.is_finished = is_finished
+  libraryStore.updateBook(book.value.id, { is_finished })
 }
 
 onMounted(async () => {
