@@ -1,71 +1,150 @@
 <template>
-  <div class="p-6 max-w-lg">
-    <h1 class="text-2xl font-bold mb-6">Settings</h1>
-
-    <div v-if="settings" class="space-y-5">
-      <div>
-        <label class="block text-sm text-gray-400 mb-1">App URL</label>
-        <input
-          v-model="settings.app_url"
-          type="text"
-          class="w-full px-3 py-2 bg-gray-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <p class="text-xs text-gray-500 mt-1">Used to construct the Audible OAuth redirect URI.</p>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="border-b p-6 shrink-0">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-2xl font-semibold">Settings</h2>
+          <p class="text-sm text-muted-foreground">Configure download preferences and output options</p>
+        </div>
+        <Button @click="save">
+          <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+          </svg>
+          Save Settings
+          <span v-if="saved" class="ml-2 text-green-400 text-xs">✓ Saved</span>
+        </Button>
       </div>
+    </div>
 
-      <div>
-        <label class="block text-sm text-gray-400 mb-1">Output Directory</label>
-        <input
-          v-model="settings.output_dir"
-          type="text"
-          class="w-full px-3 py-2 bg-gray-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-        />
+    <div class="flex-1 overflow-y-auto">
+      <div v-if="settings" class="p-6 max-w-3xl space-y-6">
+        <!-- Download Settings -->
+        <Card class="p-6">
+          <div class="space-y-6">
+            <div>
+              <h3 class="text-lg font-semibold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                </svg>
+                Download Settings
+              </h3>
+              <p class="text-sm text-muted-foreground">Configure how audiobooks are downloaded and processed</p>
+            </div>
+
+            <Separator />
+
+            <div class="space-y-4">
+              <div class="space-y-2">
+                <Label class="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  Output Directory
+                </Label>
+                <Input v-model="settings.output_dir" placeholder="/path/to/audiobooks" />
+                <p class="text-xs text-muted-foreground">Downloaded audiobooks will be saved to this directory</p>
+              </div>
+
+              <div class="space-y-2">
+                <Label>Default Output Format</Label>
+                <Select v-model="settings.default_format">
+                  <SelectTrigger class="w-64">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="m4b">M4B (original, no re-encode)</SelectItem>
+                    <SelectItem value="mp3">MP3 (re-encode with LAME)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p class="text-xs text-muted-foreground">Can be overridden per-download in the book detail panel</p>
+              </div>
+
+              <div class="space-y-2">
+                <Label class="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                  Concurrent Downloads
+                </Label>
+                <Input
+                  v-model.number="settings.download_workers"
+                  type="number"
+                  min="1"
+                  max="10"
+                  class="w-32"
+                />
+                <p class="text-xs text-muted-foreground">Number of audiobooks that can be downloaded simultaneously</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <!-- File Naming -->
+        <Card class="p-6">
+          <div class="space-y-6">
+            <div>
+              <h3 class="text-lg font-semibold">File Naming Template</h3>
+              <p class="text-sm text-muted-foreground">Customize how downloaded files are named</p>
+            </div>
+
+            <Separator />
+
+            <div class="space-y-4">
+              <div class="space-y-2">
+                <Label>Template</Label>
+                <Input v-model="settings.filename_template" placeholder="{author} - {title}" class="font-mono" />
+                <p class="text-xs text-muted-foreground">
+                  Example: <span class="font-mono">Patrick Rothfuss - The Name of the Wind.m4b</span>
+                </p>
+              </div>
+
+              <div class="space-y-2">
+                <Label>Available Tags</Label>
+                <div class="grid grid-cols-2 gap-2">
+                  <div
+                    v-for="{ tag, description } in templateTags"
+                    :key="tag"
+                    class="flex items-start gap-2 p-2 rounded bg-muted/50 cursor-pointer hover:bg-muted transition-colors text-sm"
+                    @click="settings.filename_template += ' ' + tag"
+                  >
+                    <code class="text-xs font-mono bg-background px-1.5 py-0.5 rounded border shrink-0">{{ tag }}</code>
+                    <span class="text-xs text-muted-foreground">{{ description }}</span>
+                  </div>
+                </div>
+                <p class="text-xs text-muted-foreground">Click a tag to append it to your template</p>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <!-- Application -->
+        <Card class="p-6">
+          <div class="space-y-6">
+            <div>
+              <h3 class="text-lg font-semibold">Application</h3>
+              <p class="text-sm text-muted-foreground">General application settings</p>
+            </div>
+
+            <Separator />
+
+            <div class="space-y-2">
+              <Label>Application URL</Label>
+              <Input v-model="settings.app_url" placeholder="http://localhost:3000" />
+              <p class="text-xs text-muted-foreground">Used for OAuth callbacks during Audible authentication</p>
+            </div>
+          </div>
+        </Card>
+
+        <!-- About -->
+        <Card class="p-6 bg-muted/30">
+          <h4 class="font-semibold mb-2">About Libation Web</h4>
+          <div class="text-sm text-muted-foreground space-y-1">
+            <p>Version 1.0.0</p>
+            <p>A web-based audiobook library manager for Audible</p>
+          </div>
+        </Card>
       </div>
-
-      <div>
-        <label class="block text-sm text-gray-400 mb-1">Default Output Format</label>
-        <select
-          v-model="settings.default_format"
-          class="w-48 px-3 py-2 bg-gray-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="m4b">M4B (original, no re-encode)</option>
-          <option value="mp3">MP3 (re-encode with LAME)</option>
-        </select>
-        <p class="text-xs text-gray-500 mt-1">Can be overridden per download.</p>
-      </div>
-
-      <div>
-        <label class="block text-sm text-gray-400 mb-1">Filename Template</label>
-        <input
-          v-model="settings.filename_template"
-          type="text"
-          class="w-full px-3 py-2 bg-gray-800 rounded-lg text-sm font-mono outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder="{title}"
-        />
-        <p class="text-xs text-gray-500 mt-1">
-          Tags: <code class="text-gray-400">{title} {author} {narrator} {series} {series_index} {year} {language} {duration_h}</code>
-        </p>
-      </div>
-
-      <div>
-        <label class="block text-sm text-gray-400 mb-1">Download Workers</label>
-        <input
-          v-model.number="settings.download_workers"
-          type="number"
-          min="1"
-          max="10"
-          class="w-32 px-3 py-2 bg-gray-800 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-      </div>
-
-      <button
-        @click="save"
-        class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium"
-      >
-        Save
-      </button>
-
-      <p v-if="saved" class="text-sm text-green-400">Settings saved.</p>
     </div>
   </div>
 </template>
@@ -74,9 +153,27 @@
 import { ref, onMounted } from 'vue'
 import type { Settings } from '@/api/client'
 import { api } from '@/api/client'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card } from '@/components/ui/card'
+import { Separator } from '@/components/ui/separator'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const settings = ref<Settings | null>(null)
 const saved = ref(false)
+
+const templateTags = [
+  { tag: '{title}', description: 'Book title' },
+  { tag: '{author}', description: 'Primary author' },
+  { tag: '{narrator}', description: 'Primary narrator' },
+  { tag: '{series}', description: 'Series name' },
+  { tag: '{series_index}', description: 'Position in series' },
+  { tag: '{year}', description: 'Publication year' },
+  { tag: '{language}', description: 'Language code' },
+  { tag: '{duration_h}', description: 'Duration in hours' },
+]
 
 onMounted(async () => {
   settings.value = await api.settings.get()

@@ -1,48 +1,75 @@
 <template>
-  <div class="p-6">
-    <h1 class="text-2xl font-bold mb-6">Downloads</h1>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="border-b p-6 shrink-0">
+      <h2 class="text-2xl font-semibold">Downloads</h2>
+      <p class="text-sm text-muted-foreground">Active and recent download jobs</p>
+    </div>
 
-    <div v-if="jobs.length === 0" class="text-gray-400">No active downloads.</div>
-
-    <ul class="space-y-3">
-      <li
-        v-for="job in jobs"
-        :key="job.job_id"
-        class="bg-gray-800 rounded-lg px-4 py-3"
-      >
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-sm font-medium">Book #{{ job.book_id }}</span>
-          <span class="text-xs px-2 py-0.5 rounded-full" :class="statusClass(job.status)">
-            {{ job.status }}
-          </span>
+    <div class="flex-1 overflow-y-auto">
+      <div class="p-6">
+        <div v-if="jobs.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-muted-foreground mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+          </svg>
+          <h3 class="font-semibold mb-2">No downloads</h3>
+          <p class="text-sm text-muted-foreground">Download queue is empty</p>
         </div>
-        <div class="w-full bg-gray-700 rounded-full h-1.5">
+
+        <div v-else class="max-w-2xl space-y-3">
           <div
-            class="h-1.5 rounded-full transition-all"
-            :class="job.status === 'error' ? 'bg-red-500' : 'bg-indigo-500'"
-            :style="{ width: `${job.percent}%` }"
-          />
+            v-for="job in jobs"
+            :key="job.job_id"
+            class="p-4 rounded-lg border bg-card"
+          >
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full" :class="dotClass(job.status)" />
+                <span class="text-sm font-medium">Book #{{ job.book_id }}</span>
+              </div>
+              <Badge :variant="job.status === 'error' ? 'destructive' : job.status === 'done' ? 'default' : 'secondary'">
+                {{ statusLabel(job.status) }}
+              </Badge>
+            </div>
+            <Progress :model-value="job.percent" class="h-1.5" />
+            <div class="flex justify-between mt-1.5">
+              <p v-if="job.message" class="text-xs text-muted-foreground">{{ job.message }}</p>
+              <span v-else class="text-xs text-muted-foreground">{{ job.percent }}%</span>
+            </div>
+          </div>
         </div>
-        <div v-if="job.message" class="text-xs text-gray-400 mt-1">{{ job.message }}</div>
-      </li>
-    </ul>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDownloadsStore } from '@/stores/downloads'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { ScrollArea } from '@/components/ui/scroll-area'
 
 const store = useDownloadsStore()
 const jobs = computed(() => Array.from(store.jobs.values()))
 
-function statusClass(status: string) {
+function dotClass(status: string): string {
   return {
-    queued: 'bg-gray-600 text-gray-200',
-    downloading: 'bg-blue-700 text-blue-100',
-    decrypting: 'bg-yellow-700 text-yellow-100',
-    done: 'bg-green-700 text-green-100',
-    error: 'bg-red-700 text-red-100',
-  }[status] ?? 'bg-gray-600 text-gray-200'
+    queued: 'bg-muted-foreground',
+    downloading: 'bg-blue-500',
+    decrypting: 'bg-yellow-500',
+    done: 'bg-green-500',
+    error: 'bg-destructive',
+  }[status] ?? 'bg-muted-foreground'
+}
+
+function statusLabel(status: string): string {
+  return {
+    queued: 'Queued',
+    downloading: 'Downloading',
+    decrypting: 'Decrypting',
+    done: 'Done',
+    error: 'Error',
+  }[status] ?? status
 }
 </script>

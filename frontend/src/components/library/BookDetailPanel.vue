@@ -1,174 +1,209 @@
 <template>
-  <!-- Backdrop -->
-  <div class="fixed inset-0 bg-black/50 z-40" @click="emit('close')" />
-
-  <!-- Slide-out panel -->
-  <div class="fixed right-0 top-0 h-full w-full max-w-md bg-gray-900 z-50 flex flex-col shadow-2xl overflow-y-auto">
+  <div class="fixed inset-0 z-40" @click.self="emit('close')" />
+  <div class="fixed right-0 top-0 h-full w-96 border-l bg-background flex flex-col overflow-hidden shadow-xl z-50">
     <!-- Header -->
-    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-800 shrink-0">
-      <h2 class="text-lg font-bold truncate pr-4">{{ book?.title ?? '…' }}</h2>
-      <button @click="emit('close')" class="text-gray-400 hover:text-white shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+    <div class="px-4 py-4 border-b flex items-center justify-between shrink-0">
+      <h3 class="font-semibold">Book Details</h3>
+      <Button variant="ghost" size="icon" @click="emit('close')">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
-      </button>
+      </Button>
     </div>
 
-    <div v-if="loading" class="flex-1 flex items-center justify-center text-gray-400">Loading…</div>
-    <div v-else-if="error" class="flex-1 flex items-center justify-center text-red-400">{{ error }}</div>
+    <div v-if="loading" class="flex-1 flex items-center justify-center text-muted-foreground">Loading…</div>
+    <div v-else-if="error" class="flex-1 flex items-center justify-center text-destructive text-sm p-4">{{ error }}</div>
 
-    <template v-else-if="book">
-      <!-- Cover + download -->
-      <div class="px-5 py-5 flex gap-4 shrink-0">
-        <div class="w-32 h-32 rounded-lg overflow-hidden bg-gray-800 shrink-0">
+    <ScrollArea v-else-if="book" class="flex-1">
+      <div class="p-4 space-y-6">
+        <!-- Cover -->
+        <div class="aspect-square rounded-lg overflow-hidden bg-muted">
           <img v-if="book.cover_url" :src="book.cover_url" :alt="book.title" class="w-full h-full object-cover" />
-          <div v-else class="w-full h-full flex items-center justify-center text-gray-600 text-4xl">📖</div>
+          <div v-else class="w-full h-full flex items-center justify-center text-muted-foreground text-5xl">📖</div>
         </div>
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="text-xs px-2 py-0.5 rounded font-medium" :class="statusClass">{{ statusLabel }}</span>
-          </div>
-          <p v-if="book.authors.length" class="text-sm text-gray-300 mb-1">
-            <span class="text-gray-500">By</span> {{ book.authors.join(', ') }}
-          </p>
-          <p v-if="book.narrators.length" class="text-sm text-gray-300 mb-1">
-            <span class="text-gray-500">Narrated by</span> {{ book.narrators.join(', ') }}
-          </p>
-          <p v-if="book.series.length" class="text-sm text-gray-300 mb-2">
-            <span class="text-gray-500">Series:</span>
+
+        <!-- Title & Authors -->
+        <div>
+          <h2 class="text-xl font-semibold leading-tight">{{ book.title }}</h2>
+          <p v-if="book.subtitle" class="text-sm text-muted-foreground mt-1">{{ book.subtitle }}</p>
+          <p v-if="book.authors.length" class="text-sm mt-2">By {{ book.authors.join(', ') }}</p>
+          <p v-if="book.narrators.length" class="text-sm text-muted-foreground">Narrated by {{ book.narrators.join(', ') }}</p>
+          <p v-if="book.series.length" class="text-sm text-muted-foreground">
             <span v-for="(s, i) in book.series" :key="i">
               {{ s.name }}<span v-if="s.index"> #{{ s.index }}</span><span v-if="i < book.series.length - 1">, </span>
             </span>
           </p>
-          <p v-if="book.length_minutes" class="text-xs text-gray-500">{{ formatDuration(book.length_minutes) }}</p>
         </div>
-      </div>
 
-      <!-- Download button -->
-      <div class="px-5 pb-4 shrink-0">
-        <div class="flex gap-2">
-          <button
-            @click="handleDownload"
-            :disabled="isDownloading"
-            class="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-          >
-            <svg v-if="isDownloading" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+        <Separator />
+
+        <!-- Metadata -->
+        <div class="space-y-3">
+          <div v-if="book.length_minutes" class="flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
-            {{ isDownloading ? 'Downloading…' : book.liberation_status === 'liberated' ? 'Re-download' : 'Download' }}
-          </button>
-          <select
-            v-model="selectedFormat"
-            :disabled="isDownloading"
-            class="px-2 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg text-xs outline-none"
-            title="Output format"
-          >
-            <option value="m4b">M4B</option>
-            <option value="mp3">MP3</option>
-          </select>
-          <label class="flex items-center gap-1 text-xs text-gray-400 cursor-pointer" title="Split into one file per chapter">
-            <input type="checkbox" v-model="splitChapters" :disabled="isDownloading" class="accent-indigo-500" />
-            Chapters
-          </label>
-        </div>
-
-        <!-- Active download progress -->
-        <div v-if="activeJob" class="mt-3">
-          <div class="flex justify-between text-xs text-gray-400 mb-1">
-            <span>{{ activeJob.status === 'decrypting' ? 'Decrypting…' : 'Downloading…' }}</span>
-            <span>{{ activeJob.percent }}%</span>
+            <span>{{ formatDuration(book.length_minutes) }}</span>
           </div>
-          <div class="w-full bg-gray-700 rounded-full h-1.5">
-            <div class="h-1.5 rounded-full bg-indigo-500 transition-all" :style="{ width: `${activeJob.percent}%` }" />
+          <div v-if="book.audible_rating" class="flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <span>Audible: {{ book.audible_rating.toFixed(1) }}/5</span>
+          </div>
+          <div v-if="book.publisher" class="flex items-center gap-2 text-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+            </svg>
+            <span>{{ book.publisher }}</span>
           </div>
         </div>
-      </div>
 
-      <div class="border-t border-gray-800 mx-5 shrink-0" />
+        <Separator />
 
-      <!-- Metadata -->
-      <div class="px-5 py-4 space-y-4">
-        <!-- Description -->
-        <div v-if="book.description">
-          <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Description</h3>
-          <p class="text-sm text-gray-300 leading-relaxed line-clamp-6">{{ book.description }}</p>
+        <!-- User Rating -->
+        <div class="space-y-2">
+          <Label>Your Rating</Label>
+          <div class="flex gap-1">
+            <button
+              v-for="star in 5"
+              :key="star"
+              class="focus:outline-none"
+              @click="setRating(star)"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 transition-colors" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                :fill="star <= (book.user_rating ?? 0) ? 'currentColor' : 'none'"
+                :stroke="star <= (book.user_rating ?? 0) ? 'currentColor' : 'currentColor'"
+                :class="star <= (book.user_rating ?? 0) ? 'text-yellow-400' : 'text-muted-foreground'">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <!-- Is finished toggle -->
+        <!-- Finished Toggle -->
         <div class="flex items-center justify-between">
-          <span class="text-xs text-gray-500 uppercase tracking-wider">Finished listening</span>
-          <button
-            @click="toggleFinished"
-            class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none"
-            :class="book.is_finished ? 'bg-indigo-600' : 'bg-gray-700'"
-          >
-            <span
-              class="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
-              :class="book.is_finished ? 'translate-x-4' : 'translate-x-1'"
-            />
-          </button>
+          <Label class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            Finished
+          </Label>
+          <Switch :checked="book.is_finished" @update:checked="toggleFinished" />
         </div>
 
-        <!-- Details grid -->
-        <div class="grid grid-cols-2 gap-3 text-sm">
-          <div v-if="book.publisher">
-            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">Publisher</span>
-            <span class="text-gray-300">{{ book.publisher }}</span>
-          </div>
-          <div v-if="book.language">
-            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">Language</span>
-            <span class="text-gray-300">{{ book.language }}</span>
-          </div>
-          <div v-if="book.audible_rating">
-            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">Audible Rating</span>
-            <span class="text-gray-300">★ {{ book.audible_rating.toFixed(1) }}</span>
-          </div>
-          <div>
-            <span class="text-gray-500 text-xs uppercase tracking-wider block mb-0.5">My Rating</span>
-            <div class="flex gap-0.5">
-              <button
-                v-for="star in 5"
-                :key="star"
-                @click="setRating(star)"
-                class="text-lg leading-none transition-colors"
-                :class="star <= (book.user_rating ?? 0) ? 'text-yellow-400' : 'text-gray-600 hover:text-yellow-300'"
-              >★</button>
-            </div>
-          </div>
-        </div>
+        <Separator />
 
-        <!-- Tags (editable chip input) -->
-        <div>
-          <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Tags</h3>
-          <div class="flex gap-1.5 flex-wrap items-center">
-            <span
+        <!-- Tags -->
+        <div class="space-y-2">
+          <Label class="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            Tags
+          </Label>
+          <div class="flex gap-2 flex-wrap">
+            <Badge
               v-for="tag in tagList"
               :key="tag"
-              class="text-xs bg-gray-800 text-gray-300 px-2 py-0.5 rounded flex items-center gap-1"
+              variant="secondary"
+              class="gap-1"
             >
               {{ tag }}
-              <button @click="removeTag(tag)" class="text-gray-500 hover:text-white leading-none ml-0.5">×</button>
-            </span>
-            <input
-              v-if="addingTag"
-              ref="tagInputEl"
-              v-model="newTag"
-              @keydown.enter.prevent="commitTag"
-              @keydown.escape="addingTag = false; newTag = ''"
-              @blur="commitTag"
-              class="text-xs bg-gray-700 text-white px-2 py-0.5 rounded outline-none w-24"
-              placeholder="tag name"
-            />
-            <button
+              <button class="ml-1 hover:text-destructive leading-none" @click="removeTag(tag)">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </Badge>
+            <div v-if="addingTag" class="flex gap-1">
+              <Input
+                ref="tagInputEl"
+                v-model="newTag"
+                class="h-6 w-24 text-xs"
+                placeholder="tag name"
+                @keydown.enter.prevent="commitTag"
+                @keydown.escape="addingTag = false; newTag = ''"
+                @blur="commitTag"
+              />
+            </div>
+            <Badge
               v-else
+              variant="outline"
+              class="cursor-pointer"
               @click="startAddingTag"
-              class="text-xs text-gray-500 hover:text-gray-300 px-1.5 py-0.5 border border-dashed border-gray-700 hover:border-gray-500 rounded"
-            >+ tag</button>
+            >+ Add tag</Badge>
           </div>
         </div>
+
+        <Separator />
+
+        <!-- Description -->
+        <div v-if="book.description" class="space-y-2">
+          <Label>Description</Label>
+          <p class="text-sm text-muted-foreground leading-relaxed line-clamp-6">{{ book.description }}</p>
+        </div>
+
+        <!-- Download Section -->
+        <div v-if="book.liberation_status !== 'liberated'" class="space-y-4">
+          <h4 class="font-semibold">Download Options</h4>
+
+          <div class="space-y-2">
+            <Label>Output Format</Label>
+            <Select v-model="selectedFormat">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="m4b">M4B (Audiobook)</SelectItem>
+                <SelectItem value="mp3">MP3</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <Checkbox id="chapters" v-model:checked="splitChapters" />
+            <Label for="chapters" class="cursor-pointer flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="21" y1="6" x2="3" y2="6"/><line x1="15" y1="12" x2="3" y2="12"/><line x1="17" y1="18" x2="3" y2="18"/>
+              </svg>
+              Split into chapters
+            </Label>
+          </div>
+
+          <!-- Active download progress -->
+          <div v-if="activeJob" class="space-y-1">
+            <div class="flex justify-between text-xs text-muted-foreground">
+              <span>{{ activeJob.status === 'decrypting' ? 'Decrypting…' : 'Downloading…' }}</span>
+              <span>{{ activeJob.percent }}%</span>
+            </div>
+            <Progress :model-value="activeJob.percent" class="h-1.5" />
+          </div>
+
+          <Button class="w-full" size="lg" :disabled="isDownloading" @click="handleDownload">
+            <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+            </svg>
+            {{ isDownloading ? 'Downloading…' : 'Download & Decrypt' }}
+          </Button>
+        </div>
+
+        <!-- Downloaded status -->
+        <div v-if="book.liberation_status === 'liberated'" class="p-4 bg-green-50 rounded-lg border border-green-200">
+          <div class="flex items-center gap-2 text-green-700">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span class="font-medium">Downloaded</span>
+          </div>
+          <p class="text-sm text-green-600 mt-1">This audiobook has been downloaded and decrypted.</p>
+          <Button variant="outline" size="sm" class="mt-3 w-full" :disabled="isDownloading" @click="handleDownload">
+            Re-download
+          </Button>
+        </div>
+
       </div>
-    </template>
+    </ScrollArea>
   </div>
 </template>
 
@@ -179,6 +214,16 @@ import { api } from '@/api/client'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useSettingsStore } from '@/stores/settings'
 import { useLibraryStore } from '@/stores/library'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import { Separator } from '@/components/ui/separator'
+import { Progress } from '@/components/ui/progress'
+import { Checkbox } from '@/components/ui/checkbox'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const props = defineProps<{ bookId: number }>()
 const emit = defineEmits<{ close: [] }>()
@@ -191,36 +236,34 @@ const downloadsStore = useDownloadsStore()
 const settingsStore = useSettingsStore()
 const libraryStore = useLibraryStore()
 const selectedFormat = ref<'m4b' | 'mp3'>(settingsStore.defaultFormat)
-
 const splitChapters = ref(false)
-
 const addingTag = ref(false)
 const newTag = ref('')
 const tagInputEl = ref<HTMLInputElement | null>(null)
 
-function startAddingTag() {
-  addingTag.value = true
-  newTag.value = ''
-  nextTick(() => tagInputEl.value?.focus())
-}
+onMounted(async () => {
+  selectedFormat.value = settingsStore.defaultFormat
+  try {
+    book.value = await api.library.get(props.bookId)
+  } catch (e: any) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+})
 
-async function commitTag() {
-  const tag = newTag.value.trim().replace(/\s+/g, '_')
-  addingTag.value = false
-  newTag.value = ''
-  if (!tag || tagList.value.includes(tag)) return
-  await saveTags([...tagList.value, tag].join(' '))
-}
+const activeJob = computed(() =>
+  book.value
+    ? Array.from(downloadsStore.jobs.values()).find(
+        j => j.book_id === book.value!.id && j.status !== 'done' && j.status !== 'error',
+      )
+    : undefined,
+)
+const isDownloading = computed(() => !!activeJob.value)
 
-async function removeTag(tag: string) {
-  await saveTags(tagList.value.filter((t) => t !== tag).join(' '))
-}
-
-async function saveTags(tags: string) {
+async function handleDownload() {
   if (!book.value) return
-  await api.library.update(book.value.id, { tags })
-  book.value.tags = tags
-  libraryStore.updateBook(book.value.id, { tags })
+  await downloadsStore.enqueue(book.value.id, book.value.audible_id, book.value.account_id, selectedFormat.value, splitChapters.value)
 }
 
 async function setRating(star: number) {
@@ -238,45 +281,34 @@ async function toggleFinished() {
   libraryStore.updateBook(book.value.id, { is_finished })
 }
 
-onMounted(async () => {
-  // Sync selected format to latest setting each time the panel opens.
-  selectedFormat.value = settingsStore.defaultFormat
-  try {
-    book.value = await api.library.get(props.bookId)
-  } catch (e: any) {
-    error.value = e.message
-  } finally {
-    loading.value = false
-  }
-})
-
-const activeJob = computed(() =>
-  book.value
-    ? Array.from(downloadsStore.jobs.values()).find(
-        (j) => j.book_id === book.value!.id && j.status !== 'done' && j.status !== 'error',
-      )
-    : undefined,
-)
-
-const isDownloading = computed(() => !!activeJob.value)
-
-async function handleDownload() {
-  if (!book.value) return
-  await downloadsStore.enqueue(book.value.id, book.value.audible_id, book.value.account_id, selectedFormat.value, splitChapters.value)
-}
-
-const statusMap: Record<string, { label: string; cls: string }> = {
-  liberated: { label: 'Downloaded', cls: 'bg-green-700 text-green-100' },
-  error: { label: 'Error', cls: 'bg-red-700 text-red-100' },
-  partial_download: { label: 'Partial', cls: 'bg-yellow-700 text-yellow-100' },
-  not_liberated: { label: 'Not Downloaded', cls: 'bg-gray-700 text-gray-300' },
-}
-const statusClass = computed(() => statusMap[book.value?.liberation_status ?? 'not_liberated']?.cls ?? '')
-const statusLabel = computed(() => statusMap[book.value?.liberation_status ?? 'not_liberated']?.label ?? '')
-
 const tagList = computed(() =>
   book.value?.tags ? book.value.tags.split(' ').filter(Boolean) : [],
 )
+
+function startAddingTag() {
+  addingTag.value = true
+  newTag.value = ''
+  nextTick(() => tagInputEl.value?.focus())
+}
+
+async function commitTag() {
+  const tag = newTag.value.trim().replace(/\s+/g, '_')
+  addingTag.value = false
+  newTag.value = ''
+  if (!tag || tagList.value.includes(tag)) return
+  await saveTags([...tagList.value, tag].join(' '))
+}
+
+async function removeTag(tag: string) {
+  await saveTags(tagList.value.filter(t => t !== tag).join(' '))
+}
+
+async function saveTags(tags: string) {
+  if (!book.value) return
+  await api.library.update(book.value.id, { tags })
+  book.value.tags = tags
+  libraryStore.updateBook(book.value.id, { tags })
+}
 
 function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60)
