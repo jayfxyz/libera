@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/web-libation/backend/internal/audible"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -151,13 +152,21 @@ func (q *Queue) process(job DownloadJob) {
 	}) + "." + job.Format
 	outFile := filepath.Join(job.OutputDir, outName)
 
+	// Audible's chapter outline: real titles and accurate timings, embedded
+	// into the audio during decryption. Best-effort: without it the file keeps
+	// the chapters built into the Audible download.
+	chapterInfo, chapters, chaptersFile := q.fetchOutline(ctx, job)
+	if chaptersFile != "" {
+		defer os.Remove(chaptersFile)
+	}
+
 	_, ffmpegSpan := tracer.Start(ctx, "job.ffmpeg",
 		trace.WithAttributes(
 			attribute.String("ffmpeg.format", job.Format),
 			attribute.Bool("ffmpeg.aaxc", isAAXC),
 		),
 	)
-	cmd := buildDecryptCmd(ctx, info, tmpFile, outFile, job.Format)
+	cmd := buildDecryptCmd(ctx, info, tmpFile, outFile, job.Format, chaptersFile)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		ffmpegSpan.RecordError(err)
 		ffmpegSpan.SetStatus(codes.Error, strings.TrimSpace(string(out)))
@@ -169,6 +178,12 @@ func (q *Queue) process(job DownloadJob) {
 		return
 	}
 	ffmpegSpan.End()
+
+	if len(chapters) > 0 {
+		if err := writeOutlineFiles(outFile, job, chapterInfo, chapters); err != nil {
+			log.Printf("job %s: writing chapter outline failed (non-fatal): %v", job.ID, err)
+		}
+	}
 
 	// Optional chapter splitting — best-effort after successful decryption.
 	if job.SplitChapters {
@@ -192,6 +207,37 @@ func (q *Queue) process(job DownloadJob) {
 
 	log.Printf("job %s done: %s", job.ID, outFile)
 	q.setStatus(job.ID, "done", 100, outFile)
+}
+
+// fetchOutline gets Audible's chapter outline for the job's book and writes it
+// to a temporary FFMETADATA1 file. On any failure it logs, records the error on
+// a span, and returns empty values so the download carries on without it.
+func (q *Queue) fetchOutline(ctx context.Context, job DownloadJob) (*audible.ChapterInfo, []OutlineChapter, string) {
+	ctx, span := otel.Tracer("jobs").Start(ctx, "job.chapters")
+	defer span.End()
+
+	fail := func(err error) (*audible.ChapterInfo, []OutlineChapter, string) {
+		log.Printf("job %s: chapter outline unavailable (non-fatal): %v", job.ID, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, nil, ""
+	}
+
+	info, err := q.audible.GetChapters(ctx, job.AudibleAccountID, job.AudibleID)
+	if err != nil {
+		return fail(err)
+	}
+	chapters := buildOutline(info)
+	span.SetAttributes(attribute.Int("chapters.count", len(chapters)))
+	if len(chapters) == 0 {
+		return fail(errors.New("no chapters in outline"))
+	}
+
+	path := filepath.Join(os.TempDir(), job.ID+".ffmetadata")
+	if err := os.WriteFile(path, []byte(ffmetadata(chapters)), 0644); err != nil {
+		return fail(err)
+	}
+	return info, chapters, path
 }
 
 func streamDownload(ctx context.Context, url, dest string, onProgress func(float64)) error {

@@ -71,6 +71,40 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
         )
 
 
+@router.get("/{account_id}/{asin}/chapters")
+async def get_chapters(account_id: str, asin: str, quality: str = "best"):
+    """Return Audible's chapter outline (``chapter_info``) for a title.
+
+    Uses the content metadata endpoint rather than the license response: the
+    license sometimes carries incorrect chapters, while this endpoint is
+    accurate (same approach as Libation). Chapters are requested as a tree so
+    parts/sections keep their nested chapters.
+    """
+    try:
+        client = storage.load_client(account_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+
+    async with client as c:
+        try:
+            resp = await c.get(
+                f"content/{asin}/metadata",
+                params={
+                    "response_groups": "content_reference,chapter_info",
+                    "quality": "High" if quality in ("best", "high") else "Normal",
+                    "drm_type": "Adrm",
+                    "chapter_titles_type": "Tree",
+                },
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Content metadata fetch failed: {e}")
+
+    chapter_info = (resp.get("content_metadata") or {}).get("chapter_info")
+    if not chapter_info or not chapter_info.get("chapters"):
+        raise HTTPException(status_code=404, detail="No chapter info available for this title")
+    return chapter_info
+
+
 @router.get("/{account_id}/{asin}/pdf")
 async def get_pdf(account_id: str, asin: str):
     from audible_cli.models import LibraryItem

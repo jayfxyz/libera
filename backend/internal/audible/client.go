@@ -206,3 +206,33 @@ func (c *Client) do(req *http.Request, out any) error {
 
 	return json.NewDecoder(resp.Body).Decode(out)
 }
+
+// AudibleChapter is one node of Audible's chapter tree. Parts/sections carry
+// their nested chapters in Chapters; a parent's LengthMs covers only its own
+// lead-in audio (often just the narrator reading the heading), not its children.
+type AudibleChapter struct {
+	Title         string           `json:"title"`
+	StartOffsetMs int64            `json:"start_offset_ms"`
+	LengthMs      int64            `json:"length_ms"`
+	Chapters      []AudibleChapter `json:"chapters,omitempty"`
+}
+
+// ChapterInfo is Audible's chapter outline for a title (content metadata
+// chapter_info, requested with chapter_titles_type=Tree).
+type ChapterInfo struct {
+	BrandIntroDurationMs int64            `json:"brandIntroDurationMs"`
+	BrandOutroDurationMs int64            `json:"brandOutroDurationMs"`
+	IsAccurate           bool             `json:"is_accurate"`
+	RuntimeLengthMs      int64            `json:"runtime_length_ms"`
+	Chapters             []AudibleChapter `json:"chapters"`
+}
+
+// GetChapters fetches Audible's chapter outline for a title.
+func (c *Client) GetChapters(ctx context.Context, audibleAccountID, asin string) (*ChapterInfo, error) {
+	var resp ChapterInfo
+	path := fmt.Sprintf("/download/%s/%s/chapters", audibleAccountID, asin)
+	if err := c.get(ctx, path, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
