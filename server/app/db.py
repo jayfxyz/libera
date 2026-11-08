@@ -17,6 +17,15 @@ from typing import Any, Iterator
 SCHEMA = (Path(__file__).parent / "schema.sql").read_text()
 
 
+def iso_utc(value: str | None) -> str | None:
+    """SQLite's CURRENT_TIMESTAMP text ("2026-11-08 23:00:51", UTC with no zone)
+    as ISO 8601 with a Z, so browsers don't read it as local time. Values that
+    already carry a zone or a T are returned unchanged."""
+    if not value or "T" in value:
+        return value
+    return value.replace(" ", "T") + "Z"
+
+
 class Database:
     def __init__(self, path: str):
         if path != ":memory:":

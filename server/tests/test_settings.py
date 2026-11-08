@@ -59,3 +59,10 @@ def test_saved_settings_apply_at_startup(config, db):
 
 def test_health(client):
     assert client.get("/health").text == "ok"
+
+
+def test_iso_utc():
+    from app.db import iso_utc
+    assert iso_utc("2026-11-08 23:00:51") == "2026-11-08T23:00:51Z"
+    assert iso_utc("2021-12-27T21:39:12.000Z") == "2021-12-27T21:39:12.000Z"
+    assert iso_utc(None) is None
