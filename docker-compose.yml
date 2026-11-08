@@ -1,69 +1,20 @@
+# One container: the FastAPI backend serving the API and the built frontend.
+# Settings come from .env (see .env.example); the defaults work as-is.
 services:
-  jaeger:
-    image: jaegertracing/all-in-one:1.57
-    environment:
-      COLLECTOR_OTLP_ENABLED: "true"
-    ports:
-      - "16686:16686"
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    ports:
-      - "8888:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+  libation-web:
+    build: .
+    image: libation-web
     # Owner of the files written to /audiobooks and /data (default: root)
     user: "${PUID:-0}:${PGID:-0}"
-    expose:
-      - "8080"
+    ports:
+      - "${PORT:-8888}:8080"
     environment:
-      PORT: "8080"
-      DATABASE_PATH: /data/libation.db
-      AUDIBLE_SVC_URL: http://audible-svc:8081
       APP_URL: ${APP_URL:-http://localhost:8888}
-      OUTPUT_DIR: /audiobooks
-      DOWNLOAD_WORKERS: "3"
-      OTEL_SERVICE_NAME: web-libation-backend
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      # Tracing is off unless an OTLP endpoint is set (e.g. in an override file).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: libation-web
     volumes:
-      - ./data/db:/data
+      # Database (db/libation.db) and Audible login tokens (accounts/)
+      - ${DATA_DIR:-./data}:/data
       - ${AUDIOBOOKS_DIR:-./data/audiobooks}:/audiobooks
-    depends_on:
-      jaeger:
-        condition: service_started
-      audible-svc:
-        condition: service_healthy
     restart: unless-stopped
-
-  audible-svc:
-    build:
-      context: ./audible-svc
-    environment:
-      ACCOUNTS_DIR: /data/accounts
-      OTEL_SERVICE_NAME: audible-svc
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
-    volumes:
-      - audible-tokens:/data
-    expose:
-      - "8081"
-    depends_on:
-      - jaeger
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    restart: unless-stopped
-
-volumes:
-  audible-tokens:

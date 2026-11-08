@@ -87,9 +87,14 @@ Small behaviour changes, each deliberate:
 
 ## Upgrading an existing install
 
+The database stays where it is (`./data/db/libation.db`). Only the Audible
+login tokens move, out of the old sidecar's Docker volume:
+
 ```sh
-# copy Audible tokens out of the old sidecar volume into ./data/accounts
-docker run --rm -v libation-web_audible-tokens:/from -v "$PWD/data":/to alpine \
-  sh -c 'mkdir -p /to/accounts && cp -a /from/accounts/. /to/accounts/'
-docker compose up -d --build --remove-orphans
+docker run --rm -v libation-web_audible-tokens:/from:ro -v "$PWD/data":/to alpine \
+  sh -c 'mkdir -p /to/accounts && cp -a /from/accounts/. /to/accounts/ && chmod 600 /to/accounts/*'
+# if PUID/PGID are set in .env, give that user the folder: chown -R <PUID>:<PGID> data/accounts
+docker compose up -d --build --remove-orphans   # replaces the three old containers
 ```
+
+Once it works, the old volume can go: `docker volume rm libation-web_audible-tokens`.
