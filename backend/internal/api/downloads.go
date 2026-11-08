@@ -33,18 +33,20 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		language         string
 		lengthMinutes    int
 		dateAdded        string
+		datePublished    string
 	}
 	var meta bookMeta
 	if err := h.db.QueryRowContext(r.Context(),
 		`SELECT a.audible_account_id, b.title,
-		        COALESCE(b.language,''), COALESCE(b.length_minutes,0), COALESCE(lb.date_added,'')
+		        COALESCE(b.language,''), COALESCE(b.length_minutes,0), COALESCE(lb.date_added,''),
+		        COALESCE(b.date_published,'')
 		 FROM accounts a
 		 JOIN library_books lb ON lb.account_id = a.id
 		 JOIN books b ON b.id = lb.book_id
 		 WHERE a.id = ? AND b.id = ?`,
 		req.AccountID, req.BookID).Scan(
 		&meta.audibleAccountID, &meta.title,
-		&meta.language, &meta.lengthMinutes, &meta.dateAdded); err != nil {
+		&meta.language, &meta.lengthMinutes, &meta.dateAdded, &meta.datePublished); err != nil {
 		httpError(w, err, http.StatusNotFound)
 		return
 	}
@@ -73,8 +75,11 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		 JOIN series_books sb ON sb.series_id = s.id
 		 WHERE sb.book_id = ? LIMIT 1`, req.BookID).Scan(&seriesName, &seriesIndex)
 
+	// {year} is the publication year; fall back to when it joined the library.
 	year := ""
-	if len(meta.dateAdded) >= 4 {
+	if len(meta.datePublished) >= 4 {
+		year = meta.datePublished[:4]
+	} else if len(meta.dateAdded) >= 4 {
 		year = meta.dateAdded[:4]
 	}
 

@@ -61,21 +61,31 @@ func (h *handlers) listLibrary(w http.ResponseWriter, r *http.Request) {
 		err  error
 	)
 
+	orderBy, ok := libraryOrderBy(q.Get("sort"), q.Get("order"))
+	if !ok {
+		http.Error(w, "invalid sort or order", http.StatusBadRequest)
+		return
+	}
+
 	if search != "" {
+		// Without an explicit sort, search results stay in relevance order.
+		if q.Get("sort") == "" {
+			orderBy = "rank"
+		}
 		rows, err = h.db.QueryContext(r.Context(), `
 			SELECT b.id, b.audible_id, b.title, b.cover_url, lb.liberation_status, lb.is_finished, lb.is_deleted, lb.tags, lb.account_id
 			FROM books b
 			JOIN library_books lb ON lb.book_id = b.id
 			JOIN books_fts f ON f.rowid = b.id
 			WHERE books_fts MATCH ?
-			ORDER BY rank
+			ORDER BY `+orderBy+`
 			LIMIT ? OFFSET ?`, search, pageSize, offset)
 	} else {
 		rows, err = h.db.QueryContext(r.Context(), `
 			SELECT b.id, b.audible_id, b.title, b.cover_url, lb.liberation_status, lb.is_finished, lb.is_deleted, lb.tags, lb.account_id
 			FROM books b
 			JOIN library_books lb ON lb.book_id = b.id
-			ORDER BY lb.is_deleted ASC, b.title
+			ORDER BY lb.is_deleted ASC, `+orderBy+`
 			LIMIT ? OFFSET ?`, pageSize, offset)
 	}
 	if err != nil {
@@ -95,6 +105,69 @@ func (h *handlers) listLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, books)
+}
+
+// librarySort is one way the library can be ordered. Each key expression is
+// fixed SQL over books b / library_books lb; nothing user-supplied reaches the
+// ORDER BY clause.
+type librarySort struct {
+	keys       []string // SQL expressions, most significant first
+	defaultDir string   // "asc" or "desc": the natural direction for this sort
+}
+
+// primaryAuthorSQL is the book's first-listed author.
+const primaryAuthorSQL = `(SELECT c.name FROM book_contributors bc
+	JOIN contributors c ON c.id = bc.contributor_id
+	WHERE bc.book_id = b.id AND bc.role = 'author'
+	ORDER BY bc.rowid LIMIT 1)`
+
+const seriesNameSQL = `(SELECT s.name FROM series_books sb JOIN series s ON s.id = sb.series_id
+	WHERE sb.book_id = b.id ORDER BY sb.rowid LIMIT 1)`
+
+const seriesIndexSQL = `(SELECT CAST(NULLIF(sb.book_index, '') AS REAL) FROM series_books sb
+	WHERE sb.book_id = b.id ORDER BY sb.rowid LIMIT 1)`
+
+var librarySorts = map[string]librarySort{
+	"title":      {[]string{"b.title COLLATE NOCASE"}, "asc"},
+	"author":     {[]string{primaryAuthorSQL + " COLLATE NOCASE"}, "asc"},
+	"added":      {[]string{"lb.date_added"}, "desc"},
+	"released":   {[]string{"NULLIF(b.date_published, '')"}, "desc"},
+	"length":     {[]string{"b.length_minutes"}, "desc"},
+	"series":     {[]string{seriesNameSQL + " COLLATE NOCASE", seriesIndexSQL}, "asc"},
+	"rating":     {[]string{"NULLIF(b.audible_rating, 0)"}, "desc"},
+	"downloaded": {[]string{"lb.last_downloaded"}, "desc"},
+}
+
+// libraryOrderBy builds the ORDER BY list for a sort name and direction.
+// An empty sort means title; an empty order means the sort's natural
+// direction. Books missing the sorted value always come last, and ties fall
+// back to title. ok is false for an unknown sort or order.
+func libraryOrderBy(sortName, order string) (string, bool) {
+	if sortName == "" {
+		sortName = "title"
+	}
+	s, found := librarySorts[sortName]
+	if !found {
+		return "", false
+	}
+	dir := s.defaultDir
+	switch order {
+	case "":
+	case "asc", "desc":
+		dir = order
+	default:
+		return "", false
+	}
+
+	parts := make([]string, 0, len(s.keys)+2)
+	for _, k := range s.keys {
+		parts = append(parts, k+" "+strings.ToUpper(dir)+" NULLS LAST")
+	}
+	if sortName != "title" {
+		parts = append(parts, "b.title COLLATE NOCASE ASC")
+	}
+	parts = append(parts, "b.id ASC")
+	return strings.Join(parts, ", "), true
 }
 
 func (h *handlers) getBook(w http.ResponseWriter, r *http.Request) {
@@ -228,14 +301,17 @@ func importLibrary(ctx context.Context, db *sql.DB, accountID int64, books []aud
 		// the previous INSERT's rowid (not the updated row) when the UPSERT hits
 		// the ON CONFLICT DO UPDATE path in modernc/sqlite.
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO books (audible_id, title, subtitle, description, length_minutes, locale, cover_url, publisher, audible_rating)
-			VALUES (?, ?, ?, ?, ?, '', ?, ?, ?)
+			INSERT INTO books (audible_id, title, subtitle, description, length_minutes, locale, cover_url, publisher, audible_rating, language, date_published)
+			VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))
 			ON CONFLICT(audible_id) DO UPDATE SET
 				title = excluded.title,
 				cover_url = excluded.cover_url,
-				audible_rating = excluded.audible_rating`,
+				audible_rating = excluded.audible_rating,
+				language = COALESCE(excluded.language, books.language),
+				date_published = COALESCE(excluded.date_published, books.date_published)`,
 			b.AudibleID, b.Title, b.Subtitle, b.Description,
-			b.LengthMinutes, b.CoverURL, b.Publisher, b.AudibleRating); err != nil {
+			b.LengthMinutes, b.CoverURL, b.Publisher, b.AudibleRating,
+			b.Language, b.DatePublished); err != nil {
 			return 0, err
 		}
 		var bookID int64

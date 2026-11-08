@@ -25,6 +25,9 @@ export interface Account {
   last_scanned_at: string | null
 }
 
+export type LibrarySort = 'title' | 'author' | 'added' | 'released' | 'length' | 'series' | 'rating' | 'downloaded'
+export type SortOrder = 'asc' | 'desc'
+
 export interface BookSummary {
   id: number
   audible_id: string
@@ -91,10 +94,12 @@ export const api = {
   },
 
   library: {
-    list: (params?: { q?: string; page?: number }) => {
+    list: (params?: { q?: string; page?: number; sort?: LibrarySort; order?: SortOrder }) => {
       const qs = new URLSearchParams()
       if (params?.q) qs.set('q', params.q)
       if (params?.page) qs.set('page', String(params.page))
+      if (params?.sort) qs.set('sort', params.sort)
+      if (params?.order) qs.set('order', params.order)
       const query = qs.toString() ? `?${qs}` : ''
       return request<BookSummary[]>('GET', `/library${query}`)
     },

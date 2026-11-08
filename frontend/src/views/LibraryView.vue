@@ -50,7 +50,8 @@
         />
       </div>
 
-      <!-- Filter pills -->
+      <!-- Filter pills + sort -->
+      <div class="flex items-center justify-between gap-4 flex-wrap">
       <div class="flex gap-2 flex-wrap">
         <Badge
           v-for="pill in pills"
@@ -62,6 +63,33 @@
           {{ pill.label }}
           <span class="ml-1 opacity-60 text-xs">({{ pill.count }})</span>
         </Badge>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span class="text-sm text-muted-foreground">Sort by</span>
+        <Select :model-value="store.sort" @update:model-value="(v) => store.setSort(v as LibrarySort)">
+          <SelectTrigger class="w-48 h-8" aria-label="Sort by">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="opt in sortOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          class="h-8 w-8 p-0"
+          :aria-label="store.order === 'asc' ? 'Ascending, click for descending' : 'Descending, click for ascending'"
+          :title="orderHint"
+          @click="store.toggleOrder()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform" :class="store.order === 'desc' ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+          </svg>
+        </Button>
+      </div>
       </div>
     </div>
 
@@ -104,10 +132,11 @@ import BookDetailPanel from '@/components/library/BookDetailPanel.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useLibraryStore } from '@/stores/library'
+import { useLibraryStore, sortOptions } from '@/stores/library'
 import type { StatusFilter } from '@/stores/library'
-import type { BookSummary } from '@/api/client'
+import type { BookSummary, LibrarySort } from '@/api/client'
 import { api } from '@/api/client'
 
 const store = useLibraryStore()
@@ -138,6 +167,23 @@ function onSearch() {
 function onBookSelect(book: BookSummary) {
   selectedBook.value = book
 }
+
+// Plain-words description of the current direction, for the toggle's tooltip.
+const orderHint = computed(() => {
+  const asc = store.order === 'asc'
+  switch (store.sort) {
+    case 'title':
+    case 'author':
+    case 'series':
+      return asc ? 'A → Z' : 'Z → A'
+    case 'length':
+      return asc ? 'Shortest first' : 'Longest first'
+    case 'rating':
+      return asc ? 'Lowest first' : 'Highest first'
+    default:
+      return asc ? 'Oldest first' : 'Newest first'
+  }
+})
 
 type Pill = { label: string; value: StatusFilter; count: number }
 
