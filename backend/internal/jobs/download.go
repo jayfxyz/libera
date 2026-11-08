@@ -121,7 +121,7 @@ func (q *Queue) process(job DownloadJob) {
 			f.Close()
 			snippet = snippet[:n]
 		}
-		errMsg := fmt.Sprintf("download returned %d bytes (expected an audiobook file): %s", fi.Size(), strings.TrimSpace(string(snippet)))
+		errMsg := tinyDownloadError(fi.Size(), string(snippet), info.LicenseDenied)
 		err := errors.New(errMsg)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, errMsg)
@@ -210,6 +210,18 @@ func (q *Queue) process(job DownloadJob) {
 
 	log.Printf("job %s done: %s", job.ID, outFile)
 	q.setStatus(job.ID, "done", 100, outFile)
+}
+
+// tinyDownloadError explains a download too small to be an audiobook. When
+// Audible refused the AAXC license, the AAX fallback typically returns a short
+// error ("No Library Record Found" for newer titles) that hides the real
+// cause, so the license reason leads.
+func tinyDownloadError(size int64, body, licenseDenied string) string {
+	body = strings.TrimSpace(body)
+	if licenseDenied != "" {
+		return fmt.Sprintf("%s (fallback AAX download also failed: %s)", licenseDenied, body)
+	}
+	return fmt.Sprintf("download returned %d bytes (expected an audiobook file): %s", size, body)
 }
 
 // bookDirectory is the folder a book's files are written to: a folder named by

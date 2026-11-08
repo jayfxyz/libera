@@ -114,6 +114,9 @@ type DownloadInfoResponse struct {
 	ActivationBytes string `json:"activation_bytes"` // AAX only
 	Key             string `json:"key"`              // AAXC only
 	IV              string `json:"iv"`               // AAXC only
+	// LicenseDenied explains why Audible refused the AAXC license when the
+	// sidecar fell back to AAX; empty otherwise.
+	LicenseDenied string `json:"license_denied"`
 }
 
 func (c *Client) GetDownloadInfo(ctx context.Context, audibleAccountID, asin string) (*DownloadInfoResponse, error) {

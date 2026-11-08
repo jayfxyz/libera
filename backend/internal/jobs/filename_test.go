@@ -79,3 +79,14 @@ func TestBookDirectory(t *testing.T) {
 		t.Errorf("unsafe/missing values: got %q", got)
 	}
 }
+
+func TestTinyDownloadError(t *testing.T) {
+	got := tinyDownloadError(33, " No Library Record Found for user.\n", "Audible is temporarily refusing download licenses for this account.")
+	want := "Audible is temporarily refusing download licenses for this account. (fallback AAX download also failed: No Library Record Found for user.)"
+	if got != want {
+		t.Errorf("with license reason:\n got %q\nwant %q", got, want)
+	}
+	if got := tinyDownloadError(33, "oops", ""); got != "download returned 33 bytes (expected an audiobook file): oops" {
+		t.Errorf("without license reason: got %q", got)
+	}
+}

@@ -15,6 +15,49 @@ class DownloadInfoResponse(BaseModel):
     activation_bytes: str = ""  # AAX only
     key: str = ""               # AAXC only
     iv: str = ""                # AAXC only
+    # Why Audible refused the AAXC license, when the download fell back to AAX.
+    # The AAX fallback only works for older titles, so this is usually the real
+    # reason a download fails.
+    license_denied: str = ""
+
+
+class _LicenseCapture:
+    """Proxy for an audible client that keeps the last license response.
+
+    audible-cli raises a bare LicenseDenied and drops Audible's denial reasons;
+    capturing the response lets us tell the user why (e.g. throttling).
+    """
+
+    def __init__(self, client):
+        self._client = client
+        self.license_response = None
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    async def post(self, path, *args, **kwargs):
+        resp = await self._client.post(path, *args, **kwargs)
+        if str(path).endswith("/licenserequest"):
+            self.license_response = resp
+        return resp
+
+
+def describe_license_denial(license_response) -> str:
+    """Plain-language reason for a denied license, or "" if it wasn't denied.
+
+    Audible lists every route it tried (membership, ownership, client, ...).
+    For a purchased title the ownership check is the one that matters.
+    """
+    cl = (license_response or {}).get("content_license") or {}
+    if cl.get("status_code") != "Denied":
+        return ""
+    reasons = cl.get("license_denial_reasons") or []
+    if any(r.get("rejectionReason") == "CustomerThrottled" for r in reasons):
+        return ("Audible is temporarily refusing download licenses for this account "
+                "(throttled after heavy downloading). It usually clears within a day or two.")
+    ownership = [r.get("message", "") for r in reasons if r.get("validationType") == "Ownership"]
+    detail = "; ".join(m for m in ownership if m) or cl.get("message") or "no reason given"
+    return f"Audible denied the download license: {detail}"
 
 
 @router.get("/{account_id}/{asin}", response_model=DownloadInfoResponse)
@@ -36,7 +79,8 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
             raise HTTPException(status_code=502, detail=f"Library fetch failed: {e}")
 
         item_data = resp.get("item", {})
-        item = LibraryItem(data=item_data, api_client=c, parent=None, response_groups="product_attrs,customer_rights")
+        capture = _LicenseCapture(c)
+        item = LibraryItem(data=item_data, api_client=capture, parent=None, response_groups="product_attrs,customer_rights")
 
         # Try AAXC first — its offline_url is a pre-signed URL that works without
         # additional auth headers. AAX URLs require the audible session cookies.
@@ -55,18 +99,22 @@ async def get_download_info(account_id: str, asin: str, quality: str = "best"):
             )
         except Exception as aaxc_err:
             log.info("AAXC not available for %s (%s), trying AAX", asin, aaxc_err)
+        denied = describe_license_denial(capture.license_response)
+        if denied:
+            log.warning("AAXC license denied for %s: %s", asin, denied)
 
         # Fall back to AAX
         try:
             url, codec = await item.get_aax_url_old(quality)
         except Exception as e:
             log.error("get_aax_url_old failed for %s: %s", asin, e, exc_info=True)
-            raise HTTPException(status_code=502, detail=f"Get download URL failed: {e}")
+            raise HTTPException(status_code=502, detail=denied or f"Get download URL failed: {e}")
 
         return DownloadInfoResponse(
             download_url=str(url),
             codec=codec,
             format="aax",
+            license_denied=denied,
             activation_bytes=_get_activation_bytes(c),
         )
 
