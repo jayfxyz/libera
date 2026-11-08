@@ -14,7 +14,7 @@
     <div v-if="loading" class="flex-1 flex items-center justify-center text-muted-foreground">Loading…</div>
     <div v-else-if="error" class="flex-1 flex items-center justify-center text-destructive text-sm p-4">{{ error }}</div>
 
-    <ScrollArea v-else-if="book" class="flex-1">
+    <ScrollArea v-else-if="book" class="flex-1 min-h-0">
       <div class="p-4 space-y-6">
         <!-- Cover -->
         <div class="aspect-square rounded-lg overflow-hidden bg-muted">

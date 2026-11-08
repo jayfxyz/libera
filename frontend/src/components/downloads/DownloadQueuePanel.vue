@@ -14,7 +14,7 @@
     </div>
 
     <!-- Job list -->
-    <ScrollArea class="flex-1">
+    <ScrollArea class="flex-1 min-h-0">
       <div class="p-4 space-y-6">
         <!-- Active -->
         <div v-if="activeJobs.length > 0" class="space-y-3">
