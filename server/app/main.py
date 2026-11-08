@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import PlainTextResponse
 
 from .api import accounts as accounts_api
@@ -18,6 +20,7 @@ from .context import AppContext
 from .db import Database
 from .jobs.download import make_runner
 from .jobs.queue import DownloadQueue
+from .static import FrontendFiles
 from .telemetry import init_tracing
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -57,6 +60,13 @@ def create_app(config: Config | None = None, db: Database | None = None,
         app.include_router(module.router, prefix="/api")
     for path in ("/ws/downloads", "/api/ws/downloads"):
         app.add_api_websocket_route(path, downloads_api.download_progress)
+
+    # The built frontend, last so the API and WebSocket routes match first.
+    if config.frontend_dir and os.path.isdir(config.frontend_dir):
+        app.mount("/", FrontendFiles(config.frontend_dir), name="frontend")
+    elif config.frontend_dir:
+        log.warning("FRONTEND_DIR %s not found; serving the API only", config.frontend_dir)
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     init_tracing(app)
     return app
