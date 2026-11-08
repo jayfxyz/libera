@@ -124,6 +124,9 @@ Features ranked by value added on top of a bare library viewer.
 - [x] **OpenTelemetry tracing** — optional OTLP export (set `OTEL_EXPORTER_OTLP_ENDPOINT`); FastAPI and httpx instrumented; a download is one trace: request → `job.enqueue` → `job.process` → Audible calls, `job.download`, `job.chapters`, `job.ffmpeg`
   - `server/app/telemetry.py`, `server/app/jobs/download.py`
 
+- [ ] **Slimmer Docker image** — the image is 671 MB, mostly Debian's `ffmpeg` package and its codec libraries. A minimal ffmpeg (only the mov/mp4 demuxer with Audible decryption, the AAC copy path and LAME for MP3), e.g. a static build copied in, would cut it substantially. Keep `python:3.12-slim-trixie` for SQLite >= 3.43.
+  - `Dockerfile`
+
 - [ ] **Activation bytes caching** — `get_activation_bytes(extract=True)` called on every AAX download; no caching; slow and potentially rate-limited by Audible
   - `server/app/audible_api/content.py` → `_activation_bytes`
 
