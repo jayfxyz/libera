@@ -4,9 +4,6 @@ frontend/node_modules/
 # Build output
 frontend/dist/
 
-# Go build artifacts
-backend/server
-
 # Data directory (DB + audiobooks)
 data/
 
@@ -20,9 +17,6 @@ audiobooks/
 
 # Environment
 .env
-
-# Audible tokens
-audible-svc/data/
 
 # Libation source (submodule/reference copy)
 Libation/

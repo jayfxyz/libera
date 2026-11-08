@@ -1,69 +1,31 @@
 {
   "version": "0.2.0",
   "configurations": [
-    // ── Go backend ─────────────────────────────────────────────────────────
     {
-      "name": "Go: Launch Backend",
-      "type": "go",
-      "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/backend/cmd/server",
-      "cwd": "${workspaceFolder}/backend",
-      "envFile": "${workspaceFolder}/.env",
-      "env": {
-        "PORT": "8080",
-        "AUDIBLE_SVC_URL": "http://localhost:8081"
-      }
-    },
-    {
-      // Start backend manually with Delve:
-      //   cd backend && dlv debug --headless --listen=:2345 --api-version=2 ./cmd/server
-      "name": "Go: Attach to Backend (Delve :2345)",
-      "type": "go",
-      "request": "attach",
-      "mode": "remote",
-      "host": "127.0.0.1",
-      "port": 2345
-    },
-
-    // ── FastAPI sidecar ────────────────────────────────────────────────────
-    {
-      "name": "Python: Launch FastAPI Sidecar",
+      // API + WebSocket on :8080. Run the frontend with `npm run dev` in
+      // frontend/; Vite proxies /api and /ws here.
+      "name": "Python: Launch server",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
-      "args": ["main:app", "--host", "0.0.0.0", "--port", "8081"],
-      "cwd": "${workspaceFolder}/audible-svc",
-      "jinja": true,
+      "args": ["app.main:app", "--host", "0.0.0.0", "--port", "8080"],
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "DATABASE_PATH": "${workspaceFolder}/data/db/libation.db",
+        "ACCOUNTS_DIR": "${workspaceFolder}/data/accounts",
+        "OUTPUT_DIR": "${workspaceFolder}/data/audiobooks"
+      },
       "justMyCode": false
     },
     {
-      // Start sidecar manually with debugpy:
-      //   cd audible-svc && python -m debugpy --listen 5678 -m uvicorn main:app --host 0.0.0.0 --port 8081
-      "name": "Python: Attach to FastAPI Sidecar (debugpy :5678)",
+      // Start the server with debugpy yourself:
+      //   cd server && python -m debugpy --listen 5678 -m uvicorn app.main:app --port 8080
+      "name": "Python: Attach to server (debugpy :5678)",
       "type": "debugpy",
       "request": "attach",
-      "connect": {
-        "host": "127.0.0.1",
-        "port": 5678
-      },
-      "pathMappings": [
-        {
-          "localRoot": "${workspaceFolder}/audible-svc",
-          "remoteRoot": "."
-        }
-      ],
+      "connect": { "host": "127.0.0.1", "port": 5678 },
+      "pathMappings": [{ "localRoot": "${workspaceFolder}/server", "remoteRoot": "." }],
       "justMyCode": false
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Launch: Backend + FastAPI Sidecar",
-      "configurations": [
-        "Go: Launch Backend",
-        "Python: Launch FastAPI Sidecar"
-      ],
-      "stopAll": true
     }
   ]
 }
