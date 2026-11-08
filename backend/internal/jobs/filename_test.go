@@ -59,3 +59,23 @@ func TestRenderFilename_FallbackToTitle(t *testing.T) {
 		t.Errorf("empty template should fall back to title, got %q", got)
 	}
 }
+
+func TestBookDirectory(t *testing.T) {
+	data := FilenameData{Title: "The Name of the Wind", Authors: "Patrick Rothfuss"}
+
+	if got := bookDirectory("/audiobooks", "{author} - {title}", data); got != "/audiobooks/Patrick Rothfuss - The Name of the Wind" {
+		t.Errorf("default template: got %q", got)
+	}
+	if got := bookDirectory("/audiobooks", "", data); got != "/audiobooks" {
+		t.Errorf("empty template should use output dir, got %q", got)
+	}
+	if got := bookDirectory("/audiobooks", "  ", data); got != "/audiobooks" {
+		t.Errorf("blank template should use output dir, got %q", got)
+	}
+	// Missing author: no dangling separator. A "/" in metadata must not create
+	// a nested folder.
+	got := bookDirectory("/audiobooks", "{author} - {title}", FilenameData{Title: "AC/DC: A Story"})
+	if got != "/audiobooks/AC_DC_ A Story" {
+		t.Errorf("unsafe/missing values: got %q", got)
+	}
+}

@@ -133,14 +133,7 @@ func (q *Queue) process(job DownloadJob) {
 	// Decrypt with ffmpeg
 	q.setStatus(job.ID, "decrypting", 100, "")
 
-	if err := os.MkdirAll(job.OutputDir, 0755); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		q.setStatus(job.ID, "error", 0, fmt.Sprintf("mkdir: %v", err))
-		return
-	}
-
-	outName := renderFilename(job.FilenameTemplate, FilenameData{
+	nameData := FilenameData{
 		Title:       job.Title,
 		Authors:     job.Authors,
 		Narrators:   job.Narrators,
@@ -149,8 +142,20 @@ func (q *Queue) process(job DownloadJob) {
 		Year:        job.Year,
 		Language:    job.Language,
 		DurationH:   job.DurationH,
-	}) + "." + job.Format
-	outFile := filepath.Join(job.OutputDir, outName)
+	}
+	bookDir := bookDirectory(job.OutputDir, job.FolderTemplate, nameData)
+	span.SetAttributes(attribute.String("job.book_dir", bookDir))
+
+	if err := os.MkdirAll(bookDir, 0755); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		q.setStatus(job.ID, "error", 0, fmt.Sprintf("mkdir: %v", err))
+		q.markError(job.BookID)
+		return
+	}
+
+	baseName := renderFilename(job.FilenameTemplate, nameData)
+	outFile := filepath.Join(bookDir, baseName+"."+job.Format)
 
 	// Audible's chapter outline: real titles and accurate timings, embedded
 	// into the audio during decryption. Best-effort: without it the file keeps
@@ -188,7 +193,7 @@ func (q *Queue) process(job DownloadJob) {
 	// Optional chapter splitting — best-effort after successful decryption.
 	if job.SplitChapters {
 		q.setStatus(job.ID, "decrypting", 100, "splitting chapters…")
-		if err := splitIntoChapters(ctx, outFile, job.OutputDir, job.Title, job.FilenameTemplate, job); err != nil {
+		if err := splitIntoChapters(ctx, outFile, bookDir, job.Title, job.FilenameTemplate, job); err != nil {
 			log.Printf("job %s: chapter split failed (non-fatal): %v", job.ID, err)
 		}
 	}
@@ -196,9 +201,7 @@ func (q *Queue) process(job DownloadJob) {
 	q.markLiberated(job.BookID, job.Format)
 
 	// Best-effort PDF companion download — does not affect job status on failure.
-	pdfPath := filepath.Join(job.OutputDir, renderFilename(job.FilenameTemplate, FilenameData{
-		Title: job.Title, Authors: job.Authors, SeriesName: job.SeriesName,
-	})+".pdf")
+	pdfPath := filepath.Join(bookDir, baseName+".pdf")
 	if downloaded, pdfErr := q.audible.DownloadPDF(ctx, job.AudibleAccountID, job.AudibleID, pdfPath); pdfErr != nil {
 		log.Printf("job %s: PDF download failed (non-fatal): %v", job.ID, pdfErr)
 	} else if downloaded {
@@ -207,6 +210,16 @@ func (q *Queue) process(job DownloadJob) {
 
 	log.Printf("job %s done: %s", job.ID, outFile)
 	q.setStatus(job.ID, "done", 100, outFile)
+}
+
+// bookDirectory is the folder a book's files are written to: a folder named by
+// folderTemplate inside outputDir, or outputDir itself when the template is
+// empty.
+func bookDirectory(outputDir, folderTemplate string, data FilenameData) string {
+	if strings.TrimSpace(folderTemplate) == "" {
+		return outputDir
+	}
+	return filepath.Join(outputDir, renderFilename(folderTemplate, data))
 }
 
 // fetchOutline gets Audible's chapter outline for the job's book and writes it

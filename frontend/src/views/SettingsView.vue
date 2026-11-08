@@ -84,20 +84,41 @@
         <Card class="p-6">
           <div class="space-y-6">
             <div>
-              <h3 class="text-lg font-semibold">File Naming Template</h3>
-              <p class="text-sm text-muted-foreground">Customize how downloaded files are named</p>
+              <h3 class="text-lg font-semibold">File Naming</h3>
+              <p class="text-sm text-muted-foreground">Customize how each book's folder and files are named</p>
             </div>
 
             <Separator />
 
             <div class="space-y-4">
               <div class="space-y-2">
-                <Label>Template</Label>
-                <Input v-model="settings.filename_template" placeholder="{author} - {title}" class="font-mono" />
+                <Label>Book folder</Label>
+                <Input
+                  v-model="settings.folder_template"
+                  placeholder="{author} - {title}"
+                  class="font-mono"
+                  @focus="activeTemplate = 'folder_template'"
+                />
                 <p class="text-xs text-muted-foreground">
-                  Example: <span class="font-mono">Patrick Rothfuss - The Name of the Wind.m4b</span>
+                  Each book gets its own folder in the output directory, holding the audio, chapter files and PDF.
+                  Leave empty to save files directly in the output directory.
                 </p>
               </div>
+
+              <div class="space-y-2">
+                <Label>File name</Label>
+                <Input
+                  v-model="settings.filename_template"
+                  placeholder="{title}"
+                  class="font-mono"
+                  @focus="activeTemplate = 'filename_template'"
+                />
+              </div>
+
+              <p class="text-xs text-muted-foreground">
+                Result:
+                <span class="font-mono break-all">{{ examplePath }}</span>
+              </p>
 
               <div class="space-y-2">
                 <Label>Available Tags</Label>
@@ -106,13 +127,15 @@
                     v-for="{ tag, description } in templateTags"
                     :key="tag"
                     class="flex items-start gap-2 p-2 rounded bg-muted/50 cursor-pointer hover:bg-muted transition-colors text-sm"
-                    @click="settings.filename_template += ' ' + tag"
+                    @click="appendTag(tag)"
                   >
                     <code class="text-xs font-mono bg-background px-1.5 py-0.5 rounded border shrink-0">{{ tag }}</code>
                     <span class="text-xs text-muted-foreground">{{ description }}</span>
                   </div>
                 </div>
-                <p class="text-xs text-muted-foreground">Click a tag to append it to your template</p>
+                <p class="text-xs text-muted-foreground">
+                  Click a tag to append it to the {{ activeTemplate === 'folder_template' ? 'book folder' : 'file name' }} template
+                </p>
               </div>
             </div>
           </div>
@@ -150,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Settings } from '@/api/client'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
@@ -174,6 +197,39 @@ const templateTags = [
   { tag: '{language}', description: 'Language code' },
   { tag: '{duration_h}', description: 'Duration in hours' },
 ]
+
+// Which template the tag buttons append to: the last one focused.
+const activeTemplate = ref<'folder_template' | 'filename_template'>('folder_template')
+
+function appendTag(tag: string) {
+  if (!settings.value) return
+  const current = settings.value[activeTemplate.value]
+  settings.value[activeTemplate.value] = current ? `${current} ${tag}` : tag
+}
+
+// Preview using the same sample book as the placeholder text.
+const sample: Record<string, string> = {
+  '{title}': 'The Name of the Wind',
+  '{author}': 'Patrick Rothfuss',
+  '{narrator}': 'Nick Podehl',
+  '{series}': 'The Kingkiller Chronicle',
+  '{series_index}': '1',
+  '{year}': '2007',
+  '{language}': 'english',
+  '{duration_h}': '27',
+}
+
+function render(tmpl: string) {
+  return tmpl.replace(/\{[a-z_]+\}/g, (t) => sample[t] ?? t).trim()
+}
+
+const examplePath = computed(() => {
+  if (!settings.value) return ''
+  const s = settings.value
+  const file = `${render(s.filename_template) || sample['{title}']}.${s.default_format}`
+  const folder = render(s.folder_template)
+  return [s.output_dir, folder, file].filter(Boolean).join('/').replace(/\/{2,}/g, '/')
+})
 
 onMounted(async () => {
   settings.value = await api.settings.get()

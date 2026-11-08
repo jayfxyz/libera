@@ -22,9 +22,9 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err, http.StatusBadRequest)
 		return
 	}
-	outputDir, defaultFormat, filenameTemplate, _ := h.cfg.Read()
+	settings := h.cfg.Read()
 	if req.Format == "" {
-		req.Format = defaultFormat
+		req.Format = settings.DefaultFormat
 	}
 
 	type bookMeta struct {
@@ -98,8 +98,9 @@ func (h *handlers) enqueueDownload(w http.ResponseWriter, r *http.Request) {
 		LengthMinutes:    meta.lengthMinutes,
 		DateAdded:        meta.dateAdded,
 		Format:           req.Format,
-		OutputDir:        outputDir,
-		FilenameTemplate: filenameTemplate,
+		OutputDir:        settings.OutputDir,
+		FilenameTemplate: settings.FilenameTemplate,
+		FolderTemplate:   settings.FolderTemplate,
 		SplitChapters:    req.SplitChapters,
 		DurationH:        durationH,
 		Year:             year,

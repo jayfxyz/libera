@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -366,25 +366,36 @@ func upsertContributor(ctx context.Context, tx *sql.Tx, bookID int64, name, role
 	return err
 }
 
+// audioFilesOnDisk maps the basename (without extension) of every .m4b/.mp3
+// under root, including inside per-book folders, to its format. Hidden
+// directories are skipped.
+func audioFilesOnDisk(root string) (map[string]string, error) {
+	onDisk := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(d.Name()))
+		if ext != ".m4b" && ext != ".mp3" {
+			return nil
+		}
+		onDisk[strings.TrimSuffix(d.Name(), filepath.Ext(d.Name()))] = strings.TrimPrefix(ext, ".")
+		return nil
+	})
+	return onDisk, err
+}
+
 func (h *handlers) rescanFiles(w http.ResponseWriter, r *http.Request) {
-	entries, err := os.ReadDir(h.cfg.OutputDir)
+	onDisk, err := audioFilesOnDisk(h.cfg.OutputDirectory())
 	if err != nil {
 		httpError(w, err, http.StatusInternalServerError)
 		return
-	}
-
-	// Build a map of basename (no ext) → format for audio files on disk
-	onDisk := map[string]string{}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(e.Name()))
-		if ext != ".m4b" && ext != ".mp3" {
-			continue
-		}
-		base := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
-		onDisk[base] = strings.TrimPrefix(ext, ".")
 	}
 
 	if len(onDisk) == 0 {

@@ -11,15 +11,21 @@ import (
 type Config struct {
 	mu sync.RWMutex
 
-	Port            string
-	DatabasePath    string
-	AudibleSvcURL   string
-	AppURL          string
-	OutputDir       string
-	DownloadWorkers int
+	Port             string
+	DatabasePath     string
+	AudibleSvcURL    string
+	AppURL           string
+	OutputDir        string
+	DownloadWorkers  int
 	DefaultFormat    string // "m4b" or "mp3"
 	FilenameTemplate string // e.g. "{author} - {title}"
+	// FolderTemplate names the per-book folder created inside OutputDir to hold
+	// the audio and its companion files. Empty puts files directly in OutputDir.
+	FolderTemplate string
 }
+
+// DefaultFolderTemplate gives "Patrick Rothfuss - The Name of the Wind".
+const DefaultFolderTemplate = "{author} - {title}"
 
 func Load() *Config {
 	viper.SetDefault("PORT", "8080")
@@ -30,6 +36,7 @@ func Load() *Config {
 	viper.SetDefault("DOWNLOAD_WORKERS", 3)
 	viper.SetDefault("DEFAULT_FORMAT", "m4b")
 	viper.SetDefault("FILENAME_TEMPLATE", "{title}")
+	viper.SetDefault("FOLDER_TEMPLATE", DefaultFolderTemplate)
 
 	viper.SetConfigFile(".env")
 	viper.SetConfigType("env")
@@ -40,14 +47,15 @@ func Load() *Config {
 	}
 
 	return &Config{
-		Port:            viper.GetString("PORT"),
-		DatabasePath:    viper.GetString("DATABASE_PATH"),
-		AudibleSvcURL:   viper.GetString("AUDIBLE_SVC_URL"),
-		AppURL:          viper.GetString("APP_URL"),
-		OutputDir:       viper.GetString("OUTPUT_DIR"),
-		DownloadWorkers: viper.GetInt("DOWNLOAD_WORKERS"),
+		Port:             viper.GetString("PORT"),
+		DatabasePath:     viper.GetString("DATABASE_PATH"),
+		AudibleSvcURL:    viper.GetString("AUDIBLE_SVC_URL"),
+		AppURL:           viper.GetString("APP_URL"),
+		OutputDir:        viper.GetString("OUTPUT_DIR"),
+		DownloadWorkers:  viper.GetInt("DOWNLOAD_WORKERS"),
 		DefaultFormat:    viper.GetString("DEFAULT_FORMAT"),
 		FilenameTemplate: viper.GetString("FILENAME_TEMPLATE"),
+		FolderTemplate:   viper.GetString("FOLDER_TEMPLATE"),
 	}
 }
 
@@ -71,6 +79,9 @@ func (c *Config) ApplyDBOverrides(overrides map[string]string) {
 	if v, ok := overrides["filename_template"]; ok {
 		c.FilenameTemplate = v
 	}
+	if v, ok := overrides["folder_template"]; ok {
+		c.FolderTemplate = v
+	}
 }
 
 // Update applies a settings patch in-memory. Values are already persisted to
@@ -92,11 +103,35 @@ func (c *Config) Update(key, value string) {
 		}
 	case "filename_template":
 		c.FilenameTemplate = value
+	case "folder_template":
+		c.FolderTemplate = value
 	}
 }
 
-func (c *Config) Read() (outputDir, defaultFormat, filenameTemplate string, downloadWorkers int) {
+// Settings is a consistent snapshot of the user-editable settings.
+type Settings struct {
+	OutputDir        string
+	DefaultFormat    string
+	FilenameTemplate string
+	FolderTemplate   string
+	DownloadWorkers  int
+}
+
+func (c *Config) Read() Settings {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.OutputDir, c.DefaultFormat, c.FilenameTemplate, c.DownloadWorkers
+	return Settings{
+		OutputDir:        c.OutputDir,
+		DefaultFormat:    c.DefaultFormat,
+		FilenameTemplate: c.FilenameTemplate,
+		FolderTemplate:   c.FolderTemplate,
+		DownloadWorkers:  c.DownloadWorkers,
+	}
+}
+
+// OutputDirectory returns the current output directory.
+func (c *Config) OutputDirectory() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.OutputDir
 }

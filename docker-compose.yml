@@ -21,6 +21,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    # Owner of the files written to /audiobooks and /data (default: root)
+    user: "${PUID:-0}:${PGID:-0}"
     expose:
       - "8080"
     environment:
@@ -35,7 +37,7 @@ services:
       OTEL_EXPORTER_OTLP_INSECURE: "true"
     volumes:
       - ./data/db:/data
-      - ./data/audiobooks:/audiobooks
+      - ${AUDIOBOOKS_DIR:-./data/audiobooks}:/audiobooks
     depends_on:
       jaeger:
         condition: service_started
