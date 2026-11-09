@@ -21,7 +21,7 @@ server/
   app/
     db/
       engine.py        SQLAlchemy engine/session (SQLite: WAL, foreign keys, busy timeout)
-      models.py        ORM models for every table (incl. download_jobs)
+      models.py        ORM models for every table (incl. jobs)
       migrate.py       startup: adopt pre-Alembic databases, then upgrade to head
     repositories/      all SQL lives here; one module per aggregate
       accounts.py  books.py  settings.py  jobs.py
@@ -31,7 +31,7 @@ server/
     jobs/              the download pipeline (ffmpeg, outline, …), uses services
   migrations/          Alembic (env.py + versions/)
     versions/0001_baseline.py        today's schema, exactly
-    versions/0002_download_jobs.py   the persistent queue
+    versions/0002_jobs.py            the persistent queue
 ```
 
 ### Decisions
@@ -47,7 +47,8 @@ server/
   present, no `alembic_version` — brought up to the baseline with the old
   column fixes, then stamped `0001`, and upgraded from there. Nothing is
   rebuilt or copied; data stays where it is.
-- **Persistent queue**: a `download_jobs` table holds every job with its
+- **Persistent queue**: a generic `jobs` table (a `type` column; `download`
+  for now, so other background work can use it later) holds every job with its
   options and the settings snapshot it was queued with. Workers claim the
   oldest queued job; status changes are written immediately, progress
   percentages at most every few seconds (live percentages still stream over
@@ -68,7 +69,7 @@ server/
    the real database.
 2. **Services**: move business logic out of routes and `library.py` into
    services; routes become thin.
-3. **Persistent queue**: `0002_download_jobs`, queue backed by the table,
+3. **Persistent queue**: `0002_jobs`, queue backed by the table,
    restart recovery, history pruning, Downloads page wording.
 4. **Deploy**: back up the Pi's database first, upgrade, check the migration
    adopted it, end-to-end checks (scan, PDF-only job, restart mid-queue).

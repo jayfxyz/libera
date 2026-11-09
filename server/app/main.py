@@ -39,7 +39,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
         database.migrate()
         settings_service.load_saved(database, config)
         client = audible or AudibleClient(config.accounts_dir)
-        queue = DownloadQueue(runner or make_runner(database, client), workers=config.download_workers)
+        queue = DownloadQueue(runner or make_runner(database, client), database, workers=config.download_workers)
         queue.start()
         app.state.ctx = AppContext(config=config, db=database, audible=client, queue=queue)
         log.info("ready: db=%s output=%s workers=%d", config.database_path, config.output_dir,

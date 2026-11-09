@@ -82,9 +82,9 @@ def make_job(output_dir: str, book_id: int, fmt: str = "m4b", **kw) -> DownloadJ
 
 
 async def run_job(db, audible, job):
-    q = DownloadQueue(make_runner(db, audible), workers=1)
+    q = DownloadQueue(make_runner(db, audible), db, workers=1)
     q.start()
-    q.enqueue(job)
+    await q.enqueue(job)
     for _ in range(300):
         state = q.list_jobs()[0]
         if state["status"] in ("done", "error"):
@@ -140,9 +140,11 @@ async def test_missing_cover_does_not_fail_the_job(db, tmp_path, source_audio):
     not_jpeg = tmp_path / "cover.png"
     not_jpeg.write_bytes(b"\x89PNG not a jpeg")
 
-    for cover_url in (str(not_jpeg), ""):
+    for attempt, cover_url in enumerate((str(not_jpeg), "")):
         info.cover_url = cover_url
-        state = await run_job(db, FakeAudible(source_audio, info), make_job(str(tmp_path / "out"), book_id))
+        job = make_job(str(tmp_path / "out"), book_id)
+        job.id = f"dl-{attempt}"  # job ids are unique (they're stored)
+        state = await run_job(db, FakeAudible(source_audio, info), job)
         assert state["status"] == "done", state
         audio = tmp_path / "out" / "Jane Author - The Book" / "The Book.m4b"
         assert probe_cover(str(audio)) == []

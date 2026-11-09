@@ -102,6 +102,7 @@ def test_enqueue_builds_job_from_book_and_settings(api, db, config, jobs_seen):
     resp = api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1})
     assert resp.status_code == 202
     job = wait_done(api, resp.json()["job_id"])
+    assert job.pop("created_at").endswith("Z") and job.pop("finished_at").endswith("Z")
     assert job == {"job_id": resp.json()["job_id"], "book_id": book_id, "title": "The Book", "kind": "audio", "format": "m4b",
                    "status": "done", "percent": 100, "message": "/out/The Book.m4b"}
 

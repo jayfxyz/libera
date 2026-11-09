@@ -54,12 +54,13 @@ async def enqueue_downloads(req: BulkEnqueueRequest, ctx: AppContext = Depends(g
 
 @router.get("/downloads")
 def list_downloads(ctx: AppContext = Depends(get_ctx)):
+    """Queued and running downloads, plus recent history (survives restarts)."""
     return ctx.queue.list_jobs()
 
 
 @router.delete("/downloads/{job_id}", status_code=204)
 async def cancel_download(job_id: str, ctx: AppContext = Depends(get_ctx)):
-    if not ctx.queue.cancel(job_id):
+    if not await ctx.queue.cancel(job_id):
         raise HTTPException(404, "no running or queued download with that id")
     return Response(status_code=204)
 

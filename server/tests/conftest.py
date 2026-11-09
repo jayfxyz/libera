@@ -9,8 +9,10 @@ from app.main import create_app
 
 
 @pytest.fixture
-def db():
-    d = Database(":memory:")
+def db(tmp_path):
+    # A file, like production: each thread gets its own connection (the queue
+    # uses the database from the event loop and from worker threads).
+    d = Database(str(tmp_path / "test.db"))
     d.migrate()
     yield d
     d.close()

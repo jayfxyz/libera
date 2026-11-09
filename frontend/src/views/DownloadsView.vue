@@ -3,7 +3,7 @@
     <div class="flex max-w-[900px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
       <header>
         <h1 class="page-title">Downloads</h1>
-        <p class="mt-1 text-sm text-ink-soft">{{ active.length }} in progress · {{ finished.length }} finished this session</p>
+        <p class="mt-1 text-sm text-ink-soft">{{ active.length }} in progress · {{ finished.length }} finished</p>
       </header>
 
       <div v-if="jobs.length === 0" class="card flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -33,6 +33,7 @@
               </div>
               <span class="flex items-center gap-1.5 text-xs font-semibold" :class="tone(job).text">
                 <span class="size-2 shrink-0 rounded-full" :class="tone(job).dot" />{{ label(job) }}
+                <span v-if="job.finished_at" class="font-normal text-ink-soft">· {{ ago(job.finished_at) }}</span>
               </span>
               <div v-if="job.status === 'downloading' || job.status === 'decrypting'" class="h-1 overflow-hidden rounded-full bg-busy-track">
                 <div class="h-1 bg-busy transition-[width]" :style="{ width: `${Math.round(job.percent)}%` }" />
@@ -70,7 +71,10 @@ const active = computed(() => {
   const order = { downloading: 0, decrypting: 0, queued: 1 } as Record<string, number>
   return jobs.value.filter((j) => isActive(j)).sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2))
 })
-const finished = computed(() => jobs.value.filter((j) => !isActive(j)).reverse())
+// Newest first; history survives restarts (the server keeps the last 500).
+const finished = computed(() =>
+  jobs.value.filter((j) => !isActive(j)).sort((a, b) => (b.finished_at ?? '').localeCompare(a.finished_at ?? '')),
+)
 const groups = computed(() => [
   { title: 'In progress', jobs: active.value },
   { title: 'Finished', jobs: finished.value },
@@ -94,6 +98,15 @@ function label(job: DownloadJob) {
     case 'done': return job.kind === 'pdf' ? 'Saved' : `Downloaded${job.format ? ` · ${job.format.toUpperCase()}` : ''}`
     default: return job.message === 'Cancelled' ? 'Cancelled' : 'Failed'
   }
+}
+
+function ago(iso: string) {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} h ago`
+  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 function tone(job: DownloadJob) {

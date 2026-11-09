@@ -11,7 +11,7 @@ repository.
 
 from __future__ import annotations
 
-from sqlalchemy import Float, ForeignKey, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint, text
+from sqlalchemy import Float, ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -139,3 +139,23 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+
+class Job(Base):
+    """A background job: today, downloads. Survives restarts; finished ones are history."""
+
+    __tablename__ = "jobs"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    type: Mapped[str] = mapped_column(Text)  # "download"
+    status: Mapped[str] = mapped_column(Text)  # queued | downloading | decrypting | done | error
+    percent: Mapped[float] = mapped_column(Float, server_default="0")
+    message: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(Text)
+    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id", ondelete="SET NULL"))
+    payload: Mapped[str] = mapped_column(Text)  # JSON
+    created_at: Mapped[str] = mapped_column(String, server_default=NOW)
+    started_at: Mapped[str | None] = mapped_column(String)
+    finished_at: Mapped[str | None] = mapped_column(String)
+
+    __table_args__ = (Index("ix_jobs_status_created", "status", "created_at"),)

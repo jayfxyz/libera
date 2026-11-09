@@ -87,6 +87,8 @@ export interface DownloadJob {
   status: JobStatus
   percent: number
   message?: string
+  created_at?: string // ISO UTC
+  finished_at?: string | null
 }
 
 export interface DownloadOptions {

@@ -55,11 +55,11 @@ def _job(meta: dict, book_id: int, fmt: str, opts: DownloadOptions, config: Conf
     )
 
 
-def _enqueue(queue: DownloadQueue, job: DownloadJob) -> None:
+async def _enqueue(queue: DownloadQueue, job: DownloadJob) -> None:
     with tracer.start_as_current_span("job.enqueue", attributes={
         "job.id": job.id, "job.asin": job.audible_id, "job.format": job.format, "job.kind": job.kind,
     }):
-        queue.enqueue(job)
+        await queue.enqueue(job)
 
 
 async def enqueue(db: Database, queue: DownloadQueue, config: Config, book_id: int,
@@ -70,7 +70,7 @@ async def enqueue(db: Database, queue: DownloadQueue, config: Config, book_id: i
     if meta is None:
         return None
     job = _job(meta, book_id, fmt, opts, config)
-    _enqueue(queue, job)
+    await _enqueue(queue, job)
     return job.id
 
 
@@ -83,6 +83,6 @@ async def enqueue_many(db: Database, queue: DownloadQueue, config: Config, book_
         meta = await asyncio.to_thread(library.book_meta, db, book_id, None)
         if meta is not None:
             job = _job(meta, book_id, fmt, opts, config)
-            _enqueue(queue, job)
+            await _enqueue(queue, job)
             queued.append({"job_id": job.id, "book_id": book_id})
     return queued
