@@ -20,6 +20,7 @@ from .context import AppContext
 from .db import Database
 from .jobs.download import make_runner
 from .jobs.queue import DownloadQueue
+from .services import settings as settings_service
 from .static import FrontendFiles
 from .telemetry import init_tracing
 
@@ -36,7 +37,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
     async def lifespan(app: FastAPI):
         database = db or Database(config.database_path)
         database.migrate()
-        config.apply_overrides(database.all_settings())
+        settings_service.load_saved(database, config)
         client = audible or AudibleClient(config.accounts_dir)
         queue = DownloadQueue(runner or make_runner(database, client), workers=config.download_workers)
         queue.start()

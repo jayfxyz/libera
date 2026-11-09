@@ -1,30 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-import time
 
 from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
-from starlette.concurrency import run_in_threadpool
 
-from .. import library
-from ..config import FORMATS
 from ..context import AppContext, get_ctx
-from ..db import Database
-from ..jobs.queue import DownloadJob
-from ..telemetry import tracer
+from ..services import downloads as service
 
 router = APIRouter()
-
-
-KINDS = ("audio", "pdf")  # audio: the audiobook (+ companion PDF); pdf: only the companion PDF
 
 
 class DownloadOptions(BaseModel):
     format: str = ""  # m4b/mp3; "" = the default from Settings
     split_chapters: bool = False
     include_pdf: bool = True  # save the companion PDF next to the audiobook, if there is one
-    kind: str = "audio"
+    kind: str = "audio"  # audio, or pdf for only the companion PDF
+
+    def options(self) -> service.DownloadOptions:
+        return service.DownloadOptions(self.format, self.split_chapters, self.include_pdf, self.kind)
 
 
 class EnqueueRequest(DownloadOptions):
@@ -37,69 +31,24 @@ class BulkEnqueueRequest(DownloadOptions):
     book_ids: list[int]
 
 
-def _validate(opts: DownloadOptions, ctx: AppContext) -> str:
-    fmt = opts.format or ctx.config.default_format
-    if fmt not in FORMATS:
-        raise HTTPException(400, "format must be 'm4b' or 'mp3'")
-    if opts.kind not in KINDS:
-        raise HTTPException(400, "kind must be 'audio' or 'pdf'")
-    return fmt
-
-
-def _make_job(meta: dict, fmt: str, opts: DownloadOptions, ctx: AppContext) -> DownloadJob:
-    settings = ctx.config.snapshot()
-    book_id = meta["book_id"]
-    return DownloadJob(
-        id=f"dl-{book_id}-{time.time_ns() // 1000}",
-        book_id=book_id,
-        audible_id=meta["audible_id"],
-        account_id=meta["account_id"],
-        audible_account_id=meta["audible_account_id"],
-        format=fmt,
-        output_dir=settings.output_dir,
-        filename_template=settings.filename_template,
-        folder_template=settings.folder_template,
-        split_chapters=opts.split_chapters,
-        include_pdf=opts.include_pdf,
-        kind=opts.kind,
-        **library.naming_data(meta),
-    )
-
-
-def _enqueue(job: DownloadJob, ctx: AppContext) -> None:
-    with tracer.start_as_current_span("job.enqueue", attributes={
-        "job.id": job.id, "job.asin": job.audible_id, "job.format": job.format, "job.kind": job.kind,
-    }):
-        ctx.queue.enqueue(job)
-
-
-def _meta(db: Database, book_id: int, account_id: int | None) -> dict | None:
-    meta = library.book_meta(db, book_id, account_id)
-    return None if meta is None else {**meta, "book_id": book_id}
-
-
 @router.post("/downloads", status_code=202)
 async def enqueue_download(req: EnqueueRequest, ctx: AppContext = Depends(get_ctx)):
-    fmt = _validate(req, ctx)
-    meta = await run_in_threadpool(_meta, ctx.db, req.book_id, req.account_id)
-    if meta is None:
+    try:
+        job_id = await service.enqueue(ctx.db, ctx.queue, ctx.config, req.book_id, req.options(), req.account_id)
+    except service.InvalidOptions as e:
+        raise HTTPException(400, str(e))
+    if job_id is None:
         raise HTTPException(404, "book not found for this account")
-    job = _make_job(meta, fmt, req, ctx)
-    _enqueue(job, ctx)
-    return {"job_id": job.id}
+    return {"job_id": job_id}
 
 
 @router.post("/downloads/bulk", status_code=202)
 async def enqueue_downloads(req: BulkEnqueueRequest, ctx: AppContext = Depends(get_ctx)):
     """Queue several books at once (in the order given). Unknown ids are skipped."""
-    fmt = _validate(req, ctx)
-    jobs = []
-    for book_id in dict.fromkeys(req.book_ids):  # de-duplicated, order kept
-        meta = await run_in_threadpool(_meta, ctx.db, book_id, None)
-        if meta is not None:
-            job = _make_job(meta, fmt, req, ctx)
-            _enqueue(job, ctx)
-            jobs.append({"job_id": job.id, "book_id": book_id})
+    try:
+        jobs = await service.enqueue_many(ctx.db, ctx.queue, ctx.config, req.book_ids, req.options())
+    except service.InvalidOptions as e:
+        raise HTTPException(400, str(e))
     return {"jobs": jobs}
 
 

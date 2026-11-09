@@ -3,23 +3,15 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from ..config import FORMATS
 from ..context import AppContext, get_ctx
+from ..services import settings as service
 
 router = APIRouter()
 
 
 @router.get("/settings")
 def get_settings(ctx: AppContext = Depends(get_ctx)):
-    c = ctx.config
-    return {
-        "app_url": c.app_url,
-        "output_dir": c.output_dir,
-        "download_workers": c.download_workers,
-        "default_format": c.default_format,
-        "filename_template": c.filename_template,
-        "folder_template": c.folder_template,
-    }
+    return service.current(ctx.config)
 
 
 class SettingsPatch(BaseModel):
@@ -33,10 +25,8 @@ class SettingsPatch(BaseModel):
 
 @router.patch("/settings", status_code=204)
 def update_settings(patch: SettingsPatch, ctx: AppContext = Depends(get_ctx)):
-    if patch.default_format is not None and patch.default_format not in FORMATS:
-        raise HTTPException(400, "default_format must be 'm4b' or 'mp3'")
-    for key, value in patch.model_dump(exclude_none=True).items():
-        stored = str(value)
-        ctx.db.set_setting(key, stored)
-        ctx.config.apply(key, stored)
+    try:
+        service.update(ctx.db, ctx.config, patch.model_dump())
+    except service.InvalidSetting as e:
+        raise HTTPException(400, str(e))
     return Response(status_code=204)

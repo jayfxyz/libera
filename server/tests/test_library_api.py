@@ -2,7 +2,7 @@ import csv
 import io
 
 from tests.conftest import add_account, make_book
-from app import library
+from app.services import library
 
 
 def seed(db):

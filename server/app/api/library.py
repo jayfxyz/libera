@@ -3,14 +3,12 @@ from __future__ import annotations
 import csv
 import io
 import json
-import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from .. import library
+from ..services import library
 from ..context import AppContext, get_ctx
-from ..jobs.filename import FilenameData, book_directory, render_filename
 
 router = APIRouter()
 
@@ -84,19 +82,8 @@ def get_book(book_id: int, ctx: AppContext = Depends(get_ctx)):
     book = library.get_book(ctx.db, book_id)
     if book is None:
         raise HTTPException(404, "book not found")
-    book["planned_path"] = _planned_path(ctx, book_id)
+    book["planned_path"] = library.planned_path(ctx.db, book_id, ctx.config)
     return book
-
-
-def _planned_path(ctx: AppContext, book_id: int) -> str:
-    """Where a download of this book would be saved with the current settings."""
-    meta = library.book_meta(ctx.db, book_id)
-    if meta is None:
-        return ""
-    c = ctx.config
-    names = FilenameData(**library.naming_data(meta))
-    folder = book_directory(c.output_dir, c.folder_template, names)
-    return os.path.join(folder, f"{render_filename(c.filename_template, names)}.{c.default_format}")
 
 
 class BookPatch(BaseModel):

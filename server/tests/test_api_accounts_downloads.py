@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app import library
+from app.services import library
 from app.audible_api.auth import LoginError, LoginResult
 from app.main import create_app
 from tests.conftest import add_account, make_book

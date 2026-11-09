@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 from opentelemetry.trace import Status, StatusCode
 
-from .. import library
+from ..services import library
 from ..audible_api.auth import APP_USER_AGENT
 from ..audible_api.client import AudibleClient
 from ..audible_api.content import ContentError

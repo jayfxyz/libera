@@ -8,7 +8,7 @@ import subprocess
 
 import pytest
 
-from app import library
+from app.services import library
 from app.audible_api.content import ContentError, DownloadInfo
 from app.jobs import download
 from app.jobs.download import make_runner, tiny_download_error

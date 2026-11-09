@@ -7,7 +7,7 @@ import logging
 import os
 from dataclasses import dataclass
 
-from ..library import sanitize_filename
+from ..services.library import sanitize_filename
 from .ffmpeg import chapter_args
 from .process import run
 

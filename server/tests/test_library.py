@@ -1,6 +1,6 @@
 import pytest
 
-from app import library
+from app.services import library
 from tests.conftest import add_account, make_book
 
 

@@ -1,18 +1,34 @@
 from app.config import DEFAULT_FOLDER_TEMPLATE, Config
+from app.repositories import settings as settings_repo
+
+
+def get_setting(db, key):
+    with db.session() as s:
+        return settings_repo.get(s, key)
+
+
+def set_setting(db, key, value):
+    with db.session() as s:
+        settings_repo.set(s, key, value)
+
+
+def all_settings(db):
+    with db.session() as s:
+        return settings_repo.all(s)
 
 
 def test_settings_roundtrip(db):
-    assert db.get_setting("output_dir") is None
-    db.set_setting("output_dir", "/audiobooks")
-    assert db.get_setting("output_dir") == "/audiobooks"
-    db.set_setting("output_dir", "/new/path")
-    assert db.get_setting("output_dir") == "/new/path"
+    assert get_setting(db, "output_dir") is None
+    set_setting(db, "output_dir", "/audiobooks")
+    assert get_setting(db, "output_dir") == "/audiobooks"
+    set_setting(db, "output_dir", "/new/path")
+    assert get_setting(db, "output_dir") == "/new/path"
 
 
 def test_settings_load_all(db):
     for k, v in {"output_dir": "/a", "default_format": "mp3", "download_workers": "5"}.items():
-        db.set_setting(k, v)
-    assert db.all_settings() == {"output_dir": "/a", "default_format": "mp3", "download_workers": "5"}
+        set_setting(db, k, v)
+    assert all_settings(db) == {"output_dir": "/a", "default_format": "mp3", "download_workers": "5"}
 
 
 def test_config_from_env_and_overrides():
@@ -36,8 +52,8 @@ def test_settings_api(client, db):
     # The UI sends the whole object back, including read-only app_url.
     resp = client.patch("/api/settings", json={**got, "default_format": "mp3", "folder_template": "{title}"})
     assert resp.status_code == 204
-    assert db.get_setting("default_format") == "mp3"
-    assert db.get_setting("app_url") is None
+    assert get_setting(db, "default_format") == "mp3"
+    assert get_setting(db, "app_url") is None
 
     got = client.get("/api/settings").json()
     assert got["default_format"] == "mp3"
@@ -52,7 +68,7 @@ def test_saved_settings_apply_at_startup(config, db):
     from fastapi.testclient import TestClient
     from app.main import create_app
 
-    db.set_setting("filename_template", "{author} - {title}")
+    set_setting(db, "filename_template", "{author} - {title}")
     with TestClient(create_app(config, db)) as c:
         assert c.get("/api/settings").json()["filename_template"] == "{author} - {title}"
 
