@@ -12,6 +12,7 @@ import httpx
 from opentelemetry.trace import Status, StatusCode
 
 from .. import library
+from ..audible_api.auth import APP_USER_AGENT
 from ..audible_api.client import AudibleClient
 from ..audible_api.content import ContentError
 from ..db import Database
@@ -26,7 +27,6 @@ from .queue import DownloadJob, DownloadQueue
 log = logging.getLogger(__name__)
 
 MIN_AUDIOBOOK_BYTES = 1024 * 1024
-USER_AGENT = "Audible/3.56.2 iOS/15.0.0 iPhone"
 # Work files live on the same drive as the library, in a folder rescans skip.
 INCOMPLETE_DIR = ".incomplete"
 # The name Audiobookshelf, Jellyfin and Plex look for in a book's folder.
@@ -223,7 +223,7 @@ async def _fetch_bytes(url: str) -> bytes:
 async def _stream_download(url: str, dest: str, on_progress) -> None:
     timeout = httpx.Timeout(60.0, connect=30.0)
     async with httpx.AsyncClient(follow_redirects=True, timeout=timeout,
-                                 headers={"User-Agent": USER_AGENT}) as client:
+                                 headers={"User-Agent": APP_USER_AGENT}) as client:
         async with client.stream("GET", url) as resp:
             resp.raise_for_status()
             total = int(resp.headers.get("content-length") or 0)

@@ -60,9 +60,13 @@ def describe_license_denial(license_response: dict | None) -> str:
         return ""
     reasons = cl.get("license_denial_reasons") or []
     if any(r.get("rejectionReason") == "CustomerThrottled" for r in reasons):
+        # Since September 2026 Audible also says this to devices registered with
+        # an outdated app profile, regardless of how much was downloaded.
         return (
-            "Audible is temporarily refusing download licenses for this account "
-            "(throttled after heavy downloading). It usually clears within a day or two."
+            "Audible refused the download license (\"throttled\"). This usually means the "
+            "account's device registration is outdated: remove the account under Accounts and "
+            "add it again (your library and downloads are kept). If it persists after that, "
+            "Audible may really be rate-limiting the account; that clears within a day or two."
         )
     ownership = [r.get("message", "") for r in reasons if r.get("validationType") == "Ownership"]
     detail = "; ".join(m for m in ownership if m) or cl.get("message") or "no reason given"

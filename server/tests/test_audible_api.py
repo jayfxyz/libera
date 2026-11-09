@@ -32,7 +32,7 @@ THROTTLED = {"content_license": {
 # --- license denial -----------------------------------------------------------
 
 def test_describe_license_denial():
-    assert "temporarily refusing" in describe_license_denial(THROTTLED)
+    assert "registration is outdated" in describe_license_denial(THROTTLED)
     owned = {"content_license": {"status_code": "Denied", "message": "nope", "license_denial_reasons": [
         {"message": "plans", "validationType": "Membership"},
         {"message": "Not owned", "validationType": "Ownership", "rejectionReason": "NotOwned"}]}}
@@ -65,13 +65,13 @@ async def test_aax_fallback_reports_license_denial():
     with patch("audible_cli.models.LibraryItem", fake_item(("https://cdn/x.aax", "LC_64"))):
         info = await content.get_download_info(c, "B0001")
     assert (info.format, info.download_url, info.activation_bytes) == ("aax", "https://cdn/x.aax", "deadbeef")
-    assert "temporarily refusing" in info.license_denied
+    assert "registration is outdated" in info.license_denied
 
 
 async def test_denial_is_the_error_when_aax_also_fails():
     c = fake_client(get=AsyncMock(return_value={"item": {}}), post=AsyncMock(return_value=THROTTLED))
     with patch("audible_cli.models.LibraryItem", fake_item(Exception("no AAX"))):
-        with pytest.raises(ContentError, match="temporarily refusing"):
+        with pytest.raises(ContentError, match="registration is outdated"):
             await content.get_download_info(c, "B0001")
 
 
@@ -173,3 +173,31 @@ def test_largest_cover():
     from app.audible_api.content import largest_cover
     assert largest_cover({"product_images": {"500": "a", "2400": "b", "1215": "c"}}) == "b"
     assert largest_cover({"product_images": None}) == ""
+
+
+def test_registration_uses_the_libraries_current_app_profile(tmp_path):
+    """Audible refuses licenses to devices registered as the old 3.56.2 app, so the
+    registration and its User-Agent must use the audible library's current profile."""
+    from audible.register import APP_VERSION
+
+    from app.audible_api import auth as auth_mod
+
+    assert APP_VERSION != "3.56.2"
+    assert auth_mod.APP_USER_AGENT.startswith(f"Audible/{APP_VERSION} ")
+
+    flow = LoginFlow(str(tmp_path))
+    _, state = flow.start("uk", "Me")
+    sent = {}
+
+    def fake_post(url, **kwargs):
+        sent["url"], sent["headers"], sent["body"] = url, kwargs.get("headers"), kwargs.get("json")
+        raise RuntimeError("stop here")  # only the request matters
+
+    with patch("httpx.post", fake_post):
+        with pytest.raises(LoginError):
+            flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
+
+    assert sent["url"] == "https://api.amazon.co.uk/auth/register"
+    assert sent["headers"]["User-Agent"] == auth_mod.APP_USER_AGENT
+    assert sent["body"]["registration_data"]["app_version"] == APP_VERSION
+    assert len(sent["body"]["registration_data"]["device_serial"]) == 40

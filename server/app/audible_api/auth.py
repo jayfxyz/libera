@@ -22,14 +22,21 @@ import httpx
 from audible.auth import register_
 from audible.localization import Locale
 from audible.login import build_device_serial, build_oauth_url, create_code_verifier, extract_code_from_url
+from audible.register import APP_VERSION, OS_VERSION
 
 from . import storage
 
 log = logging.getLogger(__name__)
 
+# The iOS app identity the audible library registers devices as. Since September
+# 2026 Audible refuses download licenses ("CustomerThrottled") to devices
+# registered with the old 3.56.2 profile, so every request that identifies the
+# app must use the same, current version as the registration itself.
+APP_USER_AGENT = f"Audible/{APP_VERSION} iOS/{OS_VERSION} iPhone"
+
 # register_() posts with no headers, which CloudFront blocks; send the iOS app's.
 _REGISTER_HEADERS = {
-    "User-Agent": "Audible/3.56.2 iOS/15.0.0 iPhone",
+    "User-Agent": APP_USER_AGENT,
     "Accept": "application/json",
     "Accept-Language": "en-US",
 }
