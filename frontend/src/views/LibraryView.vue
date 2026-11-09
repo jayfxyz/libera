@@ -124,8 +124,8 @@
           </button>
         </nav>
 
-        <!-- Selection -->
-        <div class="flex min-h-[52px] flex-wrap items-center gap-2">
+        <!-- Selection: only once a book is ticked (each row has its own checkbox). -->
+        <div v-if="library.selected.size > 0" class="flex min-h-[52px] flex-wrap items-center gap-2">
           <label class="mr-auto flex h-11 cursor-pointer items-center gap-2.5 px-1 text-[13px] text-ink-soft">
             <input
               type="checkbox"
@@ -138,7 +138,6 @@
             <span>{{ allVisibleSelected ? `All ${library.visibleBooks.length} selected` : `Select all ${library.visibleBooks.length}` }}</span>
           </label>
           <div
-            v-if="library.selected.size > 0"
             class="flex flex-wrap items-center gap-1.5 rounded-xl bg-ink py-1 pr-1 pl-3.5 text-white"
             role="toolbar"
             aria-label="Selected books"
