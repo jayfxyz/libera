@@ -73,7 +73,7 @@ const active = computed(() => {
 })
 // Newest first; history survives restarts (the server keeps the last 500).
 const finished = computed(() =>
-  jobs.value.filter((j) => !isActive(j)).sort((a, b) => (b.finished_at ?? '').localeCompare(a.finished_at ?? '')),
+  jobs.value.filter((j): boolean => !isActive(j)).sort((a, b) => (b.finished_at ?? '').localeCompare(a.finished_at ?? '')),
 )
 const groups = computed(() => [
   { title: 'In progress', jobs: active.value },
