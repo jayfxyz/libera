@@ -231,6 +231,7 @@ import BookListRow from '@/components/library/BookListRow.vue'
 import BookPanel from '@/components/library/BookPanel.vue'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { bookStatus } from '@/lib/bookStatus'
+import { regionBadge } from '@/lib/regions'
 import { useAccountsStore } from '@/stores/accounts'
 import { useDownloadsStore } from '@/stores/downloads'
 import { sortOptions, useLibraryStore, type Segment } from '@/stores/library'
@@ -261,7 +262,7 @@ function statusFor(b: BookSummary) {
 }
 
 function accountLabel(a: Account) {
-  return `${a.account_name || a.email} · ${a.locale.toUpperCase()}`
+  return `${a.account_name || a.email} · ${regionBadge(a.locale)}`
 }
 
 const summaryLine = computed(() => {

@@ -25,7 +25,7 @@
               <h2 class="truncate text-base font-semibold">{{ account.account_name || account.email }}</h2>
               <p class="truncate font-mono text-xs text-ink-soft" :title="account.email">{{ account.email }}</p>
             </div>
-            <span class="chip shrink-0">{{ account.locale.toUpperCase() }}</span>
+            <span class="chip shrink-0 gap-1 font-sans text-xs" :title="regionName(account.locale)">{{ regionBadge(account.locale) }}</span>
           </div>
           <dl class="flex justify-between text-sm">
             <dt class="text-ink-soft">Last scanned</dt>
@@ -74,7 +74,7 @@
           <label class="flex flex-col gap-1.5 text-sm font-medium">
             Region
             <select v-model="modal.locale" class="textbox cursor-pointer" :disabled="modal.reconnect">
-              <option v-for="r in regions" :key="r.value" :value="r.value">{{ r.label }}</option>
+              <option v-for="r in regions" :key="r.value" :value="r.value">{{ flag(r.value) }} {{ r.label }}</option>
             </select>
           </label>
           <p v-if="modal.error" class="text-xs text-destructive">{{ modal.error }}</p>
@@ -171,15 +171,11 @@ import { reactive, ref, onMounted } from 'vue'
 import { CheckIcon, KeyRoundIcon, PlusIcon, RefreshCwIcon, UserRoundIcon } from '@lucide/vue'
 import type { Account } from '@/api/client'
 import { useAccountsStore } from '@/stores/accounts'
+import { flag, regionBadge, regions } from '@/lib/regions'
 import { api } from '@/api/client'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
-const regions = [
-  { value: 'us', label: 'United States' }, { value: 'uk', label: 'United Kingdom' },
-  { value: 'ca', label: 'Canada' }, { value: 'de', label: 'Germany' }, { value: 'fr', label: 'France' },
-  { value: 'au', label: 'Australia' }, { value: 'jp', label: 'Japan' }, { value: 'in', label: 'India' },
-  { value: 'es', label: 'Spain' },
-]
+const regionName = (locale: string) => regions.find((r) => r.value === locale)?.label ?? locale.toUpperCase()
 
 const store = useAccountsStore()
 
