@@ -29,6 +29,8 @@ MIN_AUDIOBOOK_BYTES = 1024 * 1024
 USER_AGENT = "Audible/3.56.2 iOS/15.0.0 iPhone"
 # Work files live on the same drive as the library, in a folder rescans skip.
 INCOMPLETE_DIR = ".incomplete"
+# The name Audiobookshelf, Jellyfin and Plex look for in a book's folder.
+COVER_FILE_NAME = "cover.jpg"
 
 
 class JobFailed(Exception):
@@ -128,17 +130,32 @@ async def _process(queue: DownloadQueue, job: DownloadJob, db: Database, audible
         with open(chapters_file, "w", encoding="utf-8") as f:
             f.write(ffmetadata(chapters))
 
+    # Cover art: embedded in the audio and saved as cover.jpg for media servers.
+    cover_file = ""
+    cover = await _fetch_cover(info.cover_url, job.id)
+    if cover:
+        cover_file = os.path.join(work_dir, f"{job.id}.cover.jpg")
+        work_files.append(cover_file)
+        with open(cover_file, "wb") as f:
+            f.write(cover)
+
     # Decrypt next to the source, then move into place: a failed or cancelled
     # job never leaves a partial audiobook in the library.
     decrypted = os.path.join(work_dir, f"{job.id}.out.{job.format}")
     work_files.append(decrypted)
     with tracer.start_as_current_span("job.ffmpeg", attributes={"ffmpeg.format": job.format}) as span:
-        code, _, err = await run(decrypt_args(info, src, decrypted, job.format, chapters_file))
+        code, _, err = await run(decrypt_args(info, src, decrypted, job.format, chapters_file, cover_file))
         if code != 0:
             message = err.decode(errors="replace").strip()[-1000:]
             span.set_status(Status(StatusCode.ERROR, message))
             raise JobFailed(f"ffmpeg: {message}")
     os.replace(decrypted, out_file)
+    if cover:
+        try:
+            with open(os.path.join(book_dir, COVER_FILE_NAME), "wb") as f:
+                f.write(cover)
+        except OSError as e:
+            log.warning("job %s: saving cover failed (non-fatal): %s", job.id, e)
 
     if chapters:
         try:
@@ -179,6 +196,28 @@ async def _fetch_outline(audible: AudibleClient, job: DownloadJob) -> tuple[dict
         chapters = build_outline(info)
         span.set_attribute("chapters.count", len(chapters))
         return info, chapters
+
+
+async def _fetch_cover(url: str, job_id: str) -> bytes | None:
+    """The cover image, or None if there's none or it can't be fetched (best-effort)."""
+    if not url:
+        return None
+    try:
+        data = await _fetch_bytes(url)
+    except httpx.HTTPError as e:
+        log.warning("job %s: cover download failed (non-fatal): %s", job_id, e)
+        return None
+    if not data.startswith(b"\xff\xd8"):  # embedding copies the stream, so it must be JPEG
+        log.warning("job %s: cover is not a JPEG, skipping", job_id)
+        return None
+    return data
+
+
+async def _fetch_bytes(url: str) -> bytes:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.content
 
 
 async def _stream_download(url: str, dest: str, on_progress) -> None:

@@ -50,12 +50,27 @@ def source_audio(tmp_path):
     return str(path)
 
 
+@pytest.fixture
+def cover_jpg(tmp_path):
+    path = tmp_path / "cover-source.jpg"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=c=teal:s=64x64", "-frames:v", "1",
+                    str(path)], check=True)
+    return str(path)
+
+
 @pytest.fixture(autouse=True)
 def local_download(monkeypatch):
+    """Downloads read local files instead of URLs."""
     async def copy(url, dest, on_progress):
         on_progress(50)
         shutil.copyfile(url, dest)
+
+    async def read(url):
+        with open(url, "rb") as f:
+            return f.read()
+
     monkeypatch.setattr(download, "_stream_download", copy)
+    monkeypatch.setattr(download, "_fetch_bytes", read)
     monkeypatch.setattr(download, "MIN_AUDIOBOOK_BYTES", 1)
 
 
@@ -85,25 +100,53 @@ def probe_chapters(path):
     return [(c["tags"]["title"], round(float(c["start_time"]), 1)) for c in json.loads(out)["chapters"]]
 
 
+def probe_cover(path):
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
+                          "stream=codec_type,codec_name,width:stream_disposition=attached_pic", "-of", "json", path],
+                         capture_output=True, check=True).stdout
+    return [(s["codec_name"], s["width"]) for s in json.loads(out)["streams"]
+            if s["codec_type"] == "video" and s["disposition"]["attached_pic"]]
+
+
 @pytest.mark.parametrize("fmt", ["m4b", "mp3"])
-async def test_download_writes_book_folder_with_chapters(db, tmp_path, source_audio, fmt):
+async def test_download_writes_book_folder_with_chapters_and_cover(db, tmp_path, source_audio, cover_jpg, fmt):
     add_account(db)
     library.import_library(db, 1, [make_book("B0001", title="The Book")])
     book_id = db.scalar("SELECT id FROM books")
     out_dir = tmp_path / "audiobooks"
+    info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="deadbeef", cover_url=cover_jpg)
 
-    state = await run_job(db, FakeAudible(source_audio), make_job(str(out_dir), book_id, fmt))
+    state = await run_job(db, FakeAudible(source_audio, info), make_job(str(out_dir), book_id, fmt))
 
     book_dir = out_dir / "Jane Author - The Book"
     assert state["status"] == "done", state
     assert state["message"] == str(book_dir / f"The Book.{fmt}")
     assert sorted(os.listdir(out_dir)) == ["Jane Author - The Book"]  # work folder cleaned up
     assert sorted(os.listdir(book_dir)) == sorted(
-        [f"The Book.{fmt}", "The Book.cue", "The Book.chapters.json", "The Book.pdf"])
+        [f"The Book.{fmt}", "The Book.cue", "The Book.chapters.json", "The Book.pdf", "cover.jpg"])
     assert probe_chapters(str(book_dir / f"The Book.{fmt}")) == [
         ("Opening Credits", 0.0), ("Part One: Chapter 1", 1.0)]
+    assert probe_cover(str(book_dir / f"The Book.{fmt}")) == [("mjpeg", 64)]
+    assert (book_dir / "cover.jpg").read_bytes() == open(cover_jpg, "rb").read()
     row = db.query_one("SELECT liberation_status, last_format FROM library_books WHERE book_id = ?", (book_id,))
     assert (row["liberation_status"], row["last_format"]) == ("liberated", fmt)
+
+
+async def test_missing_cover_does_not_fail_the_job(db, tmp_path, source_audio):
+    add_account(db)
+    library.import_library(db, 1, [make_book("B0001", title="The Book")])
+    book_id = db.scalar("SELECT id FROM books")
+    info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="ab", cover_url=str(tmp_path / "nope.jpg"))
+    not_jpeg = tmp_path / "cover.png"
+    not_jpeg.write_bytes(b"\x89PNG not a jpeg")
+
+    for cover_url in (str(not_jpeg), ""):
+        info.cover_url = cover_url
+        state = await run_job(db, FakeAudible(source_audio, info), make_job(str(tmp_path / "out"), book_id))
+        assert state["status"] == "done", state
+        audio = tmp_path / "out" / "Jane Author - The Book" / "The Book.m4b"
+        assert probe_cover(str(audio)) == []
+        assert not (audio.parent / "cover.jpg").exists()
 
 
 async def test_split_chapters(db, tmp_path, source_audio):

@@ -52,3 +52,26 @@ def test_parse_chapters():
 def test_chapter_path():
     assert chapter_path("/out", "Book", 0, "Intro: Part 1") == "/out/Book - 01 - Intro_ Part 1"
     assert chapter_path("/out", "Book", 4, "") == "/out/Book - 05 - Chapter_05"
+
+
+def test_cover_is_embedded_as_attached_picture():
+    info = DownloadInfo("u", "c", "aaxc", key="k", iv="i")
+    args = decrypt_args(info, "/tmp/in.aaxc", "/out/b.m4b", "m4b", "/tmp/ch.ffmetadata", "/tmp/cover.jpg")
+    assert args.index("/tmp/in.aaxc") < args.index("/tmp/ch.ffmetadata") < args.index("/tmp/cover.jpg")
+    assert pair(args, "-map_chapters") == "1"
+    assert [args[i + 1] for i, a in enumerate(args) if a == "-map"] == ["0:a", "2:v"]
+    assert (pair(args, "-c:v"), pair(args, "-disposition:v:0")) == ("copy", "attached_pic")
+    assert "-vn" not in args
+
+
+def test_cover_without_chapters_and_mp3_uses_id3v23():
+    info = DownloadInfo("u", "c", "aax", activation_bytes="ab")
+    args = decrypt_args(info, "/tmp/in.aax", "/out/b.mp3", "mp3", cover_file="/tmp/cover.jpg")
+    assert [args[i + 1] for i, a in enumerate(args) if a == "-map"] == ["0:a", "1:v"]
+    assert pair(args, "-id3v2_version") == "3"
+    assert "-map_chapters" not in args
+
+
+def test_no_cover_drops_video():
+    args = decrypt_args(DownloadInfo("u", "c", "aax", activation_bytes="ab"), "/tmp/in.aax", "/out/b.m4b", "m4b")
+    assert "-vn" in args and "-disposition:v:0" not in args

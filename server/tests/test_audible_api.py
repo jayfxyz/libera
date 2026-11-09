@@ -167,3 +167,9 @@ def test_login_complete_saves_tokens(tmp_path):
     # The state is single-use.
     with pytest.raises(LoginError):
         flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
+
+
+def test_largest_cover():
+    from app.audible_api.content import largest_cover
+    assert largest_cover({"product_images": {"500": "a", "2400": "b", "1215": "c"}}) == "b"
+    assert largest_cover({"product_images": None}) == ""

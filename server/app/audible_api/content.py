@@ -25,6 +25,7 @@ class DownloadInfo:
     # fallback only works for older titles, so this is usually the real reason
     # a download fails.
     license_denied: str = ""
+    cover_url: str = ""  # largest cover Audible offers; "" if none
 
 
 class _LicenseCapture:
@@ -68,18 +69,29 @@ def describe_license_denial(license_response: dict | None) -> str:
     return f"Audible denied the download license: {detail}"
 
 
+# Largest first; the library's default is only 500 px.
+COVER_SIZES = ("3200", "2400", "1215", "500")
+
+
+def largest_cover(item: dict[str, Any]) -> str:
+    images = item.get("product_images") or {}
+    return next((images[s] for s in COVER_SIZES if images.get(s)), "")
+
+
 async def get_download_info(client, asin: str, quality: str = "best") -> DownloadInfo:
     from audible_cli.models import LibraryItem
 
     async with client as c:
-        groups = "product_attrs,customer_rights"
+        groups = "product_attrs,customer_rights,media"
         try:
-            resp = await c.get(f"1.0/library/{asin}", response_groups=groups)
+            resp = await c.get(f"1.0/library/{asin}", response_groups=groups, image_sizes=",".join(COVER_SIZES))
         except Exception as e:
             raise ContentError(f"Library fetch failed: {e}")
 
+        item_data = resp.get("item", {})
+        cover = largest_cover(item_data)
         capture = _LicenseCapture(c)
-        item = LibraryItem(data=resp.get("item", {}), api_client=capture, parent=None, response_groups=groups)
+        item = LibraryItem(data=item_data, api_client=capture, parent=None, response_groups=groups)
 
         # AAXC first: its offline_url is pre-signed and its voucher carries the key.
         try:
@@ -87,7 +99,8 @@ async def get_download_info(client, asin: str, quality: str = "best") -> Downloa
             voucher = (lr.get("content_license") or {}).get("license_response")
             if not isinstance(voucher, dict):
                 raise ValueError("Failed to decrypt AAXC voucher")
-            return DownloadInfo(str(url), codec, "aaxc", key=voucher.get("key", ""), iv=voucher.get("iv", ""))
+            return DownloadInfo(str(url), codec, "aaxc", key=voucher.get("key", ""), iv=voucher.get("iv", ""),
+                                cover_url=cover)
         except Exception as e:
             log.info("AAXC not available for %s (%s), trying AAX", asin, e)
 
@@ -101,7 +114,8 @@ async def get_download_info(client, asin: str, quality: str = "best") -> Downloa
             log.error("AAX fallback failed for %s: %s", asin, e)
             raise ContentError(denied or f"Get download URL failed: {e}")
 
-        return DownloadInfo(str(url), codec, "aax", activation_bytes=_activation_bytes(c), license_denied=denied)
+        return DownloadInfo(str(url), codec, "aax", activation_bytes=_activation_bytes(c), license_denied=denied,
+                            cover_url=cover)
 
 
 def _activation_bytes(client) -> str:
