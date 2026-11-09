@@ -58,12 +58,16 @@ def make_runner(db: Database, audible: AudibleClient):
             work_dir = os.path.join(job.output_dir, INCOMPLETE_DIR)
             work_files: list[str] = []
             try:
-                out_file = await _process(queue, job, db, audible, work_dir, work_files)
+                if job.kind == "pdf":
+                    out_file = await _process_pdf_only(queue, job, audible)
+                else:
+                    out_file = await _process(queue, job, db, audible, work_dir, work_files)
             except JobFailed as e:
                 span.set_status(Status(StatusCode.ERROR, str(e)))
                 log.warning("job %s failed: %s", job.id, e)
                 queue.set_status(job.id, "error", 0, str(e))
-                await asyncio.to_thread(library.mark_error, db, job.book_id)
+                if job.kind == "audio":  # a missing PDF says nothing about the audiobook
+                    await asyncio.to_thread(library.mark_error, db, job.book_id)
                 return
             finally:
                 for f in work_files:
@@ -108,12 +112,7 @@ async def _process(queue: DownloadQueue, job: DownloadJob, db: Database, audible
 
     queue.set_status(job.id, "decrypting", 100)
 
-    names = FilenameData(
-        title=job.title, authors=job.authors, narrators=job.narrators, series_name=job.series_name,
-        series_index=job.series_index, year=job.year, language=job.language, duration_h=job.duration_h,
-    )
-    book_dir = book_directory(job.output_dir, job.folder_template, names)
-    base_name = render_filename(job.filename_template, names)
+    book_dir, base_name = _paths(job)
     out_file = os.path.join(book_dir, f"{base_name}.{job.format}")
     try:
         os.makedirs(book_dir, exist_ok=True)
@@ -170,17 +169,47 @@ async def _process(queue: DownloadQueue, job: DownloadJob, db: Database, audible
         except Exception as e:
             log.warning("job %s: chapter split failed (non-fatal): %s", job.id, e)
 
-    await asyncio.to_thread(library.mark_downloaded, db, job.book_id, job.format)
+    await asyncio.to_thread(library.mark_downloaded, db, job.book_id, job.format, out_file)
 
     # Companion PDF: best-effort, doesn't affect the job.
+    if job.include_pdf:
+        try:
+            pdf = await audible.get_pdf(job.audible_account_id, job.audible_id)
+            if pdf:
+                with open(os.path.join(book_dir, f"{base_name}.pdf"), "wb") as f:
+                    f.write(pdf)
+        except Exception as e:
+            log.warning("job %s: PDF download failed (non-fatal): %s", job.id, e)
+
+    return out_file
+
+
+def _paths(job: DownloadJob) -> tuple[str, str]:
+    """(book folder, file name without extension) for a job."""
+    names = FilenameData(
+        title=job.title, authors=job.authors, narrators=job.narrators, series_name=job.series_name,
+        series_index=job.series_index, year=job.year, language=job.language, duration_h=job.duration_h,
+    )
+    return book_directory(job.output_dir, job.folder_template, names), render_filename(job.filename_template, names)
+
+
+async def _process_pdf_only(queue: DownloadQueue, job: DownloadJob, audible: AudibleClient) -> str:
+    """Save just the companion PDF into the book's folder (no license request)."""
+    queue.set_status(job.id, "downloading", 0)
     try:
         pdf = await audible.get_pdf(job.audible_account_id, job.audible_id)
-        if pdf:
-            with open(os.path.join(book_dir, f"{base_name}.pdf"), "wb") as f:
-                f.write(pdf)
-    except Exception as e:
-        log.warning("job %s: PDF download failed (non-fatal): %s", job.id, e)
-
+    except ContentError as e:
+        raise JobFailed(f"PDF: {e}")
+    if not pdf:
+        raise JobFailed("This title has no companion PDF")
+    book_dir, base_name = _paths(job)
+    out_file = os.path.join(book_dir, f"{base_name}.pdf")
+    try:
+        os.makedirs(book_dir, exist_ok=True)
+        with open(out_file, "wb") as f:
+            f.write(pdf)
+    except OSError as e:
+        raise JobFailed(f"saving PDF: {e}")
     return out_file
 
 

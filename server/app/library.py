@@ -89,6 +89,8 @@ def import_library(db: Database, account_id: int, books: list[dict[str, Any]]) -
                     (sid, book_id, s.get("sequence") or ""),
                 )
 
+            _import_genres(conn, book_id, b.get("genres") or [])
+
             # Contentless FTS table: no upsert, so delete and re-insert.
             conn.execute("DELETE FROM books_fts WHERE rowid = ?", (book_id,))
             conn.execute(
@@ -112,6 +114,58 @@ def import_library(db: Database, account_id: int, books: list[dict[str, Any]]) -
         else:
             conn.execute("UPDATE library_books SET is_deleted = 1 WHERE account_id = ?", (account_id,))
     return len(books)
+
+
+def _import_genres(conn, book_id: int, ladders: list[list[dict[str, str]]]) -> None:
+    """Store Audible's genre ladders (top-level → most specific) and link the
+    book to the most specific genre of each. Replaces the book's genres."""
+    conn.execute("DELETE FROM book_categories WHERE book_id = ?", (book_id,))
+    for ladder in ladders:
+        parent_id = None
+        for rung in ladder:
+            if not rung.get("id") or not rung.get("name"):
+                parent_id = None
+                break
+            conn.execute(
+                "INSERT INTO categories (audible_id, name, parent_id) VALUES (?, ?, ?) "
+                "ON CONFLICT(audible_id) DO UPDATE SET name = excluded.name, parent_id = excluded.parent_id",
+                (rung["id"], rung["name"], parent_id),
+            )
+            parent_id = conn.execute("SELECT id FROM categories WHERE audible_id = ?", (rung["id"],)).fetchone()[0]
+        if parent_id is not None:
+            conn.execute("INSERT OR IGNORE INTO book_categories (book_id, category_id) VALUES (?, ?)",
+                         (book_id, parent_id))
+
+
+def genres(db: Database, book_ids: list[int]) -> dict[int, list[str]]:
+    """Most specific genre names per book, in the order Audible lists them."""
+    out: dict[int, list[str]] = {i: [] for i in book_ids}
+    if not book_ids:
+        return out
+    marks = ",".join("?" * len(book_ids))
+    for r in db.query(
+        f"""SELECT bc.book_id, c.name FROM book_categories bc JOIN categories c ON c.id = bc.category_id
+            WHERE bc.book_id IN ({marks}) ORDER BY bc.rowid""",
+        book_ids,
+    ):
+        if r["name"] not in out[r["book_id"]]:
+            out[r["book_id"]].append(r["name"])
+    return out
+
+
+def _contributors_for(db: Database, book_ids: list[int]) -> dict[int, dict[str, list[str]]]:
+    out: dict[int, dict[str, list[str]]] = {i: {"author": [], "narrator": []} for i in book_ids}
+    if not book_ids:
+        return out
+    marks = ",".join("?" * len(book_ids))
+    for r in db.query(
+        f"""SELECT bc.book_id, bc.role, c.name FROM book_contributors bc
+            JOIN contributors c ON c.id = bc.contributor_id
+            WHERE bc.book_id IN ({marks}) ORDER BY bc.role, bc.sort_order, bc.rowid""",
+        book_ids,
+    ):
+        out[r["book_id"]].setdefault(r["role"], []).append(r["name"])
+    return out
 
 
 # --- list / sort / search --------------------------------------------------
@@ -178,38 +232,54 @@ def fts_query(text: str) -> str:
     return " ".join('"' + w.replace('"', '""') + '"*' for w in words)
 
 
+MAX_PAGE_SIZE = 500
+
 _SUMMARY_COLUMNS = """b.id, b.audible_id, b.title, COALESCE(b.cover_url, '') AS cover_url,
-    lb.liberation_status, lb.is_finished, lb.is_deleted, lb.tags, lb.account_id"""
+    lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.tags, lb.account_id,
+    lb.last_format, b.length_minutes, lb.date_added"""
 
 
-def list_books(db: Database, *, search: str = "", sort: str | None = None,
-               order: str | None = None, page: int = 1) -> list[dict[str, Any]]:
+def list_books(db: Database, *, search: str = "", sort: str | None = None, order: str | None = None,
+               page: int = 1, limit: int = PAGE_SIZE, account_id: int | None = None) -> list[dict[str, Any]]:
     clause = order_by(sort, order)
-    offset = (max(page, 1) - 1) * PAGE_SIZE
+    limit = min(max(limit, 1), MAX_PAGE_SIZE)
+    offset = (max(page, 1) - 1) * limit
+    where, params = [], []
+    if account_id is not None:
+        where.append("lb.account_id = ?")
+        params.append(account_id)
     match = fts_query(search) if search else ""
+    if search and not match:
+        return []  # nothing searchable in the text (e.g. only punctuation)
     if match:
+        where.append("books_fts MATCH ?")
+        params.append(match)
+        joins = "JOIN books_fts f ON f.rowid = b.id"
         # Without an explicit sort, search results stay in relevance order.
-        rows = db.query(
-            f"""SELECT {_SUMMARY_COLUMNS} FROM books b
-                JOIN library_books lb ON lb.book_id = b.id
-                JOIN books_fts f ON f.rowid = b.id
-                WHERE books_fts MATCH ?
-                ORDER BY {clause if sort else "rank"}
-                LIMIT ? OFFSET ?""",
-            (match, PAGE_SIZE, offset),
-        )
-    elif search:
-        rows = []  # nothing searchable in the text (e.g. only punctuation)
+        ordering = clause if sort else "rank"
     else:
-        rows = db.query(
-            f"""SELECT {_SUMMARY_COLUMNS} FROM books b
-                JOIN library_books lb ON lb.book_id = b.id
-                ORDER BY lb.is_deleted ASC, {clause}
-                LIMIT ? OFFSET ?""",
-            (PAGE_SIZE, offset),
-        )
+        joins = ""
+        ordering = f"lb.is_deleted ASC, {clause}"
+    rows = db.query(
+        f"""SELECT {_SUMMARY_COLUMNS} FROM books b
+            JOIN library_books lb ON lb.book_id = b.id {joins}
+            {"WHERE " + " AND ".join(where) if where else ""}
+            ORDER BY {ordering}
+            LIMIT ? OFFSET ?""",
+        (*params, limit, offset),
+    )
+    ids = [r["id"] for r in rows]
+    people, genre_names = _contributors_for(db, ids), genres(db, ids)
     return [
-        {**dict(r), "is_finished": bool(r["is_finished"]), "is_deleted": bool(r["is_deleted"])}
+        {
+            **dict(r),
+            "is_finished": bool(r["is_finished"]),
+            "is_deleted": bool(r["is_deleted"]),
+            "is_hidden": bool(r["is_hidden"]),
+            "authors": people[r["id"]]["author"],
+            "narrators": people[r["id"]]["narrator"],
+            "genres": genre_names[r["id"]],
+        }
         for r in rows
     ]
 
@@ -220,14 +290,16 @@ def get_book(db: Database, book_id: int) -> dict[str, Any] | None:
                   COALESCE(b.description,'') AS description, COALESCE(b.cover_url,'') AS cover_url,
                   b.length_minutes, COALESCE(b.publisher,'') AS publisher,
                   COALESCE(b.language,'') AS language, COALESCE(b.audible_rating,0) AS audible_rating,
-                  lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id
+                  lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
+                  lb.is_hidden, lb.last_format, lb.file_path
            FROM books b JOIN library_books lb ON lb.book_id = b.id
            WHERE b.id = ?""",
         (book_id,),
     )
     if r is None:
         return None
-    book = {**dict(r), "is_finished": bool(r["is_finished"]), "audible_rating": round(r["audible_rating"], 2)}
+    book = {**dict(r), "is_finished": bool(r["is_finished"]), "is_hidden": bool(r["is_hidden"]),
+            "audible_rating": round(r["audible_rating"], 2), "genres": genres(db, [book_id])[book_id]}
     people = contributors(db, book_id)
     book["authors"], book["narrators"] = people["author"], people["narrator"]
     book["series"] = [
@@ -253,8 +325,10 @@ def contributors(db: Database, book_id: int) -> dict[str, list[str]]:
     return out
 
 
-def update_book(db: Database, book_id: int, *, tags: str | None = None,
-                user_rating: float | None = None, is_finished: bool | None = None) -> None:
+def update_book(db: Database, book_id: int, *, tags: str | None = None, user_rating: float | None = None,
+                is_finished: bool | None = None, is_hidden: bool | None = None) -> None:
+    if is_hidden is not None:
+        set_hidden(db, [book_id], is_hidden)
     if tags is not None:
         db.execute("UPDATE library_books SET tags = ? WHERE book_id = ?", (tags, book_id))
     if user_rating is not None:
@@ -263,14 +337,67 @@ def update_book(db: Database, book_id: int, *, tags: str | None = None,
         db.execute("UPDATE library_books SET is_finished = ? WHERE book_id = ?", (int(is_finished), book_id))
 
 
+def set_hidden(db: Database, book_ids: list[int], hidden: bool) -> None:
+    if not book_ids:
+        return
+    marks = ",".join("?" * len(book_ids))
+    db.execute(f"UPDATE library_books SET is_hidden = ? WHERE book_id IN ({marks})", (int(hidden), *book_ids))
+
+
+def book_meta(db: Database, book_id: int, account_id: int | None = None) -> dict | None:
+    """What a download needs to know about a book: its account and the values
+    the filename/folder templates use. account_id defaults to the book's own."""
+    row = db.query_one(
+        """SELECT a.audible_account_id, a.id AS account_id, b.audible_id, b.title, COALESCE(b.language,'') AS language,
+                  COALESCE(b.length_minutes,0) AS length_minutes, COALESCE(lb.date_added,'') AS date_added,
+                  COALESCE(b.date_published,'') AS date_published
+           FROM accounts a
+           JOIN library_books lb ON lb.account_id = a.id
+           JOIN books b ON b.id = lb.book_id
+           WHERE b.id = ? AND (? IS NULL OR a.id = ?)""",
+        (book_id, account_id, account_id),
+    )
+    if row is None:
+        return None
+    meta = dict(row)
+    people = contributors(db, book_id)
+    meta["authors"], meta["narrators"] = ", ".join(people["author"]), ", ".join(people["narrator"])
+    series = db.query_one(
+        """SELECT s.name, COALESCE(sb.book_index,'') AS idx FROM series s
+           JOIN series_books sb ON sb.series_id = s.id WHERE sb.book_id = ? LIMIT 1""",
+        (book_id,),
+    )
+    meta["series_name"], meta["series_index"] = (series["name"], series["idx"]) if series else ("", "")
+    return meta
+
+
+
+
+def naming_data(meta: dict) -> dict[str, str]:
+    """Template values (see jobs.filename.FilenameData) from book_meta()."""
+    # {year} is the publication year; fall back to when it joined the library.
+    year = (meta["date_published"] or meta["date_added"])[:4]
+    minutes = meta["length_minutes"]
+    return {
+        "title": meta["title"],
+        "authors": meta["authors"],
+        "narrators": meta["narrators"],
+        "series_name": meta["series_name"],
+        "series_index": meta["series_index"],
+        "year": year if len(year) == 4 else "",
+        "language": meta["language"],
+        "duration_h": str(minutes // 60) if minutes > 0 else "",
+    }
+
+
 # --- download status ---------------------------------------------------------
 
 
-def mark_downloaded(db: Database, book_id: int, fmt: str) -> None:
+def mark_downloaded(db: Database, book_id: int, fmt: str, file_path: str | None = None) -> None:
     db.execute(
         "UPDATE library_books SET liberation_status = 'liberated', last_downloaded = CURRENT_TIMESTAMP, "
-        "last_format = ? WHERE book_id = ?",
-        (fmt, book_id),
+        "last_format = ?, file_path = COALESCE(?, file_path) WHERE book_id = ?",
+        (fmt, file_path, book_id),
     )
 
 

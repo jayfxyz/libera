@@ -1,7 +1,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.27.2
-audible==0.13.1
+audible[cryptography]==0.13.1
 audible-cli==0.6.0
 opentelemetry-sdk
 opentelemetry-exporter-otlp-proto-grpc

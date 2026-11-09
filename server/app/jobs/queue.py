@@ -34,6 +34,8 @@ class DownloadJob:
     year: str = ""
     duration_h: str = ""
     split_chapters: bool = False
+    include_pdf: bool = True  # also save the companion PDF, if the title has one
+    kind: str = "audio"  # "audio", or "pdf" for the companion PDF only
     # Trace context of the request that enqueued the job, so job spans are its children.
     trace_context: Any = field(default=None, repr=False)
 
@@ -67,7 +69,8 @@ class DownloadQueue:
     def enqueue(self, job: DownloadJob) -> None:
         if job.trace_context is None:
             job.trace_context = otel_context.get_current()
-        self._state[job.id] = {"job_id": job.id, "book_id": job.book_id, "status": "queued", "percent": 0}
+        self._state[job.id] = {"job_id": job.id, "book_id": job.book_id, "title": job.title, "kind": job.kind,
+                               "status": "queued", "percent": 0}
         self._queue.put_nowait(job)
         self._emit(self._state[job.id])
 

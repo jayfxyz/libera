@@ -44,6 +44,10 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
             for s in item.get("series") or []
         ],
         "rating": rating,
+        "genres": [
+            [{"id": str(r.get("id") or ""), "name": r.get("name") or ""} for r in ladder.get("ladder") or []]
+            for ladder in item.get("category_ladders") or []
+        ],
         "is_plus_catalog_item": bool(item.get("is_plus_catalog_item")),
         "date_added": (item.get("library_status") or {}).get("date_added"),
     }

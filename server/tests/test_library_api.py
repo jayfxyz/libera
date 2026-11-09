@@ -17,7 +17,9 @@ def test_list_and_sort(client, db):
     assert client.get("/api/library?sort=nope").status_code == 400
     book = client.get("/api/library").json()[0]
     assert set(book) == {"id", "audible_id", "title", "cover_url", "liberation_status", "is_finished",
-                         "is_deleted", "tags", "account_id"}
+                         "is_deleted", "is_hidden", "tags", "account_id", "authors", "narrators", "genres",
+                         "last_format", "length_minutes", "date_added"}
+    assert (book["authors"], book["is_hidden"]) == (["A"], False)
     assert book["is_finished"] is False
 
 

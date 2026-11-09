@@ -17,76 +17,90 @@ from ..telemetry import tracer
 router = APIRouter()
 
 
-class EnqueueRequest(BaseModel):
-    book_id: int
-    audible_id: str
-    account_id: int
-    format: str = ""
+KINDS = ("audio", "pdf")  # audio: the audiobook (+ companion PDF); pdf: only the companion PDF
+
+
+class DownloadOptions(BaseModel):
+    format: str = ""  # m4b/mp3; "" = the default from Settings
     split_chapters: bool = False
+    include_pdf: bool = True  # save the companion PDF next to the audiobook, if there is one
+    kind: str = "audio"
 
 
-def _book_meta(db: Database, book_id: int, account_id: int) -> dict | None:
-    row = db.query_one(
-        """SELECT a.audible_account_id, b.title, COALESCE(b.language,'') AS language,
-                  COALESCE(b.length_minutes,0) AS length_minutes, COALESCE(lb.date_added,'') AS date_added,
-                  COALESCE(b.date_published,'') AS date_published
-           FROM accounts a
-           JOIN library_books lb ON lb.account_id = a.id
-           JOIN books b ON b.id = lb.book_id
-           WHERE a.id = ? AND b.id = ?""",
-        (account_id, book_id),
-    )
-    if row is None:
-        return None
-    meta = dict(row)
-    people = library.contributors(db, book_id)
-    meta["authors"], meta["narrators"] = ", ".join(people["author"]), ", ".join(people["narrator"])
-    series = db.query_one(
-        """SELECT s.name, COALESCE(sb.book_index,'') AS idx FROM series s
-           JOIN series_books sb ON sb.series_id = s.id WHERE sb.book_id = ? LIMIT 1""",
-        (book_id,),
-    )
-    meta["series_name"], meta["series_index"] = (series["name"], series["idx"]) if series else ("", "")
-    return meta
+class EnqueueRequest(DownloadOptions):
+    book_id: int
+    audible_id: str = ""  # accepted for older clients; the book's own ASIN is used
+    account_id: int | None = None
 
 
-@router.post("/downloads", status_code=202)
-async def enqueue_download(req: EnqueueRequest, ctx: AppContext = Depends(get_ctx)):
-    fmt = req.format or ctx.config.default_format
+class BulkEnqueueRequest(DownloadOptions):
+    book_ids: list[int]
+
+
+def _validate(opts: DownloadOptions, ctx: AppContext) -> str:
+    fmt = opts.format or ctx.config.default_format
     if fmt not in FORMATS:
         raise HTTPException(400, "format must be 'm4b' or 'mp3'")
-    meta = await run_in_threadpool(_book_meta, ctx.db, req.book_id, req.account_id)
-    if meta is None:
-        raise HTTPException(404, "book not found for this account")
+    if opts.kind not in KINDS:
+        raise HTTPException(400, "kind must be 'audio' or 'pdf'")
+    return fmt
 
-    # {year} is the publication year; fall back to when it joined the library.
-    year = (meta["date_published"] or meta["date_added"])[:4]
+
+def _make_job(meta: dict, fmt: str, opts: DownloadOptions, ctx: AppContext) -> DownloadJob:
     settings = ctx.config.snapshot()
-    job = DownloadJob(
-        id=f"dl-{req.book_id}-{int(time.time() * 1000)}",
-        book_id=req.book_id,
-        audible_id=req.audible_id,
-        account_id=req.account_id,
+    book_id = meta["book_id"]
+    return DownloadJob(
+        id=f"dl-{book_id}-{time.time_ns() // 1000}",
+        book_id=book_id,
+        audible_id=meta["audible_id"],
+        account_id=meta["account_id"],
         audible_account_id=meta["audible_account_id"],
-        title=meta["title"],
         format=fmt,
         output_dir=settings.output_dir,
         filename_template=settings.filename_template,
         folder_template=settings.folder_template,
-        authors=meta["authors"],
-        narrators=meta["narrators"],
-        series_name=meta["series_name"],
-        series_index=meta["series_index"],
-        language=meta["language"],
-        year=year if len(year) == 4 else "",
-        duration_h=str(meta["length_minutes"] // 60) if meta["length_minutes"] > 0 else "",
-        split_chapters=req.split_chapters,
+        split_chapters=opts.split_chapters,
+        include_pdf=opts.include_pdf,
+        kind=opts.kind,
+        **library.naming_data(meta),
     )
+
+
+def _enqueue(job: DownloadJob, ctx: AppContext) -> None:
     with tracer.start_as_current_span("job.enqueue", attributes={
-        "job.id": job.id, "job.asin": job.audible_id, "job.format": job.format,
+        "job.id": job.id, "job.asin": job.audible_id, "job.format": job.format, "job.kind": job.kind,
     }):
         ctx.queue.enqueue(job)
+
+
+def _meta(db: Database, book_id: int, account_id: int | None) -> dict | None:
+    meta = library.book_meta(db, book_id, account_id)
+    return None if meta is None else {**meta, "book_id": book_id}
+
+
+@router.post("/downloads", status_code=202)
+async def enqueue_download(req: EnqueueRequest, ctx: AppContext = Depends(get_ctx)):
+    fmt = _validate(req, ctx)
+    meta = await run_in_threadpool(_meta, ctx.db, req.book_id, req.account_id)
+    if meta is None:
+        raise HTTPException(404, "book not found for this account")
+    job = _make_job(meta, fmt, req, ctx)
+    _enqueue(job, ctx)
     return {"job_id": job.id}
+
+
+@router.post("/downloads/bulk", status_code=202)
+async def enqueue_downloads(req: BulkEnqueueRequest, ctx: AppContext = Depends(get_ctx)):
+    """Queue several books at once (in the order given). Unknown ids are skipped."""
+    fmt = _validate(req, ctx)
+    job_ids = []
+    for book_id in dict.fromkeys(req.book_ids):  # de-duplicated, order kept
+        meta = await run_in_threadpool(_meta, ctx.db, book_id, None)
+        if meta is not None:
+            job = _make_job(meta, fmt, req, ctx)
+            _enqueue(job, ctx)
+            job_ids.append(job.id)
+    return {"job_ids": job_ids}
 
 
 @router.get("/downloads")

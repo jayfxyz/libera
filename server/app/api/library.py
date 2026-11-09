@@ -3,12 +3,14 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from .. import library
 from ..context import AppContext, get_ctx
+from ..jobs.filename import FilenameData, book_directory, render_filename
 
 router = APIRouter()
 
@@ -17,14 +19,28 @@ router = APIRouter()
 def list_library(
     q: str = "",
     page: int = 1,
+    limit: int = Query(library.PAGE_SIZE, ge=1, le=library.MAX_PAGE_SIZE),
     sort: str | None = None,
     order: str | None = None,
+    account_id: int | None = None,
     ctx: AppContext = Depends(get_ctx),
 ):
     try:
-        return library.list_books(ctx.db, search=q, sort=sort, order=order, page=page)
+        return library.list_books(ctx.db, search=q, sort=sort, order=order, page=page, limit=limit,
+                                  account_id=account_id)
     except library.InvalidSort:
         raise HTTPException(400, "invalid sort or order")
+
+
+class BulkUpdate(BaseModel):
+    book_ids: list[int]
+    is_hidden: bool
+
+
+@router.post("/library/bulk", status_code=204)
+def bulk_update(req: BulkUpdate, ctx: AppContext = Depends(get_ctx)):
+    library.set_hidden(ctx.db, req.book_ids, req.is_hidden)
+    return Response(status_code=204)
 
 
 @router.get("/library/export")
@@ -68,17 +84,30 @@ def get_book(book_id: int, ctx: AppContext = Depends(get_ctx)):
     book = library.get_book(ctx.db, book_id)
     if book is None:
         raise HTTPException(404, "book not found")
+    book["planned_path"] = _planned_path(ctx, book_id)
     return book
+
+
+def _planned_path(ctx: AppContext, book_id: int) -> str:
+    """Where a download of this book would be saved with the current settings."""
+    meta = library.book_meta(ctx.db, book_id)
+    if meta is None:
+        return ""
+    c = ctx.config
+    names = FilenameData(**library.naming_data(meta))
+    folder = book_directory(c.output_dir, c.folder_template, names)
+    return os.path.join(folder, f"{render_filename(c.filename_template, names)}.{c.default_format}")
 
 
 class BookPatch(BaseModel):
     tags: str | None = None
     user_rating: float | None = None
     is_finished: bool | None = None
+    is_hidden: bool | None = None
 
 
 @router.patch("/library/{book_id}", status_code=204)
 def update_book(book_id: int, patch: BookPatch, ctx: AppContext = Depends(get_ctx)):
     library.update_book(ctx.db, book_id, tags=patch.tags, user_rating=patch.user_rating,
-                        is_finished=patch.is_finished)
+                        is_finished=patch.is_finished, is_hidden=patch.is_hidden)
     return Response(status_code=204)

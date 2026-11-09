@@ -43,10 +43,15 @@ class Database:
         with self._lock:
             self._conn.executescript(SCHEMA)
             # Columns added after the first release (SQLite has no ADD COLUMN IF NOT EXISTS).
-            try:
-                self._conn.execute("ALTER TABLE accounts ADD COLUMN last_scanned_at DATETIME")
-            except sqlite3.OperationalError:
-                pass
+            for statement in (
+                "ALTER TABLE accounts ADD COLUMN last_scanned_at DATETIME",
+                "ALTER TABLE library_books ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE library_books ADD COLUMN file_path TEXT",
+            ):
+                try:
+                    self._conn.execute(statement)
+                except sqlite3.OperationalError:
+                    pass  # already there
 
     def execute(self, sql: str, params: tuple | list = ()) -> sqlite3.Cursor:
         with self._lock:

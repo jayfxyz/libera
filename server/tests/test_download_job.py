@@ -189,3 +189,40 @@ def test_tiny_download_error():
     assert tiny_download_error(33, " No Library Record Found for user.\n", "Throttled.") == \
         "Throttled. (fallback AAX download also failed: No Library Record Found for user.)"
     assert tiny_download_error(33, "oops", "") == "download returned 33 bytes (expected an audiobook file): oops"
+
+
+class NoPdfAudible(FakeAudible):
+    async def get_pdf(self, account_id, asin):
+        return None
+
+
+async def test_pdf_only_job_saves_the_pdf_without_a_license(db, tmp_path):
+    add_account(db)
+    library.import_library(db, 1, [make_book("B0001", title="The Book")])
+    book_id = db.scalar("SELECT id FROM books")
+    audible = FakeAudible("", error="no license requests for a PDF")  # get_download_info must not be called
+    state = await run_job(db, audible, make_job(str(tmp_path), book_id, kind="pdf"))
+    pdf = tmp_path / "Jane Author - The Book" / "The Book.pdf"
+    assert (state["status"], state["message"]) == ("done", str(pdf))
+    assert pdf.read_bytes() == b"%PDF-1.4 test"
+    # A PDF doesn't mark the audiobook as downloaded.
+    assert db.scalar("SELECT liberation_status FROM library_books") == "not_liberated"
+
+
+async def test_pdf_only_job_without_a_pdf_fails_without_marking_the_book(db, tmp_path):
+    add_account(db)
+    library.import_library(db, 1, [make_book("B0001", title="The Book")])
+    book_id = db.scalar("SELECT id FROM books")
+    state = await run_job(db, NoPdfAudible(""), make_job(str(tmp_path), book_id, kind="pdf"))
+    assert (state["status"], state["message"]) == ("error", "This title has no companion PDF")
+    assert db.scalar("SELECT liberation_status FROM library_books") == "not_liberated"
+
+
+async def test_audio_job_records_path_and_can_skip_the_pdf(db, tmp_path, source_audio):
+    add_account(db)
+    library.import_library(db, 1, [make_book("B0001", title="The Book")])
+    book_id = db.scalar("SELECT id FROM books")
+    state = await run_job(db, FakeAudible(source_audio), make_job(str(tmp_path), book_id, include_pdf=False))
+    assert state["status"] == "done", state
+    assert not (tmp_path / "Jane Author - The Book" / "The Book.pdf").exists()
+    assert db.scalar("SELECT file_path FROM library_books") == state["message"]

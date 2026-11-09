@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS library_books (
     is_finished        INTEGER NOT NULL DEFAULT 0,
     last_downloaded    DATETIME,
     last_format        TEXT,
+    is_hidden          INTEGER NOT NULL DEFAULT 0,  -- hidden from the library by the user
+    file_path          TEXT,                        -- where the last download was saved
     UNIQUE(book_id, account_id)
 );
 
