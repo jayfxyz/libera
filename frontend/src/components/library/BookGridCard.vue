@@ -1,5 +1,5 @@
 <template>
-  <div class="relative flex min-w-0 flex-col">
+  <div class="group relative flex min-w-0 flex-col">
     <button type="button" class="flex min-w-0 cursor-pointer flex-col gap-2 text-left" :aria-pressed="open" @click="emit('open')">
       <span
         class="block rounded-[10px]"
@@ -15,8 +15,10 @@
         <span class="block h-1 bg-busy transition-[width]" :style="{ width: `${status.percent}%` }" />
       </span>
     </button>
+    <!-- Not selecting: shown on hover or keyboard focus; touch screens use the Select button. -->
     <label
       class="absolute left-1.5 top-1.5 flex size-9 cursor-pointer items-center justify-center rounded-lg bg-white/95 shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
+      :class="selecting ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:hidden'"
     >
       <input type="checkbox" class="checkbox" :checked="checked" :aria-label="`Select ${book.title}`" @change="emit('toggle')" />
     </label>
@@ -28,6 +30,6 @@ import type { BookSummary } from '@/api/client'
 import type { BookStatus } from '@/lib/bookStatus'
 import BookCover from './BookCover.vue'
 
-defineProps<{ book: BookSummary; status: BookStatus; checked: boolean; open: boolean }>()
+defineProps<{ book: BookSummary; status: BookStatus; checked: boolean; open: boolean; selecting: boolean }>()
 const emit = defineEmits<{ toggle: []; open: [] }>()
 </script>

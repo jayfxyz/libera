@@ -57,6 +57,10 @@ export const useLibraryStore = defineStore('library', () => {
   const accountId = ref<number | null>(prefs.accountId)
   const segment = ref<Segment>('all')
   const selected = ref<Set<number>>(new Set())
+  /** Turned on with the toolbar's Select button (phones have no hover to reveal checkboxes). */
+  const selectMode = ref(false)
+  /** Every book shows its checkbox while selecting; otherwise only on hover/focus. */
+  const selecting = computed(() => selectMode.value || selected.value.size > 0)
   const openBookId = ref<number | null>(null)
 
   watch([sort, order, view, accountId], () => {
@@ -135,6 +139,7 @@ export const useLibraryStore = defineStore('library', () => {
 
   function clearSelection() {
     selected.value = new Set()
+    selectMode.value = false
   }
 
   function setSort(s: LibrarySort) {
@@ -180,7 +185,7 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   return {
-    books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, openBookId,
+    books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, selectMode, selecting, openBookId,
     segmentBooks, visibleBooks, downloadable, selectedBooks, shelved,
     fetchBooks, toggleSelected, selectAllVisible, clearSelection, setSort, toggleOrder, setAccount, search,
     patchBooks, setHidden, updateBook, stateOf,

@@ -89,6 +89,13 @@
               <option v-for="a in accounts.accounts" :key="a.id" :value="a.id">{{ accountLabel(a) }}</option>
             </select>
           </label>
+          <button
+            type="button"
+            class="order-2 sm:order-none"
+            :class="library.selecting ? 'btn-ink' : 'btn-secondary'"
+            :aria-pressed="library.selecting"
+            @click="library.selecting ? library.clearSelection() : (library.selectMode = true)"
+          >{{ library.selecting ? 'Done' : 'Select' }}</button>
           <div role="group" aria-label="View" class="order-2 flex overflow-hidden rounded-[10px] border border-line bg-surface sm:order-none">
             <button
               v-for="v in views"
@@ -125,7 +132,7 @@
         </nav>
 
         <!-- Selection: only once a book is ticked (each row has its own checkbox). -->
-        <div v-if="library.selected.size > 0" class="flex min-h-[52px] flex-wrap items-center gap-2">
+        <div v-if="library.selecting" class="flex min-h-[52px] flex-wrap items-center gap-2">
           <label class="mr-auto flex h-11 cursor-pointer items-center gap-2.5 px-1 text-[13px] text-ink-soft">
             <input
               type="checkbox"
@@ -138,6 +145,7 @@
             <span>{{ allVisibleSelected ? `All ${library.visibleBooks.length} selected` : `Select all ${library.visibleBooks.length}` }}</span>
           </label>
           <div
+            v-if="library.selected.size > 0"
             class="flex flex-wrap items-center gap-1.5 rounded-xl bg-ink py-1 pr-1 pl-3.5 text-white"
             role="toolbar"
             aria-label="Selected books"
@@ -179,6 +187,7 @@
             :status="statusFor(b)"
             :checked="library.selected.has(b.id)"
             :open="library.openBookId === b.id"
+            :selecting="library.selecting"
             @toggle="library.toggleSelected(b.id)"
             @open="library.openBookId = b.id"
           />
@@ -192,6 +201,7 @@
             :status="statusFor(b)"
             :checked="library.selected.has(b.id)"
             :open="library.openBookId === b.id"
+            :selecting="library.selecting"
             @toggle="library.toggleSelected(b.id)"
             @open="library.openBookId = b.id"
           />

@@ -1,11 +1,16 @@
 <template>
-  <li class="flex items-center border-b border-line-faint last:border-b-0" :class="open ? 'bg-row-open' : checked ? 'bg-row-checked' : 'bg-surface'">
-    <label class="flex h-[72px] w-12 shrink-0 cursor-pointer items-center justify-center md:w-[52px]">
+  <li class="group flex items-center border-b border-line-faint last:border-b-0" :class="open ? 'bg-row-open' : checked ? 'bg-row-checked' : 'bg-surface'">
+    <!-- Not selecting: shown on hover or keyboard focus; touch screens use the Select button. -->
+    <label
+      class="flex h-[72px] w-12 shrink-0 cursor-pointer items-center justify-center md:w-[52px]"
+      :class="selecting ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:hidden'"
+    >
       <input type="checkbox" class="checkbox" :checked="checked" :aria-label="`Select ${book.title}`" @change="emit('toggle')" />
     </label>
     <button
       type="button"
       class="flex min-w-0 flex-1 cursor-pointer items-center gap-3.5 py-2.5 pr-4 text-left"
+      :class="selecting ? '' : 'pointer-coarse:pl-4'"
       :aria-pressed="open"
       @click="emit('open')"
     >
@@ -38,6 +43,6 @@ import type { BookSummary } from '@/api/client'
 import { byline, type BookStatus } from '@/lib/bookStatus'
 import BookCover from './BookCover.vue'
 
-defineProps<{ book: BookSummary; status: BookStatus; checked: boolean; open: boolean }>()
+defineProps<{ book: BookSummary; status: BookStatus; checked: boolean; open: boolean; selecting: boolean }>()
 const emit = defineEmits<{ toggle: []; open: [] }>()
 </script>
