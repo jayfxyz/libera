@@ -1,5 +1,9 @@
 <template>
-  <div class="w-96 border-l bg-background flex flex-col overflow-hidden shrink-0">
+  <!-- Below xl there isn't room beside the page, so the panel overlays it. -->
+  <div class="fixed inset-0 z-30 bg-black/20 xl:hidden" aria-hidden="true" @click="emit('close')" />
+  <div
+    class="fixed inset-y-0 right-0 z-40 w-96 max-w-full shadow-xl xl:static xl:z-auto xl:shadow-none border-l bg-background flex flex-col overflow-hidden shrink-0"
+  >
     <!-- Header -->
     <div class="p-4 border-b flex items-center justify-between">
       <div>
@@ -40,7 +44,7 @@
               <Progress :model-value="job.percent" class="h-1.5" />
               <p class="text-xs text-muted-foreground">{{ job.percent }}%</p>
             </div>
-            <p v-if="job.message" class="text-xs text-muted-foreground">{{ job.message }}</p>
+            <p v-if="job.message" class="text-xs text-muted-foreground break-words">{{ job.message }}</p>
           </div>
         </div>
 

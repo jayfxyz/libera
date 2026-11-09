@@ -131,3 +131,10 @@
     @apply font-sans;
   }
 }
+/* A row that scrolls sideways on touch (e.g. the library's filter pills) without a visible scrollbar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

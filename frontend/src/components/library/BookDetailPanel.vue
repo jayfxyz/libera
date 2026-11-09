@@ -1,6 +1,6 @@
 <template>
   <div class="fixed inset-0 z-40" @click.self="emit('close')" />
-  <div class="fixed right-0 top-0 h-full w-96 border-l bg-background flex flex-col overflow-hidden shadow-xl z-50">
+  <div class="fixed right-0 top-0 h-dvh w-full sm:w-96 sm:border-l bg-background flex flex-col overflow-hidden shadow-xl z-50">
     <!-- Header -->
     <div class="px-4 py-4 border-b flex items-center justify-between shrink-0">
       <h3 class="font-semibold">Book Details</h3>
@@ -15,7 +15,7 @@
     <div v-else-if="error" class="flex-1 flex items-center justify-center text-destructive text-sm p-4">{{ error }}</div>
 
     <ScrollArea v-else-if="book" class="flex-1 min-h-0">
-      <div class="p-4 space-y-6">
+      <div class="p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-6">
         <!-- Cover -->
         <div class="aspect-square rounded-lg overflow-hidden bg-muted">
           <img v-if="book.cover_url" :src="book.cover_url" :alt="book.title" class="w-full h-full object-cover" />

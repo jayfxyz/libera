@@ -1,8 +1,8 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
     <!-- Header -->
-    <div class="border-b p-6 shrink-0">
-      <div class="flex items-center justify-between">
+    <div class="border-b p-4 md:p-6 shrink-0">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-2xl font-semibold">Audible Accounts</h2>
           <p class="text-sm text-muted-foreground">Manage your Audible accounts and sync libraries</p>
@@ -18,7 +18,7 @@
 
     <!-- Account list -->
     <div class="flex-1 overflow-y-auto">
-      <div class="p-6">
+      <div class="p-4 md:p-6">
         <div v-if="store.accounts.length === 0 && !store.loading" class="flex flex-col items-center justify-center py-12 text-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-muted-foreground mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
@@ -34,7 +34,7 @@
         </div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card v-for="account in store.accounts" :key="account.id" class="p-6">
+          <Card v-for="account in store.accounts" :key="account.id" class="p-4 md:p-6">
             <div class="space-y-4">
               <!-- Name + locale badge -->
               <div class="flex items-start justify-between">

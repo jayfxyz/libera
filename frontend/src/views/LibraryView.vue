@@ -1,43 +1,43 @@
 <template>
   <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
     <!-- Header -->
-    <div class="border-b p-6 shrink-0">
-      <div class="flex items-center justify-between mb-4">
+    <div class="border-b p-4 md:p-6 shrink-0">
+      <div class="flex items-center justify-between gap-3 mb-3 md:mb-4">
         <div>
           <h2 class="text-2xl font-semibold">Library</h2>
           <p class="text-sm text-muted-foreground">
             {{ store.filteredBooks.length }} {{ store.filteredBooks.length === 1 ? 'book' : 'books' }}
           </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 shrink-0">
           <Button variant="outline" size="sm" as-child>
-            <a href="/api/library/export?format=csv" download="library.csv">
-              <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <a href="/api/library/export?format=csv" download="library.csv" aria-label="Export CSV" title="Export CSV">
+              <svg xmlns="http://www.w3.org/2000/svg" class="sm:mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
               </svg>
-              Export CSV
+              <span class="sm:hidden ml-1">CSV</span><span class="hidden sm:inline">Export CSV</span>
             </a>
           </Button>
           <Button variant="outline" size="sm" as-child>
-            <a href="/api/library/export?format=json" download="library.json">
-              <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <a href="/api/library/export?format=json" download="library.json" aria-label="Export JSON" title="Export JSON">
+              <svg xmlns="http://www.w3.org/2000/svg" class="sm:mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
               </svg>
-              Export JSON
+              <span class="sm:hidden ml-1">JSON</span><span class="hidden sm:inline">Export JSON</span>
             </a>
           </Button>
-          <Button variant="outline" size="sm" :disabled="rescanning" @click="rescan">
-            <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" :class="rescanning ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <Button variant="outline" size="sm" :disabled="rescanning" aria-label="Scan files" title="Scan files" @click="rescan">
+            <svg xmlns="http://www.w3.org/2000/svg" class="sm:mr-2 h-4 w-4" :class="rescanning ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
             </svg>
-            {{ rescanning ? 'Scanning…' : rescanMessage || 'Scan Files' }}
+            <span class="hidden sm:inline">{{ rescanning ? 'Scanning…' : rescanMessage || 'Scan Files' }}</span>
           </Button>
         </div>
       </div>
 
       <!-- Search -->
-      <div class="relative mb-4">
+      <div class="relative mb-3 md:mb-4">
         <svg xmlns="http://www.w3.org/2000/svg" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
@@ -51,13 +51,13 @@
       </div>
 
       <!-- Filter pills + sort -->
-      <div class="flex items-center justify-between gap-4 flex-wrap">
-      <div class="flex gap-2 flex-wrap">
+      <div class="flex items-center justify-between gap-3 md:gap-4 flex-wrap">
+      <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap w-[calc(100%+2rem)] md:w-auto">
         <Badge
           v-for="pill in pills"
           :key="pill.value"
           :variant="store.statusFilter === pill.value ? 'default' : 'outline'"
-          class="cursor-pointer"
+          class="cursor-pointer shrink-0 py-1"
           @click="store.setStatusFilter(pill.value)"
         >
           {{ pill.label }}
@@ -65,10 +65,10 @@
         </Badge>
       </div>
 
-      <div class="flex items-center gap-2">
-        <span class="text-sm text-muted-foreground">Sort by</span>
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <span class="text-sm text-muted-foreground shrink-0">Sort by</span>
         <Select :model-value="store.sort" @update:model-value="(v) => store.setSort(v as LibrarySort)">
-          <SelectTrigger class="w-48 h-8" aria-label="Sort by">
+          <SelectTrigger class="flex-1 sm:flex-none sm:w-48 h-8" aria-label="Sort by">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -80,7 +80,7 @@
         <Button
           variant="outline"
           size="sm"
-          class="h-8 w-8 p-0"
+          class="h-8 w-8 p-0 shrink-0"
           :aria-label="store.order === 'asc' ? 'Ascending, click for descending' : 'Descending, click for ascending'"
           :title="orderHint"
           @click="store.toggleOrder()"
@@ -95,7 +95,9 @@
 
     <!-- Book Grid -->
     <div class="flex-1 overflow-y-auto">
-      <div class="p-6">
+      <!-- @container: columns follow the space the grid has (smaller when the
+           download panel is open), not the window width. -->
+      <div class="@container p-4 md:p-6">
         <div v-if="store.loading" class="flex items-center justify-center py-12 text-muted-foreground">
           Loading…
         </div>
@@ -110,7 +112,7 @@
             {{ store.books.length === 0 ? 'Add an Audible account and scan your library.' : 'Try adjusting your search or filters.' }}
           </p>
         </div>
-        <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        <div v-else class="grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 @2xl:grid-cols-5 @4xl:grid-cols-6 gap-3 md:gap-4">
           <BookCard
             v-for="book in store.filteredBooks"
             :key="book.id"

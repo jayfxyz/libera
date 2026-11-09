@@ -1,5 +1,5 @@
 <template>
-  <nav class="flex flex-col w-64 h-screen bg-sidebar text-sidebar-foreground border-r border-sidebar-border shrink-0">
+  <nav class="hidden md:flex flex-col w-64 h-full bg-sidebar text-sidebar-foreground border-r border-sidebar-border shrink-0">
     <!-- Logo -->
     <div class="p-6">
       <h1 class="font-semibold text-xl">Libation Web</h1>
@@ -20,13 +20,34 @@
         <component :is="item.icon" class="h-4 w-4 shrink-0" />
         {{ item.label }}
       </RouterLink>
+
+      <!-- Opens the download queue panel beside the current page. -->
+      <button
+        type="button"
+        class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        :class="downloadsOpen ? 'bg-sidebar-accent text-sidebar-accent-foreground' : ''"
+        :aria-pressed="downloadsOpen"
+        @click="emit('toggle-downloads')"
+      >
+        <DownloadIcon class="h-4 w-4 shrink-0" />
+        Downloads
+        <span
+          v-if="activeDownloads > 0"
+          class="ml-auto bg-primary text-primary-foreground text-xs font-bold min-w-5 h-5 px-1 rounded-full flex items-center justify-center"
+          :aria-label="`${activeDownloads} active`"
+        >{{ activeDownloads }}</span>
+      </button>
     </div>
   </nav>
 </template>
 
 <script setup lang="ts">
 import { defineComponent, h } from 'vue'
+import { DownloadIcon } from '@lucide/vue'
 import { Separator } from '@/components/ui/separator'
+
+defineProps<{ activeDownloads: number; downloadsOpen: boolean }>()
+const emit = defineEmits<{ 'toggle-downloads': [] }>()
 
 const LibraryIcon = defineComponent({
   render: () => h('svg', { xmlns: 'http://www.w3.org/2000/svg', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, [

@@ -1,8 +1,8 @@
 <template>
   <div class="flex-1 flex flex-col overflow-hidden">
     <!-- Header -->
-    <div class="border-b p-6 shrink-0">
-      <div class="flex items-center justify-between">
+    <div class="border-b p-4 md:p-6 shrink-0">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-2xl font-semibold">Settings</h2>
           <p class="text-sm text-muted-foreground">Configure download preferences and output options</p>
@@ -18,9 +18,9 @@
     </div>
 
     <div class="flex-1 overflow-y-auto">
-      <div v-if="settings" class="p-6 max-w-3xl space-y-6">
+      <div v-if="settings" class="p-4 md:p-6 max-w-3xl space-y-4 md:space-y-6">
         <!-- Download Settings -->
-        <Card class="p-6">
+        <Card class="p-4 md:p-6">
           <div class="space-y-6">
             <div>
               <h3 class="text-lg font-semibold flex items-center gap-2">
@@ -49,7 +49,7 @@
               <div class="space-y-2">
                 <Label>Default Output Format</Label>
                 <Select v-model="settings.default_format">
-                  <SelectTrigger class="w-64">
+                  <SelectTrigger class="w-full sm:w-64">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -81,7 +81,7 @@
         </Card>
 
         <!-- File Naming -->
-        <Card class="p-6">
+        <Card class="p-4 md:p-6">
           <div class="space-y-6">
             <div>
               <h3 class="text-lg font-semibold">File Naming</h3>
@@ -122,7 +122,7 @@
 
               <div class="space-y-2">
                 <Label>Available Tags</Label>
-                <div class="grid grid-cols-2 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div
                     v-for="{ tag, description } in templateTags"
                     :key="tag"
@@ -142,7 +142,7 @@
         </Card>
 
         <!-- Application -->
-        <Card class="p-6">
+        <Card class="p-4 md:p-6">
           <div class="space-y-6">
             <div>
               <h3 class="text-lg font-semibold">Application</h3>
