@@ -1,191 +1,135 @@
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="border-b p-4 md:p-6 shrink-0">
-      <div class="flex flex-wrap items-center justify-between gap-3">
+  <div class="min-w-0 flex-1 overflow-y-auto">
+    <div class="mx-auto flex max-w-[820px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
+      <header class="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 class="text-2xl font-semibold">Settings</h2>
-          <p class="text-sm text-muted-foreground">Configure download preferences and output options</p>
+          <h1 class="page-title">Settings</h1>
+          <p class="mt-1 text-sm text-ink-soft">Where downloads go and how they're named.</p>
         </div>
-        <Button @click="save">
-          <svg xmlns="http://www.w3.org/2000/svg" class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-          </svg>
-          Save Settings
-          <span v-if="saved" class="ml-2 text-green-400 text-xs">✓ Saved</span>
-        </Button>
-      </div>
-    </div>
+        <div class="flex items-center gap-3">
+          <span v-if="saved" class="text-sm font-medium text-ok-ink" role="status">Saved</span>
+          <span v-else-if="saveError" class="text-sm text-destructive" role="alert">{{ saveError }}</span>
+          <button type="button" class="btn-primary" :disabled="!settings || saving" @click="save">
+            {{ saving ? 'Saving…' : 'Save settings' }}
+          </button>
+        </div>
+      </header>
 
-    <div class="flex-1 overflow-y-auto">
-      <div v-if="settings" class="p-4 md:p-6 max-w-3xl space-y-4 md:space-y-6">
-        <!-- Download Settings -->
-        <Card class="p-4 md:p-6">
-          <div class="space-y-6">
-            <div>
-              <h3 class="text-lg font-semibold flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-                </svg>
-                Download Settings
-              </h3>
-              <p class="text-sm text-muted-foreground">Configure how audiobooks are downloaded and processed</p>
-            </div>
+      <template v-if="settings">
+        <section class="card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-downloads">
+          <h2 id="s-downloads" class="text-base font-semibold">Downloads</h2>
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
+            Output folder
+            <input v-model="settings.output_dir" class="textbox font-mono text-[13px]" placeholder="/audiobooks" />
+            <span class="text-xs font-normal text-ink-soft">The folder inside the app's container; with Docker it's the AUDIOBOOKS_DIR you mounted.</span>
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
+            Default format
+            <select v-model="settings.default_format" class="textbox cursor-pointer">
+              <option value="m4b">M4B (original audio, no re-encode)</option>
+              <option value="mp3">MP3 (re-encoded with LAME)</option>
+            </select>
+            <span class="text-xs font-normal text-ink-soft">Each book's panel can override this.</span>
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
+            Downloads at the same time
+            <input v-model.number="settings.download_workers" type="number" min="1" max="10" class="textbox w-28" />
+            <span class="text-xs font-normal text-ink-soft">Takes effect after the app restarts. Fewer is gentler on Audible's limits.</span>
+          </label>
+        </section>
 
-            <Separator />
-
-            <div class="space-y-4">
-              <div class="space-y-2">
-                <Label class="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                  Output Directory
-                </Label>
-                <Input v-model="settings.output_dir" placeholder="/path/to/audiobooks" />
-                <p class="text-xs text-muted-foreground">Downloaded audiobooks will be saved to this directory</p>
-              </div>
-
-              <div class="space-y-2">
-                <Label>Default Output Format</Label>
-                <Select v-model="settings.default_format">
-                  <SelectTrigger class="w-full sm:w-64">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="m4b">M4B (original, no re-encode)</SelectItem>
-                    <SelectItem value="mp3">MP3 (re-encode with LAME)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p class="text-xs text-muted-foreground">Can be overridden per-download in the book detail panel</p>
-              </div>
-
-              <div class="space-y-2">
-                <Label class="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                  </svg>
-                  Concurrent Downloads
-                </Label>
-                <Input
-                  v-model.number="settings.download_workers"
-                  type="number"
-                  min="1"
-                  max="10"
-                  class="w-32"
-                />
-                <p class="text-xs text-muted-foreground">Number of audiobooks that can be downloaded simultaneously</p>
-              </div>
+        <section class="card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-naming">
+          <h2 id="s-naming" class="text-base font-semibold">File naming</h2>
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
+            Book folder
+            <input
+              v-model="settings.folder_template"
+              class="textbox font-mono text-[13px]"
+              placeholder="{author} - {title}"
+              @focus="activeTemplate = 'folder_template'"
+            />
+            <span class="text-xs font-normal text-ink-soft">
+              Each book gets its own folder for the audio, chapter files, cover and PDF. Leave empty to save directly in the output folder.
+            </span>
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm font-medium">
+            File name
+            <input
+              v-model="settings.filename_template"
+              class="textbox font-mono text-[13px]"
+              placeholder="{title}"
+              @focus="activeTemplate = 'filename_template'"
+            />
+          </label>
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-semibold text-ink-soft">Result</span>
+            <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ examplePath }}</code>
+          </div>
+          <div class="flex flex-col gap-2">
+            <span class="text-xs font-semibold text-ink-soft">
+              Tags · tap to add to the {{ activeTemplate === 'folder_template' ? 'book folder' : 'file name' }}
+            </span>
+            <div class="flex flex-wrap gap-1.5">
+              <button
+                v-for="{ tag, description } in templateTags"
+                :key="tag"
+                type="button"
+                class="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border border-line bg-surface pr-3 pl-1.5 text-xs hover:bg-paper"
+                :title="description"
+                @mousedown.prevent
+                @click="appendTag(tag)"
+              >
+                <span class="chip">{{ tag }}</span>{{ description }}
+              </button>
             </div>
           </div>
-        </Card>
+        </section>
 
-        <!-- File Naming -->
-        <Card class="p-4 md:p-6">
-          <div class="space-y-6">
-            <div>
-              <h3 class="text-lg font-semibold">File Naming</h3>
-              <p class="text-sm text-muted-foreground">Customize how each book's folder and files are named</p>
-            </div>
-
-            <Separator />
-
-            <div class="space-y-4">
-              <div class="space-y-2">
-                <Label>Book folder</Label>
-                <Input
-                  v-model="settings.folder_template"
-                  placeholder="{author} - {title}"
-                  class="font-mono"
-                  @focus="activeTemplate = 'folder_template'"
-                />
-                <p class="text-xs text-muted-foreground">
-                  Each book gets its own folder in the output directory, holding the audio, chapter files and PDF.
-                  Leave empty to save files directly in the output directory.
-                </p>
-              </div>
-
-              <div class="space-y-2">
-                <Label>File name</Label>
-                <Input
-                  v-model="settings.filename_template"
-                  placeholder="{title}"
-                  class="font-mono"
-                  @focus="activeTemplate = 'filename_template'"
-                />
-              </div>
-
-              <p class="text-xs text-muted-foreground">
-                Result:
-                <span class="font-mono break-all">{{ examplePath }}</span>
-              </p>
-
-              <div class="space-y-2">
-                <Label>Available Tags</Label>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div
-                    v-for="{ tag, description } in templateTags"
-                    :key="tag"
-                    class="flex items-start gap-2 p-2 rounded bg-muted/50 cursor-pointer hover:bg-muted transition-colors text-sm"
-                    @click="appendTag(tag)"
-                  >
-                    <code class="text-xs font-mono bg-background px-1.5 py-0.5 rounded border shrink-0">{{ tag }}</code>
-                    <span class="text-xs text-muted-foreground">{{ description }}</span>
-                  </div>
-                </div>
-                <p class="text-xs text-muted-foreground">
-                  Click a tag to append it to the {{ activeTemplate === 'folder_template' ? 'book folder' : 'file name' }} template
-                </p>
-              </div>
+        <section class="card flex flex-col gap-4 p-5 md:p-6" aria-labelledby="s-tools">
+          <h2 id="s-tools" class="text-base font-semibold">Library tools</h2>
+          <div class="flex flex-col gap-2">
+            <span class="text-sm font-medium">Export the library</span>
+            <div class="flex flex-wrap gap-2">
+              <a class="btn-secondary" href="/api/library/export?format=csv" download="library.csv"><DownloadIcon class="size-4" />CSV</a>
+              <a class="btn-secondary" href="/api/library/export?format=json" download="library.json"><DownloadIcon class="size-4" />JSON</a>
             </div>
           </div>
-        </Card>
-
-        <!-- Application -->
-        <Card class="p-4 md:p-6">
-          <div class="space-y-6">
-            <div>
-              <h3 class="text-lg font-semibold">Application</h3>
-              <p class="text-sm text-muted-foreground">General application settings</p>
-            </div>
-
-            <Separator />
-
-            <div class="space-y-2">
-              <Label>Application URL</Label>
-              <Input v-model="settings.app_url" placeholder="http://localhost:3000" />
-              <p class="text-xs text-muted-foreground">Used for OAuth callbacks during Audible authentication</p>
+          <div class="flex flex-col gap-2 border-t border-line-faint pt-4">
+            <span class="text-sm font-medium">Find downloaded files</span>
+            <span class="text-xs text-ink-soft">Marks books as downloaded when their audio file is already in the output folder, e.g. after copying books in.</span>
+            <div class="flex flex-wrap items-center gap-3">
+              <button type="button" class="btn-secondary" :disabled="rescanning" @click="rescan">
+                <SearchIcon class="size-4" />{{ rescanning ? 'Looking…' : 'Find files' }}
+              </button>
+              <span v-if="rescanMessage" class="text-sm text-ink-soft" role="status">{{ rescanMessage }}</span>
             </div>
           </div>
-        </Card>
+        </section>
 
-        <!-- About -->
-        <Card class="p-6 bg-muted/30">
-          <h4 class="font-semibold mb-2">About Libation Web</h4>
-          <div class="text-sm text-muted-foreground space-y-1">
-            <p>Version 1.0.0</p>
-            <p>A web-based audiobook library manager for Audible</p>
-          </div>
-        </Card>
-      </div>
+        <section class="card flex flex-col gap-1.5 p-5 md:p-6" aria-labelledby="s-about">
+          <h2 id="s-about" class="text-base font-semibold">About</h2>
+          <p class="text-sm text-ink-soft">Libation Web: a self-hosted manager for your Audible library.</p>
+          <p class="text-sm text-ink-soft">App address: <code class="font-mono text-xs text-ink">{{ settings.app_url }}</code> <span class="text-xs">(set with APP_URL)</span></p>
+        </section>
+      </template>
+      <p v-else-if="loadError" class="rounded-xl bg-warn-soft p-4 text-sm text-warn-deep">Couldn't load settings: {{ loadError }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { DownloadIcon, SearchIcon } from '@lucide/vue'
 import type { Settings } from '@/api/client'
 import { api } from '@/api/client'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useSettingsStore } from '@/stores/settings'
 
 const settings = ref<Settings | null>(null)
+const settingsStore = useSettingsStore()
 const saved = ref(false)
+const saving = ref(false)
+const saveError = ref('')
+const loadError = ref('')
 
 const templateTags = [
   { tag: '{title}', description: 'Book title' },
@@ -232,13 +176,42 @@ const examplePath = computed(() => {
 })
 
 onMounted(async () => {
-  settings.value = await api.settings.get()
+  try {
+    settings.value = await api.settings.get()
+  } catch (e) {
+    loadError.value = e instanceof Error ? e.message : String(e)
+  }
 })
 
 async function save() {
   if (!settings.value) return
-  await api.settings.update(settings.value)
-  saved.value = true
-  setTimeout(() => (saved.value = false), 2000)
+  saving.value = true
+  saveError.value = ''
+  try {
+    const { app_url: _readOnly, ...editable } = settings.value
+    await api.settings.update(editable)
+    await settingsStore.load() // the book panel's "Default — M4B" follows this
+    saved.value = true
+    setTimeout(() => (saved.value = false), 2500)
+  } catch (e) {
+    saveError.value = `Couldn't save: ${e instanceof Error ? e.message : e}`
+  } finally {
+    saving.value = false
+  }
+}
+
+const rescanning = ref(false)
+const rescanMessage = ref('')
+async function rescan() {
+  rescanning.value = true
+  rescanMessage.value = ''
+  try {
+    const { matched } = await api.library.rescan()
+    rescanMessage.value = matched ? `Found ${matched} more downloaded book${matched === 1 ? '' : 's'}.` : 'No new files found.'
+  } catch (e) {
+    rescanMessage.value = `Failed: ${e instanceof Error ? e.message : e}`
+  } finally {
+    rescanning.value = false
+  }
 }
 </script>

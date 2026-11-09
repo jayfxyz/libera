@@ -70,6 +70,7 @@ class DownloadQueue:
         if job.trace_context is None:
             job.trace_context = otel_context.get_current()
         self._state[job.id] = {"job_id": job.id, "book_id": job.book_id, "title": job.title, "kind": job.kind,
+                               "format": job.format,
                                "status": "queued", "percent": 0}
         self._queue.put_nowait(job)
         self._emit(self._state[job.id])

@@ -27,7 +27,7 @@ async def test_runs_jobs_and_broadcasts_progress():
     await wait_for(lambda: q.list_jobs()[0]["status"] == "done")
     seen = [events.get_nowait() for _ in range(events.qsize())]
     assert [e["status"] for e in seen] == ["queued", "downloading", "done"]
-    assert seen[-1] == {"job_id": "job-1", "book_id": 1, "title": "T", "kind": "audio", "status": "done",
+    assert seen[-1] == {"job_id": "job-1", "book_id": 1, "title": "T", "kind": "audio", "format": "m4b", "status": "done",
                         "percent": 100, "message": "/out/T.m4b"}
     assert "message" not in seen[0]
     await q.stop()

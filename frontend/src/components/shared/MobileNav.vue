@@ -1,27 +1,23 @@
 <template>
-  <!-- Bottom tab bar on phones; the sidebar takes over from md up. -->
+  <!-- Phones: the rail becomes a dark tab bar at the bottom. -->
   <nav
-    class="md:hidden shrink-0 border-t bg-background grid grid-cols-4 pb-[env(safe-area-inset-bottom)]"
+    class="md:hidden shrink-0 grid grid-cols-4 bg-ink pb-[env(safe-area-inset-bottom)]"
     aria-label="Main"
   >
-    <RouterLink v-for="item in items" :key="item.to" v-slot="{ href, navigate, isActive }" :to="item.to" custom>
+    <RouterLink v-for="item in navItems" :key="item.to" v-slot="{ href, navigate, isActive }" :to="item.to" custom>
       <a
         :href="href"
         :aria-current="isActive ? 'page' : undefined"
-        class="relative flex flex-col items-center justify-center gap-1 py-2 min-h-14 text-[11px]"
-        :class="isActive ? 'text-foreground font-semibold' : 'text-muted-foreground font-medium'"
+        class="relative flex min-h-14 flex-col items-center justify-center gap-1 py-2 text-[11px]"
+        :class="isActive ? 'font-semibold text-white' : 'font-medium text-rail-muted'"
         @click="navigate"
       >
-        <span
-          v-if="isActive"
-          class="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-10 rounded-full bg-foreground"
-          aria-hidden="true"
-        />
-        <component :is="item.icon" class="h-5 w-5" :stroke-width="isActive ? 2.5 : 2" aria-hidden="true" />
+        <span v-if="isActive" class="absolute top-0 left-1/2 h-0.5 w-10 -translate-x-1/2 rounded-full bg-paper" aria-hidden="true" />
+        <component :is="item.icon" class="size-5" aria-hidden="true" />
         {{ item.label }}
         <span
           v-if="item.to === '/downloads' && activeDownloads > 0"
-          class="absolute top-1 left-1/2 ml-2 bg-primary text-primary-foreground text-[10px] font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center"
+          class="absolute top-1 left-1/2 ml-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rail-badge px-1 text-[10px] font-bold text-ink"
           :aria-label="`${activeDownloads} active`"
         >{{ activeDownloads }}</span>
       </a>
@@ -30,14 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { DownloadIcon, LibraryIcon, SettingsIcon, UsersIcon } from '@lucide/vue'
+import { navItems } from './navItems'
 
 defineProps<{ activeDownloads: number }>()
-
-const items = [
-  { to: '/library', label: 'Library', icon: LibraryIcon },
-  { to: '/downloads', label: 'Downloads', icon: DownloadIcon },
-  { to: '/accounts', label: 'Accounts', icon: UsersIcon },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon },
-]
 </script>

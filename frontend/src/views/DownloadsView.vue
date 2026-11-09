@@ -1,94 +1,107 @@
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div class="border-b p-4 md:p-6 shrink-0">
-      <h2 class="text-2xl font-semibold">Downloads</h2>
-      <p class="text-sm text-muted-foreground">Active and recent download jobs</p>
-    </div>
+  <div class="min-w-0 flex-1 overflow-y-auto">
+    <div class="mx-auto flex max-w-[900px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
+      <header>
+        <h1 class="page-title">Downloads</h1>
+        <p class="mt-1 text-sm text-ink-soft">{{ active.length }} in progress · {{ finished.length }} finished this session</p>
+      </header>
 
-    <div class="flex-1 overflow-y-auto">
-      <div class="p-4 md:p-6">
-        <div v-if="jobs.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-muted-foreground mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
-          </svg>
-          <h3 class="font-semibold mb-2">No downloads</h3>
-          <p class="text-sm text-muted-foreground">Download queue is empty</p>
-        </div>
-
-        <div v-else class="max-w-2xl space-y-3">
-          <div
-            v-for="job in jobs"
-            :key="job.job_id"
-            class="p-4 rounded-lg border bg-card"
-          >
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-2">
-                <div class="w-2 h-2 rounded-full" :class="dotClass(job.status)" />
-                <span class="text-sm font-medium">Book #{{ job.book_id }}</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <Badge :variant="job.status === 'error' ? 'destructive' : job.status === 'done' ? 'default' : 'secondary'">
-                  {{ statusLabel(job.status) }}
-                </Badge>
-                <Button
-                  v-if="isActive(job.status)"
-                  variant="ghost"
-                  size="icon"
-                  class="h-8 w-8"
-                  aria-label="Cancel download"
-                  title="Cancel download"
-                  @click="store.cancel(job.job_id)"
-                >
-                  <XIcon class="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            <Progress :model-value="job.percent" class="h-1.5" />
-            <div class="flex justify-between mt-1.5">
-              <p v-if="job.message" class="text-xs text-muted-foreground break-words min-w-0">{{ job.message }}</p>
-              <span v-else class="text-xs text-muted-foreground">{{ job.percent }}%</span>
-            </div>
-          </div>
-        </div>
+      <div v-if="jobs.length === 0" class="card flex flex-col items-center gap-2 px-6 py-12 text-center">
+        <DownloadIcon class="size-8 text-ink-faint" aria-hidden="true" />
+        <p class="font-semibold">Nothing downloading</p>
+        <p class="text-sm text-ink-soft">Pick books in the <RouterLink to="/library" class="underline">Library</RouterLink> to download them.</p>
       </div>
+
+      <section v-for="group in groups" v-show="group.jobs.length" :key="group.title" :aria-label="group.title" class="flex flex-col gap-2">
+        <h2 class="eyebrow">{{ group.title }}</h2>
+        <ul class="card overflow-hidden">
+          <li v-for="job in group.jobs" :key="job.job_id" class="flex items-start gap-3.5 border-b border-line-faint p-3 last:border-b-0 sm:px-4">
+            <BookCover :src="coverFor(job.book_id)" :title="titleFor(job)" size="sm" rounded="rounded-lg" class="w-12 shrink-0" />
+            <div class="flex min-w-0 flex-1 flex-col gap-1">
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-[15px] font-semibold leading-[1.3]">
+                  {{ titleFor(job) }}
+                  <span v-if="job.kind === 'pdf'" class="chip ml-1 align-middle">PDF</span>
+                </span>
+                <button
+                  v-if="isActive(job)"
+                  type="button"
+                  class="btn-secondary h-9 shrink-0 px-3 text-[13px]"
+                  :aria-label="`Cancel ${titleFor(job)}`"
+                  @click="downloads.cancel(job.job_id)"
+                >Cancel</button>
+              </div>
+              <span class="flex items-center gap-1.5 text-xs font-semibold" :class="tone(job).text">
+                <span class="size-2 shrink-0 rounded-full" :class="tone(job).dot" />{{ label(job) }}
+              </span>
+              <div v-if="job.status === 'downloading' || job.status === 'decrypting'" class="h-1 overflow-hidden rounded-full bg-busy-track">
+                <div class="h-1 bg-busy transition-[width]" :style="{ width: `${Math.round(job.percent)}%` }" />
+              </div>
+              <p v-if="job.message && (job.status === 'done' || (job.status === 'error' && job.message !== 'Cancelled'))" class="text-xs break-words" :class="job.status === 'error' ? 'text-warn-deep' : 'font-mono text-ink-soft'">
+                {{ job.message }}
+              </p>
+            </div>
+          </li>
+        </ul>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
+import { DownloadIcon } from '@lucide/vue'
+import type { DownloadJob } from '@/api/client'
+import BookCover from '@/components/library/BookCover.vue'
+import { isActive } from '@/lib/bookStatus'
 import { useDownloadsStore } from '@/stores/downloads'
-import { XIcon } from '@lucide/vue'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { useLibraryStore } from '@/stores/library'
 
-const store = useDownloadsStore()
-const jobs = computed(() => Array.from(store.jobs.values()))
+const downloads = useDownloadsStore()
+const library = useLibraryStore()
 
-function isActive(status: string): boolean {
-  return status === 'queued' || status === 'downloading' || status === 'decrypting'
+// Covers and titles come from the library.
+onMounted(() => {
+  if (library.books.length === 0) library.fetchBooks()
+})
+
+const jobs = computed(() => Array.from(downloads.jobs.values()))
+const active = computed(() => {
+  const order = { downloading: 0, decrypting: 0, queued: 1 } as Record<string, number>
+  return jobs.value.filter((j) => isActive(j)).sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2))
+})
+const finished = computed(() => jobs.value.filter((j) => !isActive(j)).reverse())
+const groups = computed(() => [
+  { title: 'In progress', jobs: active.value },
+  { title: 'Finished', jobs: finished.value },
+])
+
+function bookFor(id: number) {
+  return library.books.find((b) => b.id === id)
+}
+function titleFor(job: DownloadJob) {
+  return job.title || bookFor(job.book_id)?.title || `Book #${job.book_id}`
+}
+function coverFor(id: number) {
+  return bookFor(id)?.cover_url ?? ''
 }
 
-function dotClass(status: string): string {
-  return {
-    queued: 'bg-muted-foreground',
-    downloading: 'bg-blue-500',
-    decrypting: 'bg-yellow-500',
-    done: 'bg-green-500',
-    error: 'bg-destructive',
-  }[status] ?? 'bg-muted-foreground'
+function label(job: DownloadJob) {
+  switch (job.status) {
+    case 'queued': return 'Queued'
+    case 'downloading': return `Downloading · ${Math.round(job.percent)}%`
+    case 'decrypting': return job.message || 'Decrypting'
+    case 'done': return job.kind === 'pdf' ? 'Saved' : `Downloaded${job.format ? ` · ${job.format.toUpperCase()}` : ''}`
+    default: return job.message === 'Cancelled' ? 'Cancelled' : 'Failed'
+  }
 }
 
-function statusLabel(status: string): string {
-  return {
-    queued: 'Queued',
-    downloading: 'Downloading',
-    decrypting: 'Decrypting',
-    done: 'Done',
-    error: 'Error',
-  }[status] ?? status
+function tone(job: DownloadJob) {
+  if (job.status === 'done') return { text: 'text-ok-ink', dot: 'bg-ok' }
+  if (job.status === 'error') return job.message === 'Cancelled'
+    ? { text: 'text-ink-soft', dot: 'bg-line' }
+    : { text: 'text-warn-ink', dot: 'bg-warn' }
+  if (job.status === 'queued') return { text: 'text-ink-soft', dot: 'bg-ink-faint' }
+  return { text: 'text-busy', dot: 'bg-busy' }
 }
 </script>

@@ -93,14 +93,14 @@ async def enqueue_download(req: EnqueueRequest, ctx: AppContext = Depends(get_ct
 async def enqueue_downloads(req: BulkEnqueueRequest, ctx: AppContext = Depends(get_ctx)):
     """Queue several books at once (in the order given). Unknown ids are skipped."""
     fmt = _validate(req, ctx)
-    job_ids = []
+    jobs = []
     for book_id in dict.fromkeys(req.book_ids):  # de-duplicated, order kept
         meta = await run_in_threadpool(_meta, ctx.db, book_id, None)
         if meta is not None:
             job = _make_job(meta, fmt, req, ctx)
             _enqueue(job, ctx)
-            job_ids.append(job.id)
-    return {"job_ids": job_ids}
+            jobs.append({"job_id": job.id, "book_id": book_id})
+    return {"jobs": jobs}
 
 
 @router.get("/downloads")

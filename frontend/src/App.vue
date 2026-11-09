@@ -1,37 +1,40 @@
 <template>
-  <!-- dvh: the height left by the phone browser's own toolbars. Below md the
-       sidebar becomes a bottom tab bar and Downloads becomes a tab. -->
-  <div class="flex flex-col md:flex-row h-dvh bg-background text-foreground overflow-hidden">
-    <AppSidebar
-      :active-downloads="activeCount"
-      :downloads-open="showDownloads"
-      @toggle-downloads="showDownloads = !showDownloads"
-    />
-    <main class="flex-1 flex min-w-0 min-h-0 overflow-hidden">
+  <!-- Desktop: rail | page. Phones: page above a bottom tab bar. -->
+  <div class="flex h-dvh flex-col overflow-hidden bg-paper text-ink md:flex-row">
+    <AppRail :active-downloads="activeCount" />
+    <main class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <RouterView />
     </main>
-    <DownloadQueuePanel v-if="showDownloads && isDesktop" @close="showDownloads = false" />
     <MobileNav :active-downloads="activeCount" />
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
-import AppSidebar from '@/components/shared/AppSidebar.vue'
+import { computed } from 'vue'
+import AppRail from '@/components/shared/AppRail.vue'
 import MobileNav from '@/components/shared/MobileNav.vue'
-import DownloadQueuePanel from '@/components/downloads/DownloadQueuePanel.vue'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useLibraryStore } from '@/stores/library'
 import { useSettingsStore } from '@/stores/settings'
 import { useDownloadProgress } from '@/composables/useWebSocket'
 
-const showDownloads = ref(false)
-const isDesktop = useMediaQuery('(min-width: 768px)')
-const downloadsStore = useDownloadsStore()
-const settingsStore = useSettingsStore()
-useDownloadProgress((event) => downloadsStore.handleProgressEvent(event))
-settingsStore.load()
+const downloads = useDownloadsStore()
+const library = useLibraryStore()
+const settings = useSettingsStore()
 
-const activeCount = computed(() => downloadsStore.activeJobs().length)
+useDownloadProgress((event) => {
+  downloads.handleProgressEvent(event)
+  // Keep the library in step when an audiobook download finishes or fails.
+  if ((event.kind ?? 'audio') !== 'audio') return
+  if (event.status === 'done') {
+    library.patchBooks([event.book_id], { liberation_status: 'liberated', last_format: event.format ?? null })
+  } else if (event.status === 'error') {
+    const book = library.books.find((b) => b.id === event.book_id)
+    if (book && book.liberation_status !== 'liberated') library.patchBooks([event.book_id], { liberation_status: 'error' })
+  }
+})
+settings.load()
+downloads.load()
+
+const activeCount = computed(() => downloads.activeJobs().length)
 </script>

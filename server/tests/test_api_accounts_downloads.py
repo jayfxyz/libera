@@ -49,6 +49,11 @@ def test_login_flow_creates_account(api, audible):
     assert [(a["account_name"], a["email"], a["locale"], a["library_scan_enabled"]) for a in accounts] == [
         ("Mine", "me@example.com", "uk", True)]
 
+    # Logging in again with another region updates the account's region too.
+    audible.complete_login.return_value = LoginResult("amzn1.account.NEW", "me@example.com", "Mine", "us")
+    api.post("/api/accounts/auth/complete", json={"state": "state-2", "response_url": "https://x"})
+    assert [(a["id"], a["locale"]) for a in api.get("/api/accounts").json()] == [(accounts[0]["id"], "us")]
+
 
 def test_login_errors(api, audible):
     assert api.post("/api/accounts/auth/complete", json={"state": "", "response_url": ""}).status_code == 400
@@ -97,7 +102,7 @@ def test_enqueue_builds_job_from_book_and_settings(api, db, config, jobs_seen):
     resp = api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1})
     assert resp.status_code == 202
     job = wait_done(api, resp.json()["job_id"])
-    assert job == {"job_id": resp.json()["job_id"], "book_id": book_id, "title": "The Book", "kind": "audio",
+    assert job == {"job_id": resp.json()["job_id"], "book_id": book_id, "title": "The Book", "kind": "audio", "format": "m4b",
                    "status": "done", "percent": 100, "message": "/out/The Book.m4b"}
 
     j = jobs_seen[0]

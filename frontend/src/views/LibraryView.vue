@@ -1,208 +1,396 @@
 <template>
-  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
-    <!-- Header -->
-    <div class="border-b p-4 md:p-6 shrink-0">
-      <div class="flex items-center justify-between gap-3 mb-3 md:mb-4">
-        <div>
-          <h2 class="text-2xl font-semibold">Library</h2>
-          <p class="text-sm text-muted-foreground">
-            {{ store.filteredBooks.length }} {{ store.filteredBooks.length === 1 ? 'book' : 'books' }}
-          </p>
-        </div>
-        <div class="flex gap-2 shrink-0">
-          <Button variant="outline" size="sm" as-child>
-            <a href="/api/library/export?format=csv" download="library.csv" aria-label="Export CSV" title="Export CSV">
-              <svg xmlns="http://www.w3.org/2000/svg" class="sm:mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
-              </svg>
-              <span class="sm:hidden ml-1">CSV</span><span class="hidden sm:inline">Export CSV</span>
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" as-child>
-            <a href="/api/library/export?format=json" download="library.json" aria-label="Export JSON" title="Export JSON">
-              <svg xmlns="http://www.w3.org/2000/svg" class="sm:mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
-              </svg>
-              <span class="sm:hidden ml-1">JSON</span><span class="hidden sm:inline">Export JSON</span>
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" :disabled="rescanning" aria-label="Scan files" title="Scan files" @click="rescan">
-            <svg xmlns="http://www.w3.org/2000/svg" class="sm:mr-2 h-4 w-4" :class="rescanning ? 'animate-spin' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-            </svg>
-            <span class="hidden sm:inline">{{ rescanning ? 'Scanning…' : rescanMessage || 'Scan Files' }}</span>
-          </Button>
-        </div>
-      </div>
+  <div class="flex min-w-0 flex-1 overflow-hidden">
+    <div class="min-w-0 flex-1 overflow-y-auto">
+      <div class="mx-auto flex max-w-[1400px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
+        <!-- Header -->
+        <header class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 class="page-title">Library</h1>
+            <p class="mt-1 text-sm text-ink-soft">{{ summaryLine }}</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <div ref="scanMenuEl" class="relative">
+              <div class="flex overflow-hidden rounded-[10px] border border-line bg-surface">
+                <button
+                  type="button"
+                  class="btn rounded-none px-3.5"
+                  :disabled="scanning || !accounts.accounts.length"
+                  :aria-label="scanLabel"
+                  @click="scan(null)"
+                >
+                  <RefreshCwIcon class="size-4" :class="scanning ? 'animate-spin' : ''" />
+                  <span class="hidden sm:inline">{{ scanLabel }}</span>
+                </button>
+                <button
+                  v-if="accounts.accounts.length > 1"
+                  type="button"
+                  class="btn w-10 rounded-none border-l border-line-soft px-0"
+                  aria-label="Scan one account"
+                  aria-haspopup="menu"
+                  :aria-expanded="scanMenuOpen"
+                  :disabled="scanning"
+                  @click="scanMenuOpen = !scanMenuOpen"
+                >
+                  <ChevronDownIcon class="size-3.5" />
+                </button>
+              </div>
+              <div
+                v-if="scanMenuOpen"
+                role="menu"
+                class="absolute right-0 top-full z-20 mt-1 min-w-56 rounded-[10px] border border-line bg-surface p-1 shadow-lg"
+              >
+                <button
+                  v-for="a in accounts.accounts"
+                  :key="a.id"
+                  type="button"
+                  role="menuitem"
+                  class="flex h-10 w-full cursor-pointer items-center rounded-lg px-3 text-left text-sm hover:bg-paper"
+                  @click="scan(a.id)"
+                >Scan {{ accountLabel(a) }}</button>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn-primary"
+              :disabled="library.downloadable.length === 0"
+              @click="askDownload(library.downloadable)"
+            >Download all ({{ library.downloadable.length }})</button>
+          </div>
+        </header>
+        <p v-if="scanMessage" class="-mt-2 text-sm" :class="scanFailed ? 'text-warn-deep' : 'text-ink-soft'">{{ scanMessage }}</p>
 
-      <!-- Search -->
-      <div class="relative mb-3 md:mb-4">
-        <svg xmlns="http://www.w3.org/2000/svg" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <Input
-          v-model="query"
-          type="search"
-          placeholder="Search by title, author, narrator, or tags..."
-          class="pl-9"
-          @input="onSearch"
-        />
-      </div>
+        <!-- Toolbar -->
+        <div class="flex flex-wrap gap-2">
+          <!-- Phones: search + view on one row, sort/direction/account on the next. -->
+          <label class="field order-1 min-w-0 flex-[1_1_200px] gap-2.5 px-3.5 sm:order-none sm:flex-[1_1_320px]">
+            <SearchIcon class="size-[18px] shrink-0 text-ink-soft" aria-hidden="true" />
+            <span class="sr-only">Search</span>
+            <input
+              v-model="query"
+              type="search"
+              placeholder="Search title, author or narrator"
+              class="min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-ink-faint"
+              @input="onSearch"
+            />
+          </label>
+          <label class="field order-3 min-w-[140px] flex-1 gap-1 pr-1 pl-3 text-[13px] text-ink-soft sm:order-none sm:flex-none">
+            <span class="hidden sm:inline">Sort by</span>
+            <select class="field-select min-w-0 flex-1" aria-label="Sort by" :value="library.sort" @change="library.setSort(($event.target as HTMLSelectElement).value as LibrarySort)">
+              <option v-for="o in sortOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </label>
+          <button type="button" class="btn-secondary btn-icon order-4 text-base font-semibold sm:order-none" :aria-label="orderLabel" :title="orderLabel" @click="library.toggleOrder()">
+            {{ library.order === 'asc' ? '↑' : '↓' }}
+          </button>
+          <label v-if="accounts.accounts.length > 1" class="field order-5 min-w-[140px] flex-1 gap-1 pr-1 pl-3 text-[13px] text-ink-soft sm:order-none sm:flex-none">
+            <span class="hidden sm:inline">Account</span>
+            <select class="field-select min-w-0 flex-1" aria-label="Account" :value="library.accountId ?? ''" @change="onAccount">
+              <option value="">All accounts</option>
+              <option v-for="a in accounts.accounts" :key="a.id" :value="a.id">{{ accountLabel(a) }}</option>
+            </select>
+          </label>
+          <div role="group" aria-label="View" class="order-2 flex overflow-hidden rounded-[10px] border border-line bg-surface sm:order-none">
+            <button
+              v-for="v in views"
+              :key="v.value"
+              type="button"
+              class="flex h-[42px] w-11 cursor-pointer items-center justify-center"
+              :class="library.view === v.value ? 'bg-ink text-white' : 'text-ink'"
+              :aria-label="v.label"
+              :aria-pressed="library.view === v.value"
+              @click="library.view = v.value"
+            >
+              <component :is="v.icon" class="size-4" />
+            </button>
+          </div>
+        </div>
 
-      <!-- Filter pills + sort -->
-      <div class="flex items-center justify-between gap-3 md:gap-4 flex-wrap">
-      <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap w-[calc(100%+2rem)] md:w-auto">
-        <Badge
-          v-for="pill in pills"
-          :key="pill.value"
-          :variant="store.statusFilter === pill.value ? 'default' : 'outline'"
-          class="cursor-pointer shrink-0 py-1"
-          @click="store.setStatusFilter(pill.value)"
+        <!-- Status tabs -->
+        <nav aria-label="Status" class="-mx-4 flex gap-1 overflow-x-auto border-b border-line-soft px-4 no-scrollbar md:mx-0 md:px-0">
+          <button
+            v-for="s in segments"
+            :key="s.value"
+            type="button"
+            class="-mb-px flex h-10 shrink-0 cursor-pointer items-center gap-2 border-b-2 px-3 text-sm"
+            :class="library.segment === s.value ? 'border-ink font-semibold text-ink' : 'border-transparent font-medium text-ink-soft'"
+            :aria-current="library.segment === s.value ? 'true' : undefined"
+            @click="library.segment = s.value"
+          >
+            {{ s.label }}
+            <span
+              class="rounded-full px-2 py-0.5 font-mono text-xs font-medium"
+              :class="library.segment === s.value ? 'bg-ink text-white' : 'bg-chip text-ink'"
+            >{{ library.segmentBooks[s.value].length }}</span>
+          </button>
+        </nav>
+
+        <!-- Selection -->
+        <div class="flex min-h-[52px] flex-wrap items-center gap-2">
+          <label class="mr-auto flex h-11 cursor-pointer items-center gap-2.5 px-1 text-[13px] text-ink-soft">
+            <input
+              type="checkbox"
+              class="checkbox"
+              :checked="allVisibleSelected"
+              :indeterminate="someVisibleSelected && !allVisibleSelected"
+              :disabled="library.visibleBooks.length === 0"
+              @change="library.selectAllVisible(!allVisibleSelected)"
+            />
+            <span>{{ allVisibleSelected ? `All ${library.visibleBooks.length} selected` : `Select all ${library.visibleBooks.length}` }}</span>
+          </label>
+          <div
+            v-if="library.selected.size > 0"
+            class="flex flex-wrap items-center gap-1.5 rounded-xl bg-ink py-1 pr-1 pl-3.5 text-white"
+            role="toolbar"
+            aria-label="Selected books"
+          >
+            <strong class="mr-1.5 text-[13px] font-semibold">{{ library.selected.size }} selected</strong>
+            <button type="button" class="btn-primary h-9 rounded-lg px-3 text-[13px]" :disabled="selectionDownloadable.length === 0" @click="askDownload(selectionDownloadable)">
+              Download {{ selectionDownloadable.length }}
+            </button>
+            <button type="button" class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]" @click="downloadPdfs">Download PDFs</button>
+            <button type="button" class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]" @click="hideSelected">
+              {{ library.segment === 'hidden' ? 'Show' : 'Hide' }}
+            </button>
+            <button type="button" class="btn h-9 rounded-lg px-2.5 text-[13px] text-rail-muted" @click="library.clearSelection()">Clear</button>
+          </div>
+        </div>
+        <p v-if="notice" class="-mt-3 text-sm text-ink-soft" role="status">{{ notice }}</p>
+
+        <!-- Books -->
+        <p v-if="library.error" class="rounded-xl bg-warn-soft p-4 text-sm text-warn-deep">Couldn't load the library: {{ library.error }}</p>
+        <p v-else-if="library.loading && library.books.length === 0" class="py-10 text-center text-sm text-ink-soft">Loading…</p>
+        <div v-else-if="library.visibleBooks.length === 0" class="py-10 text-center text-sm text-ink-soft">
+          <template v-if="library.books.length === 0 && !library.searchQuery">
+            <p class="font-semibold text-ink">No books yet</p>
+            <p class="mt-1">Add an Audible account under <RouterLink to="/accounts" class="underline">Accounts</RouterLink>, then scan your library.</p>
+          </template>
+          <p v-else-if="library.searchQuery">No books match “{{ library.searchQuery }}”.</p>
+          <p v-else>No books here.</p>
+        </div>
+
+        <ul
+          v-else-if="library.view === 'list'"
+          aria-label="Books"
+          class="card overflow-hidden"
         >
-          {{ pill.label }}
-          <span class="ml-1 opacity-60 text-xs">({{ pill.count }})</span>
-        </Badge>
-      </div>
-
-      <div class="flex items-center gap-2 w-full sm:w-auto">
-        <span class="text-sm text-muted-foreground shrink-0">Sort by</span>
-        <Select :model-value="store.sort" @update:model-value="(v) => store.setSort(v as LibrarySort)">
-          <SelectTrigger class="flex-1 sm:flex-none sm:w-48 h-8" aria-label="Sort by">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="opt in sortOptions" :key="opt.value" :value="opt.value">
-              {{ opt.label }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <Button
-          variant="outline"
-          size="sm"
-          class="h-8 w-8 p-0 shrink-0"
-          :aria-label="store.order === 'asc' ? 'Ascending, click for descending' : 'Descending, click for ascending'"
-          :title="orderHint"
-          @click="store.toggleOrder()"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform" :class="store.order === 'desc' ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-          </svg>
-        </Button>
-      </div>
-      </div>
-    </div>
-
-    <!-- Book Grid -->
-    <div class="flex-1 overflow-y-auto">
-      <!-- @container: columns follow the space the grid has (smaller when the
-           download panel is open), not the window width. -->
-      <div class="@container p-4 md:p-6">
-        <div v-if="store.loading" class="flex items-center justify-center py-12 text-muted-foreground">
-          Loading…
-        </div>
-        <div v-else-if="store.filteredBooks.length === 0" class="flex flex-col items-center justify-center py-12 text-center">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-muted-foreground mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
-          </svg>
-          <h3 class="font-semibold mb-2">
-            {{ store.books.length === 0 ? 'No books yet' : 'No books match this filter' }}
-          </h3>
-          <p class="text-sm text-muted-foreground">
-            {{ store.books.length === 0 ? 'Add an Audible account and scan your library.' : 'Try adjusting your search or filters.' }}
-          </p>
-        </div>
-        <div v-else class="grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-4 @2xl:grid-cols-5 @4xl:grid-cols-6 gap-3 md:gap-4">
-          <BookCard
-            v-for="book in store.filteredBooks"
-            :key="book.id"
-            :book="book"
-            @select="onBookSelect"
+          <BookListRow
+            v-for="b in library.visibleBooks"
+            :key="b.id"
+            :book="b"
+            :status="statusFor(b)"
+            :checked="library.selected.has(b.id)"
+            :open="library.openBookId === b.id"
+            @toggle="library.toggleSelected(b.id)"
+            @open="library.openBookId = b.id"
           />
-        </div>
+        </ul>
+
+        <section v-else aria-label="Books" class="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-x-[18px] gap-y-6">
+          <BookGridCard
+            v-for="b in library.visibleBooks"
+            :key="b.id"
+            :book="b"
+            :status="statusFor(b)"
+            :checked="library.selected.has(b.id)"
+            :open="library.openBookId === b.id"
+            @toggle="library.toggleSelected(b.id)"
+            @open="library.openBookId = b.id"
+          />
+        </section>
       </div>
     </div>
-    <!-- Book Detail Panel (fixed overlay) -->
-    <BookDetailPanel v-if="selectedBook" :book-id="selectedBook.id" @close="selectedBook = null" />
+
+    <BookPanel v-if="library.openBookId !== null" :book-id="library.openBookId" @close="library.openBookId = null" />
+
+    <!-- Confirm before queueing many books: Audible may rate-limit big batches. -->
+    <Dialog :open="confirm.open" @update:open="(v) => { if (!v) confirm.open = false }">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Download {{ confirm.books.length }} books?</DialogTitle>
+          <DialogDescription>
+            They'll be queued and downloaded {{ workers }} at a time. Audible may slow down or refuse
+            downloads for a while after many in a row; if that happens, the rest can be retried later.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <button type="button" class="btn-secondary" @click="confirm.open = false">Cancel</button>
+          <button type="button" class="btn-primary" @click="confirmDownload">Download {{ confirm.books.length }}</button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import BookCard from '@/components/library/BookCard.vue'
-import BookDetailPanel from '@/components/library/BookDetailPanel.vue'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { useLibraryStore, sortOptions } from '@/stores/library'
-import type { StatusFilter } from '@/stores/library'
-import type { BookSummary, LibrarySort } from '@/api/client'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { onClickOutside } from '@vueuse/core'
+import { ChevronDownIcon, LayoutGridIcon, ListIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
+import type { Account, BookSummary, LibrarySort } from '@/api/client'
 import { api } from '@/api/client'
+import BookGridCard from '@/components/library/BookGridCard.vue'
+import BookListRow from '@/components/library/BookListRow.vue'
+import BookPanel from '@/components/library/BookPanel.vue'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { bookStatus } from '@/lib/bookStatus'
+import { useAccountsStore } from '@/stores/accounts'
+import { useDownloadsStore } from '@/stores/downloads'
+import { sortOptions, useLibraryStore, type Segment } from '@/stores/library'
 
-const store = useLibraryStore()
-const query = ref('')
-const selectedBook = ref<BookSummary | null>(null)
-const rescanning = ref(false)
-const rescanMessage = ref('')
+const library = useLibraryStore()
+const downloads = useDownloadsStore()
+const accounts = useAccountsStore()
 
-async function rescan() {
-  rescanning.value = true
-  rescanMessage.value = ''
-  try {
-    const { matched } = await api.library.rescan()
-    rescanMessage.value = matched > 0 ? `${matched} matched` : 'No matches'
-    if (matched > 0) store.fetchBooks()
-    setTimeout(() => { rescanMessage.value = '' }, 3000)
-  } finally {
-    rescanning.value = false
-  }
+const query = ref(library.searchQuery)
+const notice = ref('')
+const workers = ref(3)
+
+const views = [
+  { value: 'list' as const, label: 'List view', icon: ListIcon },
+  { value: 'grid' as const, label: 'Grid view', icon: LayoutGridIcon },
+]
+
+onMounted(async () => {
+  library.fetchBooks()
+  await accounts.fetchAccounts()
+  // A saved account filter for an account that no longer exists would hide everything.
+  if (library.accountId !== null && !accounts.accounts.some((a) => a.id === library.accountId)) library.setAccount(null)
+  api.settings.get().then((s) => (workers.value = s.download_workers)).catch(() => {})
+})
+
+function statusFor(b: BookSummary) {
+  return bookStatus(b, downloads.jobFor(b.id))
 }
 
-let searchTimer: ReturnType<typeof setTimeout>
+function accountLabel(a: Account) {
+  return `${a.account_name || a.email} · ${a.locale.toUpperCase()}`
+}
+
+const summaryLine = computed(() => {
+  const n = library.shelved.length
+  const accountCount = library.accountId === null ? accounts.accounts.length : 1
+  const done = library.segmentBooks.downloaded.length
+  const parts = [`${n} book${n === 1 ? '' : 's'}`]
+  if (accountCount > 1) parts[0] += ` across ${accountCount} accounts`
+  parts.push(`${done} downloaded`)
+  return parts.join(' · ')
+})
+
+const segments = computed(() => {
+  const list: { value: Segment; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'downloaded', label: 'Downloaded' },
+    { value: 'not_downloaded', label: 'Not downloaded' },
+    { value: 'in_progress', label: 'In progress' },
+  ]
+  // Only shown when there's something in them (or they're the current tab).
+  if (library.segmentBooks.hidden.length || library.segment === 'hidden') list.push({ value: 'hidden', label: 'Hidden' })
+  if (library.segmentBooks.removed.length || library.segment === 'removed') list.push({ value: 'removed', label: 'Removed from Audible' })
+  return list
+})
+
+const scanLabel = computed(() =>
+  scanning.value ? 'Scanning…' : accounts.accounts.length > 1 ? 'Scan all accounts' : 'Scan library',
+)
+
+const orderLabel = computed(() =>
+  library.order === 'asc' ? 'Ascending — switch to descending' : 'Descending — switch to ascending',
+)
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 function onSearch() {
   clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => store.search(query.value), 300)
+  searchTimer = setTimeout(() => library.search(query.value.trim()), 250)
 }
 
-function onBookSelect(book: BookSummary) {
-  selectedBook.value = book
+function onAccount(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  library.setAccount(v === '' ? null : Number(v))
 }
 
-// Plain-words description of the current direction, for the toggle's tooltip.
-const orderHint = computed(() => {
-  const asc = store.order === 'asc'
-  switch (store.sort) {
-    case 'title':
-    case 'author':
-    case 'series':
-      return asc ? 'A → Z' : 'Z → A'
-    case 'length':
-      return asc ? 'Shortest first' : 'Longest first'
-    case 'rating':
-      return asc ? 'Lowest first' : 'Highest first'
-    default:
-      return asc ? 'Oldest first' : 'Newest first'
+// --- scanning
+const scanning = ref(false)
+const scanMessage = ref('')
+const scanFailed = ref(false)
+const scanMenuOpen = ref(false)
+const scanMenuEl = ref<HTMLElement | null>(null)
+onClickOutside(scanMenuEl, () => (scanMenuOpen.value = false))
+
+async function scan(accountId: number | null) {
+  scanMenuOpen.value = false
+  scanning.value = true
+  scanMessage.value = ''
+  scanFailed.value = false
+  const targets = accountId === null ? accounts.accounts : accounts.accounts.filter((a) => a.id === accountId)
+  const failed: string[] = []
+  for (const a of targets) {
+    try {
+      await accounts.scanLibrary(a.id)
+    } catch {
+      failed.push(accountLabel(a))
+    }
   }
-})
+  scanning.value = false
+  await Promise.all([library.fetchBooks(), accounts.fetchAccounts()])
+  scanFailed.value = failed.length > 0
+  scanMessage.value = failed.length ? `Couldn't scan ${failed.join(', ')}.` : 'Library up to date.'
+  setTimeout(() => { if (!scanFailed.value) scanMessage.value = '' }, 4000)
+}
 
-type Pill = { label: string; value: StatusFilter; count: number }
+// --- selection and bulk actions
+const allVisibleSelected = computed(
+  () => library.visibleBooks.length > 0 && library.visibleBooks.every((b) => library.selected.has(b.id)),
+)
+const someVisibleSelected = computed(() => library.visibleBooks.some((b) => library.selected.has(b.id)))
+const selectionDownloadable = computed(() =>
+  library.selectedBooks.filter((b) => ['none', 'error'].includes(library.stateOf(b))),
+)
 
-const removedCount = computed(() => store.books.filter(b => b.is_deleted).length)
+const confirm = reactive({ open: false, books: [] as BookSummary[] })
 
-const pills = computed<Pill[]>(() => {
-  const base: Pill[] = [
-    { label: 'All', value: 'all', count: store.books.filter(b => !b.is_deleted).length },
-    { label: 'Downloaded', value: 'liberated', count: store.books.filter(b => !b.is_deleted && b.liberation_status === 'liberated').length },
-    { label: 'Not Downloaded', value: 'not_liberated', count: store.books.filter(b => !b.is_deleted && b.liberation_status === 'not_liberated').length },
-    { label: 'In Progress', value: 'in_progress', count: store.books.filter(b => !b.is_deleted && b.liberation_status === 'partial_download').length },
-  ]
-  if (removedCount.value > 0 || store.statusFilter === 'removed') {
-    base.push({ label: 'Removed', value: 'removed', count: removedCount.value })
+function askDownload(books: BookSummary[]) {
+  if (books.length === 0) return
+  if (books.length === 1) return queue(books)
+  confirm.books = books
+  confirm.open = true
+}
+
+async function confirmDownload() {
+  confirm.open = false
+  await queue(confirm.books)
+}
+
+async function queue(books: BookSummary[]) {
+  try {
+    const ids = await downloads.enqueueMany(books.map((b) => ({ id: b.id, title: b.title })))
+    flash(`Queued ${ids.length} download${ids.length === 1 ? '' : 's'}.`)
+    library.clearSelection()
+  } catch (e) {
+    flash(`Couldn't queue downloads: ${e instanceof Error ? e.message : e}`)
   }
-  return base
-})
+}
 
-onMounted(() => store.fetchBooks())
+async function downloadPdfs() {
+  const books = library.selectedBooks
+  try {
+    const ids = await downloads.enqueueMany(books.map((b) => ({ id: b.id, title: b.title })), { kind: 'pdf' })
+    flash(`Fetching PDFs for ${ids.length} book${ids.length === 1 ? '' : 's'} (books without one will say so in Downloads).`)
+    library.clearSelection()
+  } catch (e) {
+    flash(`Couldn't queue PDFs: ${e instanceof Error ? e.message : e}`)
+  }
+}
+
+async function hideSelected() {
+  const ids = [...library.selected]
+  const hide = library.segment !== 'hidden'
+  await library.setHidden(ids, hide)
+  flash(`${hide ? 'Hid' : 'Restored'} ${ids.length} book${ids.length === 1 ? '' : 's'}.`)
+}
+
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+function flash(text: string) {
+  notice.value = text
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => (notice.value = ''), 5000)
+}
 </script>

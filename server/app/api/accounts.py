@@ -81,6 +81,7 @@ def auth_complete(req: AuthComplete, ctx: AppContext = Depends(get_ctx)):
         """INSERT INTO accounts (account_name, email, locale, audible_account_id) VALUES (?, ?, ?, ?)
            ON CONFLICT(email) DO UPDATE SET
                account_name = excluded.account_name,
+               locale = excluded.locale,  -- the saved login is for this region now
                audible_account_id = excluded.audible_account_id""",
         (result.name, result.email, result.locale, result.account_id),
     )

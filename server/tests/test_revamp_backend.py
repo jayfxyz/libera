@@ -122,7 +122,8 @@ def wait_for(api, n):
 def test_bulk_download_and_options(api, db):
     a, b = seed(db)
     resp = api.post("/api/downloads/bulk", json={"book_ids": [b, a, b, 999], "kind": "pdf", "include_pdf": False})
-    assert resp.status_code == 202 and len(resp.json()["job_ids"]) == 2  # duplicate and unknown id skipped
+    assert resp.status_code == 202
+    assert [j["book_id"] for j in resp.json()["jobs"]] == [b, a]  # duplicate and unknown id skipped
     wait_for(api, 2)
     assert [(j.title, j.kind, j.include_pdf) for j in api.jobs] == [("Two", "pdf", False), ("One", "pdf", False)]
     assert {j["title"] for j in api.get("/api/downloads").json()} == {"One", "Two"}

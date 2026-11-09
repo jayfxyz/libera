@@ -1,13 +1,15 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { BookSummary, LibrarySort, SortOrder } from '@/api/client'
 import { api } from '@/api/client'
+import { bookStatus } from '@/lib/bookStatus'
+import { useDownloadsStore } from './downloads'
 
 /** Sort options, each with the direction it starts in when picked. */
 export const sortOptions: { value: LibrarySort; label: string; defaultOrder: SortOrder }[] = [
+  { value: 'added', label: 'Date added', defaultOrder: 'desc' },
   { value: 'title', label: 'Title', defaultOrder: 'asc' },
   { value: 'author', label: 'Author', defaultOrder: 'asc' },
-  { value: 'added', label: 'Date added', defaultOrder: 'desc' },
   { value: 'released', label: 'Release date', defaultOrder: 'desc' },
   { value: 'length', label: 'Length', defaultOrder: 'desc' },
   { value: 'series', label: 'Series', defaultOrder: 'asc' },
@@ -15,103 +17,172 @@ export const sortOptions: { value: LibrarySort; label: string; defaultOrder: Sor
   { value: 'downloaded', label: 'Recently downloaded', defaultOrder: 'desc' },
 ]
 
-const SORT_KEY = 'library.sort'
+export type Segment = 'all' | 'downloaded' | 'not_downloaded' | 'in_progress' | 'hidden' | 'removed'
+export type ViewMode = 'list' | 'grid'
 
-// The chosen sort is remembered per browser; storage may be unavailable.
-function loadSort(): { sort: LibrarySort; order: SortOrder } {
+const PAGE = 500 // the API's largest page; the whole library is loaded so counts and "select all" are exact
+
+/** Per-browser preferences; storage may be unavailable (private mode). */
+const PREFS_KEY = 'library.prefs'
+interface Prefs { sort: LibrarySort; order: SortOrder; view: ViewMode; accountId: number | null }
+function loadPrefs(): Prefs {
+  const fallback: Prefs = { sort: 'added', order: 'desc', view: 'list', accountId: null }
   try {
-    const saved = JSON.parse(localStorage.getItem(SORT_KEY) ?? 'null')
-    const opt = sortOptions.find((o) => o.value === saved?.sort)
-    if (opt && (saved.order === 'asc' || saved.order === 'desc')) return { sort: opt.value, order: saved.order }
+    const saved = { ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') }
+    // The sort used to be saved on its own.
+    const legacy = JSON.parse(localStorage.getItem('library.sort') ?? 'null')
+    if (legacy && !saved.sort) Object.assign(saved, legacy)
+    return {
+      sort: sortOptions.some((o) => o.value === saved.sort) ? saved.sort : fallback.sort,
+      order: saved.order === 'asc' || saved.order === 'desc' ? saved.order : fallback.order,
+      view: saved.view === 'grid' || saved.view === 'list' ? saved.view : fallback.view,
+      accountId: typeof saved.accountId === 'number' ? saved.accountId : null,
+    }
   } catch {
-    /* ignore */
-  }
-  return { sort: 'title', order: 'asc' }
-}
-
-function saveSort(sort: LibrarySort, order: SortOrder) {
-  try {
-    localStorage.setItem(SORT_KEY, JSON.stringify({ sort, order }))
-  } catch {
-    /* ignore */
+    return fallback
   }
 }
-
-export type StatusFilter = 'all' | 'liberated' | 'not_liberated' | 'in_progress' | 'removed'
 
 export const useLibraryStore = defineStore('library', () => {
+  const downloads = useDownloadsStore()
+  const prefs = loadPrefs()
+
   const books = ref<BookSummary[]>([])
   const loading = ref(false)
+  const error = ref('')
   const searchQuery = ref('')
-  const currentPage = ref(1)
-  const statusFilter = ref<StatusFilter>('all')
-  const initialSort = loadSort()
-  const sort = ref<LibrarySort>(initialSort.sort)
-  const order = ref<SortOrder>(initialSort.order)
+  const sort = ref<LibrarySort>(prefs.sort)
+  const order = ref<SortOrder>(prefs.order)
+  const view = ref<ViewMode>(prefs.view)
+  const accountId = ref<number | null>(prefs.accountId)
+  const segment = ref<Segment>('all')
+  const selected = ref<Set<number>>(new Set())
+  const openBookId = ref<number | null>(null)
 
-  const filteredBooks = computed(() => {
-    if (statusFilter.value === 'all') return books.value.filter((b) => !b.is_deleted)
-    if (statusFilter.value === 'liberated') return books.value.filter((b) => !b.is_deleted && b.liberation_status === 'liberated')
-    if (statusFilter.value === 'not_liberated') return books.value.filter((b) => !b.is_deleted && b.liberation_status === 'not_liberated')
-    if (statusFilter.value === 'in_progress') return books.value.filter((b) => !b.is_deleted && b.liberation_status === 'partial_download')
-    if (statusFilter.value === 'removed') return books.value.filter((b) => b.is_deleted)
-    return books.value
+  watch([sort, order, view, accountId], () => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({
+        sort: sort.value, order: order.value, view: view.value, accountId: accountId.value,
+      }))
+    } catch {
+      /* ignore */
+    }
   })
 
+  let requestSeq = 0
   async function fetchBooks() {
+    const seq = ++requestSeq
     loading.value = true
+    error.value = ''
     try {
-      books.value = await api.library.list({
-        q: searchQuery.value || undefined,
-        page: currentPage.value,
-        sort: sort.value,
-        order: order.value,
-      })
+      const all: BookSummary[] = []
+      for (let page = 1; ; page++) {
+        const batch = await api.library.list({
+          q: searchQuery.value || undefined, page, limit: PAGE,
+          sort: sort.value, order: order.value, accountId: accountId.value,
+        })
+        all.push(...batch)
+        if (batch.length < PAGE) break
+      }
+      if (seq !== requestSeq) return // a newer search/sort superseded this one
+      books.value = all
+      // Keep the selection to books that are still listed.
+      const ids = new Set(all.map((b) => b.id))
+      selected.value = new Set([...selected.value].filter((id) => ids.has(id)))
+    } catch (e: unknown) {
+      if (seq === requestSeq) error.value = e instanceof Error ? e.message : String(e)
     } finally {
-      loading.value = false
+      if (seq === requestSeq) loading.value = false
     }
   }
 
-  async function updateBook(id: number, patch: Partial<{ tags: string; user_rating: number; is_finished: boolean }>) {
-    await api.library.update(id, patch)
-    const book = books.value.find((b) => b.id === id)
-    if (book) {
-      if (patch.tags !== undefined) book.tags = patch.tags
-      if (patch.is_finished !== undefined) book.is_finished = patch.is_finished
+  const stateOf = (b: BookSummary) => bookStatus(b, downloads.jobFor(b.id)).state
+
+  // Books that count as "in the library": not removed from Audible, not hidden.
+  const shelved = computed(() => books.value.filter((b) => !b.is_deleted && !b.is_hidden))
+
+  const segmentBooks = computed<Record<Segment, BookSummary[]>>(() => ({
+    all: shelved.value,
+    downloaded: shelved.value.filter((b) => stateOf(b) === 'downloaded'),
+    not_downloaded: shelved.value.filter((b) => stateOf(b) !== 'downloaded'),
+    in_progress: shelved.value.filter((b) => ['queued', 'downloading'].includes(stateOf(b))),
+    hidden: books.value.filter((b) => b.is_hidden && !b.is_deleted),
+    removed: books.value.filter((b) => b.is_deleted),
+  }))
+
+  const visibleBooks = computed(() => segmentBooks.value[segment.value])
+
+  /** Books "Download all" would queue: in the library and neither downloaded nor in progress. */
+  const downloadable = computed(() => shelved.value.filter((b) => ['none', 'error'].includes(stateOf(b))))
+
+  const selectedBooks = computed(() => books.value.filter((b) => selected.value.has(b.id)))
+
+  function toggleSelected(id: number) {
+    const next = new Set(selected.value)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    selected.value = next
+  }
+
+  function selectAllVisible(on: boolean) {
+    const next = new Set(selected.value)
+    for (const b of visibleBooks.value) {
+      if (on) next.add(b.id)
+      else next.delete(b.id)
     }
+    selected.value = next
   }
 
-  function search(q: string) {
-    searchQuery.value = q
-    currentPage.value = 1
-    fetchBooks()
+  function clearSelection() {
+    selected.value = new Set()
   }
 
-  function setStatusFilter(f: StatusFilter) {
-    statusFilter.value = f
-  }
-
-  /** Picking a new sort starts in its natural direction. */
   function setSort(s: LibrarySort) {
     if (s === sort.value) return
     sort.value = s
     order.value = sortOptions.find((o) => o.value === s)?.defaultOrder ?? 'asc'
-    applySort()
+    fetchBooks()
   }
 
   function toggleOrder() {
     order.value = order.value === 'asc' ? 'desc' : 'asc'
-    applySort()
-  }
-
-  function applySort() {
-    saveSort(sort.value, order.value)
-    currentPage.value = 1
     fetchBooks()
   }
 
+  function setAccount(id: number | null) {
+    accountId.value = id
+    fetchBooks()
+  }
+
+  function search(q: string) {
+    searchQuery.value = q
+    fetchBooks()
+  }
+
+  /** Apply a change to books already loaded (after a PATCH or a finished download). */
+  function patchBooks(ids: number[], patch: Partial<BookSummary>) {
+    const set = new Set(ids)
+    books.value = books.value.map((b) => (set.has(b.id) ? { ...b, ...patch } : b))
+  }
+
+  async function setHidden(ids: number[], hidden: boolean) {
+    await api.library.setHidden(ids, hidden)
+    patchBooks(ids, { is_hidden: hidden })
+    const next = new Set(selected.value)
+    ids.forEach((id) => next.delete(id))
+    selected.value = next
+  }
+
+  async function updateBook(id: number, patch: Partial<{ tags: string; user_rating: number | null; is_finished: boolean }>) {
+    await api.library.update(id, patch)
+    const { user_rating: _ignored, ...summaryPatch } = patch
+    patchBooks([id], summaryPatch)
+  }
+
   return {
-    books, filteredBooks, loading, searchQuery, currentPage, statusFilter, sort, order,
-    fetchBooks, updateBook, search, setStatusFilter, setSort, toggleOrder,
+    books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, openBookId,
+    segmentBooks, visibleBooks, downloadable, selectedBooks, shelved,
+    fetchBooks, toggleSelected, selectAllVisible, clearSelection, setSort, toggleOrder, setAccount, search,
+    patchBooks, setHidden, updateBook, stateOf,
   }
 })
