@@ -159,7 +159,10 @@ async def get_pdf(client, asin: str) -> bytes | None:
     from audible_cli.models import LibraryItem
 
     async with client as c:
-        resp = await c.get(f"1.0/library/{asin}", response_groups="pdf_url")
+        try:
+            resp = await c.get(f"1.0/library/{asin}", response_groups="pdf_url")
+        except Exception as e:  # e.g. 404 when the login is for another region's store
+            raise ContentError(f"Audible couldn't look up this book: {e}")
         item = LibraryItem(data=resp.get("item", resp), api_client=c, parent=None, response_groups="pdf_url")
         try:
             pdf_url = item.get_pdf_url()

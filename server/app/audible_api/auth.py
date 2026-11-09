@@ -122,8 +122,30 @@ class LoginFlow:
         # Amazon doesn't always return an email (UK returns user_id instead).
         email = info.get("email") or info.get("user_id", "")
         account_id = info.get("user_id") or email.replace("@", "_at_").replace(".", "_")
+        previous = _load_previous(self.accounts_dir, account_id)
         storage.save_auth(self.accounts_dir, account_id, auth)
+        if previous is not None:
+            _deregister(previous, account_id)
         return LoginResult(account_id=account_id, email=email, name=pending.name, locale=pending.locale)
+
+
+def _load_previous(accounts_dir: str, account_id: str):
+    try:
+        return storage.load_auth(accounts_dir, account_id)
+    except Exception as e:  # unreadable old file: nothing to clean up
+        log.warning("could not read the previous login for %s: %s", account_id, e)
+        return None
+
+
+def _deregister(previous, account_id: str) -> None:
+    """Remove this app's previous device registration for the account from
+    Amazon, so logging in again doesn't leave another "Audible for iPhone"
+    behind each time. Best-effort: the new login is already saved."""
+    try:
+        previous.deregister_device()
+        log.info("deregistered the previous device for %s", account_id)
+    except Exception as e:
+        log.warning("could not deregister the previous device for %s: %s", account_id, e)
 
 
 def _register(code: str, pending: _PendingLogin) -> dict:

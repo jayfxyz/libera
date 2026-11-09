@@ -201,3 +201,45 @@ def test_registration_uses_the_libraries_current_app_profile(tmp_path):
     assert sent["headers"]["User-Agent"] == auth_mod.APP_USER_AGENT
     assert sent["body"]["registration_data"]["app_version"] == APP_VERSION
     assert len(sent["body"]["registration_data"]["device_serial"]) == 40
+
+
+def test_logging_in_again_deregisters_the_previous_device(tmp_path):
+    flow = LoginFlow(str(tmp_path))
+    registration = {"customer_info": {"user_id": "amzn1.account.ABC"}, "website_cookies": {"session-id": "1"}}
+    previous = MagicMock()
+    for attempt in range(2):
+        _, state = flow.start("uk", "Me")
+        with patch("app.audible_api.auth.register_", return_value=registration), \
+             patch("app.audible_api.auth.storage.save_auth") as save, \
+             patch("app.audible_api.auth.storage.load_auth", return_value=None if attempt == 0 else previous):
+            flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
+        save.assert_called_once()
+    previous.deregister_device.assert_called_once_with()
+
+
+def test_failed_deregistration_does_not_fail_the_login(tmp_path):
+    flow = LoginFlow(str(tmp_path))
+    _, state = flow.start("uk", "Me")
+    previous = MagicMock()
+    previous.deregister_device.side_effect = RuntimeError("Amazon said no")
+    registration = {"customer_info": {"user_id": "amzn1.account.ABC"}, "website_cookies": {"session-id": "1"}}
+    with patch("app.audible_api.auth.register_", return_value=registration), \
+         patch("app.audible_api.auth.storage.save_auth"), \
+         patch("app.audible_api.auth.storage.load_auth", return_value=previous):
+        result = flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
+    assert result.account_id == "amzn1.account.ABC"
+
+
+def test_saved_login_is_private(tmp_path):
+    import audible
+    from app.audible_api import storage
+    auth = audible.Authenticator()
+    auth.locale = "uk"
+    storage.save_auth(str(tmp_path), "amzn1.account.ABC", auth)
+    assert (tmp_path / "amzn1.account.ABC.json").stat().st_mode & 0o777 == 0o600
+
+
+async def test_pdf_lookup_errors_are_content_errors():
+    c = fake_client(get=AsyncMock(side_effect=RuntimeError("Not Found (404): ASIN X not present in customer library.")))
+    with pytest.raises(ContentError, match="not present in customer library"):
+        await content.get_pdf(c, "X")
