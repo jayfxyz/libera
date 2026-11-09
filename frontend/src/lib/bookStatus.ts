@@ -59,3 +59,10 @@ export function formatDuration(minutes: number): string {
   const m = minutes % 60
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
+
+/** "8 Nov 2026" in the browser's locale; "" for missing or placeholder dates. */
+export function formatDate(iso: string | null | undefined): string {
+  if (!iso || iso.startsWith('1970')) return '' // the import's stand-in when Audible gives no date
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}

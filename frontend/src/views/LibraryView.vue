@@ -178,8 +178,18 @@
         <ul
           v-else-if="library.view === 'list'"
           aria-label="Books"
-          class="card overflow-hidden"
+          class="card @container overflow-hidden"
         >
+          <!-- Column headings, matching BookListRow's columns. -->
+          <li aria-hidden="true" class="hidden @md:flex h-10 items-center gap-3.5 border-b border-line-soft bg-paper/60 pr-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
+            <span class="w-[52px] shrink-0" />
+            <!-- 52 px cover; the 14 px gaps match the row's -->
+            <span class="ml-[52px] flex-1">Title</span>
+            <span class="hidden @4xl:block w-[150px] shrink">Genres</span>
+            <span v-if="multipleAccounts" class="hidden @3xl:block w-[150px] shrink-0">Account</span>
+            <span class="hidden @xl:block w-[100px] shrink-0">Added</span>
+            <span class="w-[150px] shrink-0">Status</span>
+          </li>
           <BookListRow
             v-for="b in library.visibleBooks"
             :key="b.id"
@@ -188,6 +198,7 @@
             :checked="library.selected.has(b.id)"
             :open="library.openBookId === b.id"
             :selecting="library.selecting"
+            :account="multipleAccounts ? accountShort(b.account_id) : undefined"
             @toggle="library.toggleSelected(b.id)"
             @open="library.openBookId = b.id"
           />
@@ -241,7 +252,7 @@ import BookListRow from '@/components/library/BookListRow.vue'
 import BookPanel from '@/components/library/BookPanel.vue'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { bookStatus } from '@/lib/bookStatus'
-import { regionBadge } from '@/lib/regions'
+import { flag, regionBadge } from '@/lib/regions'
 import { useAccountsStore } from '@/stores/accounts'
 import { useDownloadsStore } from '@/stores/downloads'
 import { sortOptions, useLibraryStore, type Segment } from '@/stores/library'
@@ -269,6 +280,14 @@ onMounted(async () => {
 
 function statusFor(b: BookSummary) {
   return bookStatus(b, downloads.jobFor(b.id))
+}
+
+const multipleAccounts = computed(() => accounts.accounts.length > 1)
+
+/** "🇬🇧 Personal" for the list's Account column. */
+function accountShort(id: number) {
+  const a = accounts.accounts.find((x) => x.id === id)
+  return a ? `${flag(a.locale)} ${a.account_name || a.email}` : ''
 }
 
 function accountLabel(a: Account) {
