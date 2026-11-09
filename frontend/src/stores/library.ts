@@ -178,16 +178,10 @@ export const useLibraryStore = defineStore('library', () => {
     selected.value = next
   }
 
-  async function updateBook(id: number, patch: Partial<{ tags: string; user_rating: number | null; is_finished: boolean }>) {
-    await api.library.update(id, patch)
-    const { user_rating: _ignored, ...summaryPatch } = patch
-    patchBooks([id], summaryPatch)
-  }
-
   return {
     books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, selectMode, selecting, openBookId,
     segmentBooks, visibleBooks, downloadable, selectedBooks, shelved,
     fetchBooks, toggleSelected, selectAllVisible, clearSelection, setSort, toggleOrder, setAccount, search,
-    patchBooks, setHidden, updateBook, stateOf,
+    patchBooks, setHidden, stateOf,
   }
 })

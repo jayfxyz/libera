@@ -101,59 +101,6 @@
         </div>
       </div>
 
-      <div class="flex flex-col gap-2 border-t border-line-faint pt-4">
-        <span class="text-xs font-semibold text-ink-soft">Your tags</span>
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span v-for="t in tags" :key="t" class="inline-flex h-[30px] items-center gap-1 rounded-full bg-chip pl-2.5 pr-1 font-mono text-xs">
-            {{ t }}
-            <button type="button" class="flex size-6 items-center justify-center rounded-full hover:bg-line" :aria-label="`Remove tag ${t}`" @click="removeTag(t)">
-              <XIcon class="size-3" />
-            </button>
-          </span>
-          <input
-            v-if="addingTag"
-            ref="tagInput"
-            v-model="newTag"
-            class="h-[30px] w-32 rounded-full border border-line bg-surface px-2.5 font-mono text-xs outline-none focus:border-brand"
-            placeholder="tag"
-            aria-label="New tag"
-            @keydown.enter.prevent="commitTag"
-            @keydown.escape="addingTag = false"
-            @blur="commitTag"
-          />
-          <button
-            v-else
-            type="button"
-            class="h-[30px] cursor-pointer rounded-full border border-dashed border-[#B9BAB3] px-2.5 font-mono text-xs text-ink-soft"
-            @click="startTag"
-          >+ tag</button>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-1 border-t border-line-faint pt-4">
-        <div class="flex min-h-11 items-center justify-between gap-3">
-          <span class="text-sm">Your rating</span>
-          <span class="flex" role="radiogroup" aria-label="Your rating">
-            <button
-              v-for="star in 5"
-              :key="star"
-              type="button"
-              role="radio"
-              :aria-checked="(book.user_rating ?? 0) === star"
-              :aria-label="`${star} star${star > 1 ? 's' : ''}`"
-              class="flex size-9 cursor-pointer items-center justify-center"
-              @click="setRating(star)"
-            >
-              <StarIcon class="size-5" :class="star <= (book.user_rating ?? 0) ? 'fill-[#F2B705] text-[#F2B705]' : 'text-line'" />
-            </button>
-          </span>
-        </div>
-        <label class="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm">
-          Finished
-          <input type="checkbox" class="checkbox" :checked="book.is_finished" @change="toggleFinished" />
-        </label>
-      </div>
-
       <div class="border-t border-line-faint pt-4">
         <button type="button" class="btn-secondary w-full" @click="toggleHidden">
           <component :is="book.is_hidden ? EyeIcon : EyeOffIcon" class="size-4" />
@@ -165,11 +112,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { EyeIcon, EyeOffIcon, StarIcon, XIcon } from '@lucide/vue'
+import { computed, ref, watch } from 'vue'
+import { EyeIcon, EyeOffIcon, XIcon } from '@lucide/vue'
 import type { BookDetail, JobKind } from '@/api/client'
 import { api } from '@/api/client'
-import { bookStatus, formatDuration, tagList } from '@/lib/bookStatus'
+import { bookStatus, formatDuration } from '@/lib/bookStatus'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useSettingsStore } from '@/stores/settings'
@@ -238,50 +185,7 @@ async function cancel() {
   if (job.value) await downloads.cancel(job.value.job_id)
 }
 
-// --- your tags, rating, finished, hidden
-const tags = computed(() => tagList(book.value?.tags ?? ''))
-const addingTag = ref(false)
-const newTag = ref('')
-const tagInput = ref<HTMLInputElement | null>(null)
-
-function startTag() {
-  addingTag.value = true
-  newTag.value = ''
-  nextTick(() => tagInput.value?.focus())
-}
-
-async function commitTag() {
-  if (!addingTag.value) return
-  addingTag.value = false
-  const tag = newTag.value.trim().replace(/\s+/g, '_')
-  if (tag && !tags.value.includes(tag)) await saveTags([...tags.value, tag])
-}
-
-async function removeTag(tag: string) {
-  await saveTags(tags.value.filter((t) => t !== tag))
-}
-
-async function saveTags(list: string[]) {
-  if (!book.value) return
-  const value = list.join(' ')
-  await library.updateBook(book.value.id, { tags: value })
-  book.value.tags = value
-}
-
-async function setRating(star: number) {
-  if (!book.value) return
-  const rating = book.value.user_rating === star ? 0 : star // tapping the current rating clears it
-  await library.updateBook(book.value.id, { user_rating: rating })
-  book.value.user_rating = rating || null
-}
-
-async function toggleFinished() {
-  if (!book.value) return
-  const value = !book.value.is_finished
-  await library.updateBook(book.value.id, { is_finished: value })
-  book.value.is_finished = value
-}
-
+// --- hidden
 async function toggleHidden() {
   if (!book.value) return
   const value = !book.value.is_hidden

@@ -54,11 +54,6 @@ export function byline(book: Pick<BookSummary, 'authors' | 'narrators'>): string
   return authors
 }
 
-/** The user's own tags, stored space-separated. */
-export function tagList(tags: string): string[] {
-  return tags.split(' ').filter(Boolean)
-}
-
 export function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60

@@ -1,7 +1,7 @@
 <template>
   <div class="flex min-w-0 flex-1 overflow-hidden">
     <div class="min-w-0 flex-1 overflow-y-auto">
-      <div class="mx-auto flex max-w-[1400px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
+      <div class="flex max-w-[1400px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
         <!-- Header -->
         <header class="flex flex-wrap items-end justify-between gap-3">
           <div>
