@@ -1,11 +1,11 @@
 <template>
-  <!-- Desktop: rail | page. Phones: page above a bottom tab bar. -->
+  <!-- Desktop: rail | page. Phones: top bar with a hamburger menu, page below. -->
   <div class="flex h-dvh flex-col overflow-hidden bg-paper text-ink md:flex-row">
     <AppRail :active-downloads="activeCount" />
+    <MobileNav :active-downloads="activeCount" />
     <main class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <RouterView />
     </main>
-    <MobileNav :active-downloads="activeCount" />
   </div>
 </template>
 
