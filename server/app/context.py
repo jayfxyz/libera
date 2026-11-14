@@ -13,6 +13,8 @@ from .db import Database
 if TYPE_CHECKING:
     from .audible_api.client import AudibleClient
     from .jobs.queue import DownloadQueue
+    from .services.task_queue import TaskQueueService
+    from .services.task_worker import TaskWorkerService
 
 
 @dataclass
@@ -21,6 +23,8 @@ class AppContext:
     db: Database
     audible: "AudibleClient"
     queue: "DownloadQueue"
+    task_queue: "TaskQueueService"
+    task_worker: "TaskWorkerService"
 
 
 def get_ctx(request: Request) -> AppContext:

@@ -21,7 +21,10 @@ from .db import Database
 from .jobs.download import make_runner
 from .jobs.queue import DownloadQueue
 from .services import settings as settings_service
+from .services.task_queue import TaskQueueService
+from .services.task_worker import TaskWorkerService
 from .static import FrontendFiles
+from .tasks.signals import TaskSignals
 from .telemetry import init_tracing
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -41,12 +44,18 @@ def create_app(config: Config | None = None, db: Database | None = None,
         client = audible or AudibleClient(config.accounts_dir)
         queue = DownloadQueue(runner or make_runner(database, client), database, workers=config.download_workers)
         queue.start()
-        app.state.ctx = AppContext(config=config, db=database, audible=client, queue=queue)
+        signals = TaskSignals()
+        task_queue = TaskQueueService(database, signals)
+        task_worker = TaskWorkerService(database, signals, workers=config.download_workers)
+        task_worker.start()  # no handlers yet: downloads still run on DownloadQueue until phase 2
+        app.state.ctx = AppContext(config=config, db=database, audible=client, queue=queue,
+                                   task_queue=task_queue, task_worker=task_worker)
         log.info("ready: db=%s output=%s workers=%d", config.database_path, config.output_dir,
                  config.download_workers)
         try:
             yield
         finally:
+            await task_worker.stop()
             await queue.stop()
             if db is None:
                 database.close()

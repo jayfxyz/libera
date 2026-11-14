@@ -159,3 +159,24 @@ class Job(Base):
     finished_at: Mapped[str | None] = mapped_column(String)
 
     __table_args__ = (Index("ix_jobs_status_created", "status", "created_at"),)
+
+
+class Task(Base):
+    """A unit of background work for the task queue: what to run (type + payload)
+    and how it went. Knows nothing about books or downloads."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)  # uuid4 hex
+    type: Mapped[str] = mapped_column(Text)  # task name, e.g. "download_book"
+    payload: Mapped[str] = mapped_column(Text)  # JSON, validated by the task's pydantic model
+    # pending | processing | completed | failed | cancelled
+    status: Mapped[str] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, server_default="0")  # incremented on claim
+    max_attempts: Mapped[int] = mapped_column(Integer, server_default="1")
+    error: Mapped[str | None] = mapped_column(Text)  # last failure message
+    created_at: Mapped[str] = mapped_column(String, server_default=NOW)
+    locked_at: Mapped[str | None] = mapped_column(String)  # set on claim, refreshed while running
+    finished_at: Mapped[str | None] = mapped_column(String)
+
+    __table_args__ = (Index("ix_tasks_status_created", "status", "created_at"),)
