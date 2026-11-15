@@ -46,7 +46,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
         task_queue = TaskQueueService(database, signals)
         task_worker = TaskWorkerService(database, signals, workers=config.download_workers)
         events = DownloadEvents()
-        downloads = DownloadsService(database, config, task_queue, events)
+        downloads = DownloadsService(database, config, task_queue, events, client)
         DownloadHandlers(downloads, pipeline or Pipeline(client)).register(task_worker)
         task_worker.start()  # releases tasks interrupted by the last shutdown
         downloads.start()  # then fails downloads left with no live task

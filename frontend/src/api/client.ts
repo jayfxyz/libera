@@ -1,5 +1,14 @@
 const BASE = '/api'
 
+/** A failed API call; `status` is the HTTP status. */
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -8,7 +17,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`${method} ${path} → ${res.status}: ${text}`)
+    throw new ApiError(`${method} ${path} → ${res.status}: ${text}`, res.status)
   }
   if (res.status === 204) return undefined as T
   return res.json()
@@ -47,6 +56,7 @@ export interface BookSummary {
   last_format: 'm4b' | 'mp3' | null
   length_minutes: number
   date_added: string
+  has_pdf: boolean | null // a companion PDF exists; null until the next library sync
 }
 
 export interface BookDetail {
@@ -73,6 +83,7 @@ export interface BookDetail {
   last_format: 'm4b' | 'mp3' | null
   file_path: string | null // where the last download was saved
   planned_path: string // where a download would go with the current settings
+  has_pdf: boolean | null // a companion PDF exists; null until the next library sync
 }
 
 export type JobStatus = 'queued' | 'downloading' | 'decrypting' | 'done' | 'failed' | 'cancelled'
@@ -151,6 +162,7 @@ export const api = {
       request<void>('PATCH', `/library/${id}`, patch),
     setHidden: (bookIds: number[], isHidden: boolean) =>
       request<void>('POST', '/library/bulk', { book_ids: bookIds, is_hidden: isHidden }),
+    savePdf: (id: number) => request<{ file_path: string }>('POST', `/library/${id}/pdf`),
   },
 
   downloads: {

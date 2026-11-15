@@ -91,7 +91,7 @@ class Downloader:
         self.db = db
         signals = TaskSignals()
         self.worker = TaskWorkerService(db, signals, workers=1)
-        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents())
+        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible)
         DownloadHandlers(self.svc, Pipeline(audible)).register(self.worker)
         self.worker.start()
         self.svc.start()

@@ -5,7 +5,8 @@ import pytest
 from app.audible_api import content
 from app.audible_api.auth import LoginError, LoginFlow
 from app.audible_api.content import ContentError, describe_license_denial
-from app.audible_api.library import normalize_item
+from app.audible_api.library import RESPONSE_GROUPS
+from app.audible_api.models import AudibleBook, Series
 
 
 def fake_client(get=None, post=None):
@@ -107,8 +108,8 @@ async def test_chapter_info_missing():
 
 # --- library ---------------------------------------------------------------------
 
-def test_normalize_item():
-    got = normalize_item({
+def test_from_audible():
+    got = AudibleBook.from_audible({
         "asin": "B001", "title": "Test Book", "publisher_summary": "A great book.", "runtime_length_min": 600,
         "authors": [{"name": "Jane Author"}], "narrators": [{"name": "Joe Narrator"}],
         "publisher_name": "Audible Originals",
@@ -117,16 +118,19 @@ def test_normalize_item():
         "series": [{"asin": "S001", "title": "Test Series", "sequence": "1"}],
         "rating": {"overall_distribution": {"average_rating": 4.5}},
         "is_plus_catalog_item": False, "library_status": {"date_added": "2023-02-01"},
+        "pdf_url": "https://cdn/companion.pdf",
     })
-    assert got["authors"] == ["Jane Author"] and got["narrators"] == ["Joe Narrator"]
-    assert got["cover_url"] == "https://cdn/1215.jpg"  # largest available
-    assert got["series"] == [{"asin": "S001", "title": "Test Series", "sequence": "1"}]
-    assert (got["rating"], got["date_added"], got["release_date"]) == (4.5, "2023-02-01", "2023-01-15")
+    assert got.authors == ["Jane Author"] and got.narrators == ["Joe Narrator"]
+    assert got.cover_url == "https://cdn/1215.jpg"  # largest available
+    assert got.series == [Series(asin="S001", title="Test Series", sequence="1")]
+    assert (got.rating, got.date_added, got.release_date) == (4.5, "2023-02-01", "2023-01-15")
+    assert got.has_pdf is True and "pdf_url" in RESPONSE_GROUPS.split(",")
 
 
-def test_normalize_item_tolerates_missing_fields():
-    got = normalize_item({"asin": "B002", "rating": None, "library_status": None})
-    assert (got["title"], got["rating"], got["cover_url"], got["date_added"]) == ("", None, None, None)
+def test_from_audible_tolerates_missing_fields():
+    got = AudibleBook.from_audible({"asin": "B002", "rating": None, "library_status": None})
+    assert (got.title, got.rating, got.cover_url, got.date_added) == ("", None, None, None)
+    assert got.has_pdf is False
 
 
 # --- login -------------------------------------------------------------------------

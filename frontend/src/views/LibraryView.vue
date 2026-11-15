@@ -154,6 +154,13 @@
             <button type="button" class="btn-primary h-9 rounded-lg px-3 text-[13px]" :disabled="selectionDownloadable.length === 0" @click="askDownload(selectionDownloadable)">
               Download {{ selectionDownloadable.length }}
             </button>
+            <button
+              v-if="selectionWithPdf.length"
+              type="button"
+              class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]"
+              :disabled="savingPdfs"
+              @click="savePdfs"
+            >{{ savingPdfs ? 'Saving PDFs…' : `Save ${selectionWithPdf.length} PDF${selectionWithPdf.length === 1 ? '' : 's'}` }}</button>
             <button type="button" class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]" @click="hideSelected">
               {{ library.segment === 'hidden' ? 'Show' : 'Hide' }}
             </button>
@@ -245,7 +252,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { ChevronDownIcon, LayoutGridIcon, ListIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import type { Account, BookSummary, LibrarySort } from '@/api/client'
-import { api } from '@/api/client'
+import { api, ApiError } from '@/api/client'
 import BookGridCard from '@/components/library/BookGridCard.vue'
 import BookListRow from '@/components/library/BookListRow.vue'
 import BookPanel from '@/components/library/BookPanel.vue'
@@ -395,6 +402,33 @@ async function queue(books: BookSummary[]) {
   } catch (e) {
     flash(`Couldn't queue downloads: ${e instanceof Error ? e.message : e}`)
   }
+}
+
+const selectionWithPdf = computed(() => library.selectedBooks.filter((b) => b.has_pdf))
+const savingPdfs = ref(false)
+
+/** One book at a time: each request fetches from Audible and writes the file before it answers. */
+async function savePdfs() {
+  const books = selectionWithPdf.value
+  let saved = 0
+  let none = 0
+  let failed = 0
+  savingPdfs.value = true
+  for (const b of books) {
+    try {
+      await api.library.savePdf(b.id)
+      saved++
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) none++
+      else failed++
+    }
+  }
+  savingPdfs.value = false
+  const parts = [`Saved ${saved} PDF${saved === 1 ? '' : 's'}`]
+  if (none) parts.push(`${none} had none`)
+  if (failed) parts.push(`${failed} failed`)
+  flash(`${parts.join(' · ')}.`)
+  library.clearSelection()
 }
 
 async function hideSelected() {

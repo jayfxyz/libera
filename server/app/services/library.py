@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ..audible_api.models import AudibleBook
 from ..db import Database
 from ..repositories import books as repo
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
@@ -27,7 +28,7 @@ def sanitize_filename(s: str) -> str:
 # --- import -------------------------------------------------------------------------
 
 
-def import_library(db: Database, account_id: int, books: list[dict[str, Any]]) -> int:
+def import_library(db: Database, account_id: int, books: list[AudibleBook]) -> int:
     """Upsert an account's books from an Audible scan.
 
     Books missing from the scan are marked removed for this account; books
@@ -36,21 +37,20 @@ def import_library(db: Database, account_id: int, books: list[dict[str, Any]]) -
     with db.session() as s:
         for b in books:
             book_id = repo.upsert_book(s, b)
-            repo.upsert_library_entry(s, book_id, account_id, b.get("date_added") or "1970-01-01",
-                                      bool(b.get("is_plus_catalog_item")))
-            repo.set_contributors(s, book_id, "author", b.get("authors") or [])
-            repo.set_contributors(s, book_id, "narrator", b.get("narrators") or [])
-            for series in b.get("series") or []:
-                if series.get("asin"):
-                    repo.add_series(s, book_id, series["asin"], series.get("title") or "", series.get("sequence") or "")
-            repo.replace_genres(s, book_id, b.get("genres") or [])
+            repo.upsert_library_entry(s, book_id, account_id, b.date_added or "1970-01-01", b.is_plus_catalog_item)
+            repo.set_contributors(s, book_id, "author", b.authors)
+            repo.set_contributors(s, book_id, "narrator", b.narrators)
+            for series in b.series:
+                if series.asin:
+                    repo.add_series(s, book_id, series.asin, series.title, series.sequence)
+            repo.replace_genres(s, book_id, b.genres)
             repo.index_for_search(
                 s, book_id,
-                title=b.get("title") or "", subtitle=b.get("subtitle") or "", description=b.get("description") or "",
-                authors=", ".join(b.get("authors") or []), narrators=", ".join(b.get("narrators") or []),
-                series=", ".join(x.get("title") or "" for x in b.get("series") or []),
+                title=b.title, subtitle=b.subtitle or "", description=b.description or "",
+                authors=", ".join(b.authors), narrators=", ".join(b.narrators),
+                series=", ".join(x.title for x in b.series),
             )
-        repo.mark_missing_as_removed(s, account_id, [b["asin"] for b in books])
+        repo.mark_missing_as_removed(s, account_id, [b.asin for b in books])
     return len(books)
 
 
@@ -64,6 +64,11 @@ def fts_query(text: str) -> str:
     """
     words = re.findall(r"\w+", text)
     return " ".join('"' + w.replace('"', '""') + '"*' for w in words)
+
+
+def _has_pdf(value: int | None) -> bool | None:
+    """None: not synced since the flag existed."""
+    return None if value is None else bool(value)
 
 
 def list_books(db: Database, *, search: str = "", sort: str | None = None, order: str | None = None,
@@ -84,6 +89,7 @@ def list_books(db: Database, *, search: str = "", sort: str | None = None, order
             "is_finished": bool(r["is_finished"]),
             "is_deleted": bool(r["is_deleted"]),
             "is_hidden": bool(r["is_hidden"]),
+            "has_pdf": _has_pdf(r["has_pdf"]),
             "authors": people[r["id"]]["author"],
             "narrators": people[r["id"]]["narrator"],
             "genres": genre_names[r["id"]],
@@ -102,6 +108,7 @@ def get_book(db: Database, book_id: int) -> dict[str, Any] | None:
             **r,
             "is_finished": bool(r["is_finished"]),
             "is_hidden": bool(r["is_hidden"]),
+            "has_pdf": _has_pdf(r["has_pdf"]),
             "audible_rating": round(r["audible_rating"], 2),
             "genres": repo.genres(s, [book_id])[book_id],
             "authors": people["author"],

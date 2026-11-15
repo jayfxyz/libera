@@ -35,7 +35,7 @@ async def make_stack(db, config, pipeline):
     def build(start=True):
         signals = TaskSignals()
         worker = TaskWorkerService(db, signals, workers=1, cancel_poll=0.02)
-        svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents())
+        svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible=None)
         DownloadHandlers(svc, pipeline).register(worker)
         workers.append(worker)
         stack = SimpleNamespace(svc=svc, worker=worker, start=lambda: (worker.start(), svc.start()))

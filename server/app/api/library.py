@@ -7,8 +7,10 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from ..services import library
 from ..context import AppContext, get_ctx
+from ..deps import DownloadSvc
+from ..services import library
+from ..services.downloads import NoPdf, PdfFailed
 
 router = APIRouter()
 
@@ -84,6 +86,22 @@ def get_book(book_id: int, ctx: AppContext = Depends(get_ctx)):
         raise HTTPException(404, "book not found")
     book["planned_path"] = library.planned_path(ctx.db, book_id, ctx.config)
     return book
+
+
+@router.post("/library/{book_id}/pdf")
+async def save_pdf(book_id: int, download_svc: DownloadSvc, account_id: int | None = None):
+    """Save the book's companion PDF now, without a download (nothing on the Downloads page)."""
+    try:
+        path = await download_svc.save_pdf(book_id, account_id)
+    except NoPdf:
+        raise HTTPException(404, "this title has no companion PDF")
+    except PdfFailed as e:
+        raise HTTPException(502, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"saving PDF: {e}")
+    if path is None:
+        raise HTTPException(404, "book not found for this account")
+    return {"file_path": path}
 
 
 class BookPatch(BaseModel):

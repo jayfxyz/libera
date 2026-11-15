@@ -1,6 +1,6 @@
 """Typed FastAPI dependencies: one per service, so routes declare exactly what they use.
 
-    def list_downloads(download_svc: DownloadsSvc): ...
+    def list_downloads(download_svc: DownloadSvc): ...
 """
 
 from __future__ import annotations
@@ -21,5 +21,5 @@ def get_config(request: Request) -> Config:
     return request.app.state.ctx.config
 
 
-DownloadsSvc = Annotated[DownloadsService, Depends(get_download_svc)]
+DownloadSvc = Annotated[DownloadsService, Depends(get_download_svc)]
 ConfigDep = Annotated[Config, Depends(get_config)]

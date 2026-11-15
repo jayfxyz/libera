@@ -32,6 +32,17 @@ def active_for(s: Session, library_book_id: int) -> Download | None:
                      .order_by(Download.created_at).limit(1)).first()
 
 
+def latest_done(s: Session, library_book_id: int) -> Download | None:
+    """The book's most recent finished download."""
+    return s.scalars(select(Download).where(Download.library_book_id == library_book_id,
+                                            Download.status == DownloadStatus.DONE)
+                     .order_by(Download.finished_at.desc()).limit(1)).first()
+
+
+def set_files(s: Session, download_id: str, files: str) -> None:
+    s.execute(update(Download).where(Download.id == download_id).values(files=files))
+
+
 def run_info(s: Session, download_id: str) -> dict[str, Any] | None:
     """What a handler needs: the download plus the book's ASIN and title and the account's token key."""
     row = s.execute(

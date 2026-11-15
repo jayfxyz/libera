@@ -35,6 +35,9 @@
       <!-- What can be done now depends on the book's state. -->
       <div v-if="status.state === 'none'" class="flex flex-wrap gap-2">
         <button type="button" class="btn-primary flex-1" :disabled="busy" @click="download">Download</button>
+        <button v-if="hasPdf" type="button" class="btn-secondary" :disabled="busy" @click="savePdf">
+          {{ savingPdf ? 'Saving PDF…' : 'PDF only' }}
+        </button>
       </div>
 
       <div v-else-if="status.state === 'downloading'" class="flex flex-col gap-2 rounded-xl bg-busy-soft p-3.5">
@@ -63,9 +66,15 @@
 
       <div v-else class="flex flex-col gap-2.5">
         <span class="inline-flex h-7 items-center gap-1.5 self-start rounded-full bg-ok-soft px-2.5 text-xs font-semibold text-ok-ink">{{ status.label }}</span>
-        <button type="button" class="btn-secondary self-start" :disabled="busy" @click="download">Download again</button>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn-secondary" :disabled="busy" @click="download">Download again</button>
+          <button v-if="hasPdf" type="button" class="btn-secondary" :disabled="busy" @click="savePdf">
+            {{ savingPdf ? 'Saving PDF…' : 'PDF only' }}
+          </button>
+        </div>
       </div>
       <p v-if="actionError" class="-mt-2 text-xs text-warn-deep">{{ actionError }}</p>
+      <p v-else-if="notice" class="-mt-2 text-xs text-ok-ink break-all">{{ notice }}</p>
 
       <div class="flex flex-col gap-1.5">
         <!-- Downloads from before paths were recorded only have the computed location. -->
@@ -128,6 +137,8 @@ const loading = ref(true)
 const loadError = ref('')
 const busy = ref(false)
 const actionError = ref('')
+const notice = ref('')
+const savingPdf = ref(false)
 const format = ref<'' | 'm4b' | 'mp3'>('')
 const splitChapters = ref(false)
 
@@ -148,6 +159,8 @@ watch(() => props.bookId, load, { immediate: true })
 const job = computed(() => downloads.jobFor(props.bookId))
 // The list's copy is updated live by download events; the detail is fetched once.
 const summary = computed(() => library.books.find((b) => b.id === props.bookId))
+// The list's copy is the fresher one after a sync; null means "not known yet".
+const hasPdf = computed(() => (summary.value ?? book.value)?.has_pdf === true)
 const status = computed(() =>
   bookStatus(summary.value ?? book.value ?? { liberation_status: 'not_liberated', last_format: null }, job.value),
 )
@@ -172,9 +185,21 @@ async function tryAgain() {
   await act(() => (failed ? downloads.retry(failed.job_id) : enqueue()))
 }
 
+async function savePdf() {
+  if (!book.value) return
+  const id = book.value.id
+  savingPdf.value = true
+  await act(async () => {
+    const { file_path } = await api.library.savePdf(id)
+    notice.value = `PDF saved to ${file_path}`
+  })
+  savingPdf.value = false
+}
+
 async function act(action: () => Promise<unknown>) {
   busy.value = true
   actionError.value = ''
+  notice.value = ''
   try {
     await action()
   } catch (e) {

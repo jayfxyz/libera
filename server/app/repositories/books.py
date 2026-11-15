@@ -9,10 +9,13 @@ owns the transaction.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from ..audible_api.models import AudibleBook, Genre
 
 
 def _rows(s: Session, sql: str, **params: Any) -> list[dict[str, Any]]:
@@ -31,26 +34,27 @@ def _one(s: Session, sql: str, **params: Any) -> dict[str, Any] | None:
 # --- import ---------------------------------------------------------------------
 
 
-def upsert_book(s: Session, b: dict[str, Any]) -> int:
+def upsert_book(s: Session, b: AudibleBook) -> int:
     """Insert or update a book from a normalised Audible item; returns its id."""
     s.execute(text("""
         INSERT INTO books (audible_id, title, subtitle, description, length_minutes, locale,
-                           cover_url, publisher, audible_rating, language, date_published)
+                           cover_url, publisher, audible_rating, language, date_published, has_pdf)
         VALUES (:asin, :title, :subtitle, :description, :length, '', :cover, :publisher, :rating,
-                NULLIF(:language, ''), NULLIF(:released, ''))
+                NULLIF(:language, ''), NULLIF(:released, ''), :has_pdf)
         ON CONFLICT(audible_id) DO UPDATE SET
             title = excluded.title,
             cover_url = excluded.cover_url,
             audible_rating = excluded.audible_rating,
             language = COALESCE(excluded.language, books.language),
-            date_published = COALESCE(excluded.date_published, books.date_published)
+            date_published = COALESCE(excluded.date_published, books.date_published),
+            has_pdf = COALESCE(excluded.has_pdf, books.has_pdf)
     """), {
-        "asin": b["asin"], "title": b.get("title") or "", "subtitle": b.get("subtitle"),
-        "description": b.get("description"), "length": b.get("runtime_length_min") or 0,
-        "cover": b.get("cover_url"), "publisher": b.get("publisher_name"), "rating": b.get("rating"),
-        "language": b.get("language") or "", "released": b.get("release_date") or "",
+        "asin": b.asin, "title": b.title, "subtitle": b.subtitle, "description": b.description,
+        "length": b.runtime_length_min, "cover": b.cover_url, "publisher": b.publisher_name, "rating": b.rating,
+        "language": b.language or "", "released": b.release_date or "",
+        "has_pdf": b.has_pdf,  # None (not in the scan) keeps what we knew
     })
-    return s.execute(text("SELECT id FROM books WHERE audible_id = :asin"), {"asin": b["asin"]}).scalar_one()
+    return s.execute(text("SELECT id FROM books WHERE audible_id = :asin"), {"asin": b.asin}).scalar_one()
 
 
 def upsert_library_entry(s: Session, book_id: int, account_id: int, date_added: str, is_plus: bool) -> None:
@@ -83,21 +87,21 @@ def add_series(s: Session, book_id: int, series_asin: str, name: str, index: str
               {"sid": sid, "book": book_id, "idx": index})
 
 
-def replace_genres(s: Session, book_id: int, ladders: list[list[dict[str, str]]]) -> None:
+def replace_genres(s: Session, book_id: int, ladders: list[list[Genre]]) -> None:
     """Store Audible's genre ladders (top-level → most specific) as a tree and link
     the book to the most specific genre of each. Replaces the book's genres."""
     s.execute(text("DELETE FROM book_categories WHERE book_id = :book"), {"book": book_id})
     for ladder in ladders:
         parent_id = None
         for rung in ladder:
-            if not rung.get("id") or not rung.get("name"):
+            if not rung.id or not rung.name:
                 parent_id = None
                 break
             s.execute(text("""
                 INSERT INTO categories (audible_id, name, parent_id) VALUES (:id, :name, :parent)
                 ON CONFLICT(audible_id) DO UPDATE SET name = excluded.name, parent_id = excluded.parent_id
-            """), {"id": rung["id"], "name": rung["name"], "parent": parent_id})
-            parent_id = s.execute(text("SELECT id FROM categories WHERE audible_id = :id"), {"id": rung["id"]}).scalar_one()
+            """), {"id": rung.id, "name": rung.name, "parent": parent_id})
+            parent_id = s.execute(text("SELECT id FROM categories WHERE audible_id = :id"), {"id": rung.id}).scalar_one()
         if parent_id is not None:
             s.execute(text("INSERT OR IGNORE INTO book_categories (book_id, category_id) VALUES (:book, :cat)"),
                       {"book": book_id, "cat": parent_id})
@@ -193,7 +197,7 @@ def order_by(sort: str | None, order: str | None) -> str:
 
 _SUMMARY_COLUMNS = """b.id, b.audible_id, b.title, COALESCE(b.cover_url, '') AS cover_url,
     lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.tags, lb.account_id,
-    lb.last_format, b.length_minutes, lb.date_added"""
+    lb.last_format, b.length_minutes, lb.date_added, b.has_pdf"""
 
 
 def list_summaries(s: Session, *, fts_match: str = "", sort: str | None = None, order: str | None = None,
@@ -227,7 +231,7 @@ def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
                b.length_minutes, COALESCE(b.publisher,'') AS publisher,
                COALESCE(b.language,'') AS language, COALESCE(b.audible_rating,0) AS audible_rating,
                lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
-               lb.is_hidden, lb.last_format, lb.file_path
+               lb.is_hidden, lb.last_format, lb.file_path, b.has_pdf
         FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE b.id = :id""", id=book_id)
 
@@ -265,7 +269,8 @@ def contributors(s: Session, book_ids: list[int]) -> dict[int, dict[str, list[st
 def download_meta(s: Session, book_id: int, account_id: int | None = None) -> dict[str, Any] | None:
     """The book's account and the raw values used for file naming."""
     return _one(s, """
-        SELECT a.audible_account_id, a.id AS account_id, lb.id AS library_book_id, b.audible_id, b.title,
+        SELECT a.audible_account_id, a.id AS account_id, lb.id AS library_book_id, lb.file_path,
+               b.audible_id, b.title,
                COALESCE(b.language,'') AS language, COALESCE(b.length_minutes,0) AS length_minutes,
                COALESCE(lb.date_added,'') AS date_added, COALESCE(b.date_published,'') AS date_published
         FROM accounts a

@@ -7,6 +7,7 @@ from typing import Any
 from . import content, library, storage
 from .auth import LoginFlow, LoginResult
 from .content import DownloadInfo
+from .models import AudibleBook
 
 
 class AudibleClient:
@@ -24,7 +25,7 @@ class AudibleClient:
     def complete_login(self, state: str, response_url: str) -> LoginResult:
         return self.login.complete(state, response_url)
 
-    async def get_library(self, account_id: str) -> list[dict[str, Any]]:
+    async def get_library(self, account_id: str) -> list[AudibleBook]:
         return await library.fetch_library(self._client(account_id))
 
     async def get_download_info(self, account_id: str, asin: str) -> DownloadInfo:

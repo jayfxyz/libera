@@ -20,6 +20,8 @@ import uuid
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from ..audible_api.client import AudibleClient
+from ..audible_api.content import ContentError
 from ..config import FORMATS, Config
 from ..db import Database, iso_utc
 from ..db.models import Download, DownloadStatus
@@ -41,6 +43,14 @@ INTERRUPTED = "Interrupted; download again"
 
 class InvalidOptions(ValueError):
     pass
+
+
+class NoPdf(Exception):
+    """The title has no companion PDF."""
+
+
+class PdfFailed(Exception):
+    """Audible couldn't provide the PDF; the message says why."""
 
 
 class _Rollback(Exception):
@@ -79,11 +89,13 @@ class DownloadEvents:
 
 
 class DownloadsService:
-    def __init__(self, db: Database, config: Config, tasks: TaskQueueService, events: DownloadEvents):
+    def __init__(self, db: Database, config: Config, tasks: TaskQueueService, events: DownloadEvents,
+                 audible: AudibleClient):
         self._db = db
         self._config = config
         self._tasks = tasks
         self._events = events
+        self._audible = audible
         self._live: dict[str, dict[str, Any]] = {}  # running downloads: status, percent, message
         self._static: dict[str, dict[str, Any]] = {}  # running downloads: book_id, title, format
         self._last_saved: dict[str, float] = {}
@@ -162,6 +174,23 @@ class DownloadsService:
         """Active downloads and recent history, oldest first."""
         with self._db.session() as s:
             return [self._view(d, book_id, title) for d, book_id, title in repo.recent(s, HISTORY_LIMIT)]
+
+    # --- the companion PDF on its own (no task, no download row) ------------------------------
+
+    async def save_pdf(self, book_id: int, account_id: int | None = None) -> str | None:
+        """Fetch a book's companion PDF and save it next to its audiobook, or
+        where a download would put it. Returns the file's path, or None if the
+        book isn't in that library. Raises NoPdf or PdfFailed."""
+        meta = await asyncio.to_thread(library.book_meta, self._db, book_id, account_id)
+        if meta is None:
+            return None
+        try:
+            pdf = await self._audible.get_pdf(meta["audible_account_id"], meta["audible_id"])
+        except ContentError as e:
+            raise PdfFailed(str(e)) from e
+        if not pdf:
+            raise NoPdf
+        return await asyncio.to_thread(self._store_pdf, meta, pdf)
 
     # --- reporting (called by the task handlers) ---------------------------------------------
 
@@ -248,6 +277,36 @@ class DownloadsService:
                  path=book_directory(settings.output_dir, settings.folder_template, names),
                  base_name=render_filename(settings.filename_template, names))
         return download_id
+
+    def _store_pdf(self, meta: dict[str, Any], pdf: bytes) -> str:
+        path = self._pdf_path(meta)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        partial = path + ".part"
+        with open(partial, "wb") as f:
+            f.write(pdf)
+        os.replace(partial, path)
+        self._add_pdf_to_manifest(meta["library_book_id"], path)
+        return path
+
+    def _pdf_path(self, meta: dict[str, Any]) -> str:
+        """Next to the audio file when its location is known; otherwise where
+        a download would put it with the current settings."""
+        if meta["file_path"]:
+            return os.path.splitext(meta["file_path"])[0] + ".pdf"
+        settings = self._config.snapshot()
+        names = FilenameData(**library.naming_data(meta))
+        folder = book_directory(settings.output_dir, settings.folder_template, names)
+        return os.path.join(folder, render_filename(settings.filename_template, names) + ".pdf")
+
+    def _add_pdf_to_manifest(self, library_book_id: int, path: str) -> None:
+        """Keep the latest finished download's manifest true: add or replace its PDF entry."""
+        with self._db.session() as s:
+            d = repo.latest_done(s, library_book_id)
+            if d is None or os.path.dirname(path) != d.path:
+                return  # no download, or the PDF went somewhere else
+            files = [f for f in json.loads(d.files or "[]") if f["role"] != "pdf"]
+            files.append(asdict(FileEntry("pdf", os.path.basename(path), os.path.getsize(path))))
+            repo.set_files(s, d.id, json.dumps(files))
 
     def _format(self, fmt: str) -> str:
         fmt = fmt or self._config.default_format

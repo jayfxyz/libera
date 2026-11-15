@@ -138,3 +138,13 @@ def test_rescan_marks_found_books_downloaded(db, tmp_path):
         "SELECT b.audible_id, lb.liberation_status, lb.last_format FROM books b "
         "JOIN library_books lb ON lb.book_id = b.id")}
     assert status == {"A": ("liberated", "m4b"), "B": ("not_liberated", None)}
+
+
+def test_has_pdf_comes_from_the_sync_and_survives_a_scan_without_it(db):
+    add_account(db)
+    library.import_library(db, 1, [make_book("A", has_pdf=True), make_book("B", has_pdf=False), make_book("C")])
+    flags = {b["audible_id"]: b["has_pdf"] for b in library.list_books(db)}
+    assert flags == {"A": True, "B": False, "C": None}  # C: never synced with the flag
+    library.import_library(db, 1, [make_book("A"), make_book("B"), make_book("C")])  # a scan without the flag
+    assert {b["audible_id"]: b["has_pdf"] for b in library.list_books(db)} == flags
+    assert library.get_book(db, db.scalar("SELECT id FROM books WHERE audible_id = 'A'"))["has_pdf"] is True
