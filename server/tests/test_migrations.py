@@ -1,0 +1,68 @@
+"""Migrations run against databases built at an older revision."""
+
+import json
+
+from alembic import command
+
+from app.db import Database
+from app.db.migrate import _config
+
+
+def at_revision(tmp_path, revision: str) -> Database:
+    db = Database(str(tmp_path / "t.db"))
+    with db.engine.begin() as conn:
+        command.upgrade(_config(conn), revision)
+    return db
+
+
+def add_job(db, id, status, message, **payload):
+    payload = {"book_id": 10, "account_id": 1, "format": "m4b", "split_chapters": False, **payload}
+    column_book = payload["book_id"] if payload["book_id"] in (10, 11) else None  # SET NULL when a book went
+    db.execute("INSERT INTO jobs (id, type, status, message, title, book_id, payload, started_at, finished_at) "
+               "VALUES (?, 'download', ?, ?, 'T', ?, ?, '2026-01-01 10:00:00', '2026-01-01 10:05:00')",
+               (id, status, message, column_book, json.dumps(payload)))
+
+
+def test_0004_turns_finished_audio_jobs_into_downloads(tmp_path):
+    db = at_revision(tmp_path, "0003")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (10, 'B1', 'One', 'uk'), (11, 'B2', 'Two', 'uk')")
+    db.execute("INSERT INTO library_books (id, book_id, account_id, date_added) "
+               "VALUES (100, 10, 1, '2024-01-01'), (101, 11, 1, '2024-01-01')")
+    add_job(db, "done-audio", "done", "/audiobooks/Jane - One/One.m4b", kind="audio", split_chapters=True)
+    add_job(db, "done-no-kind", "done", "/audiobooks/Two.mp3", book_id=11, format="mp3")  # before `kind` existed
+    add_job(db, "done-pdf", "done", "/audiobooks/Jane - One/One.pdf", kind="pdf")
+    add_job(db, "failed", "error", "ffmpeg: boom")
+    add_job(db, "cancelled", "error", "Cancelled")
+    add_job(db, "queued", "queued", None)
+    add_job(db, "book-gone", "done", "/audiobooks/Gone.m4b", book_id=99)
+
+    db.migrate()
+
+    rows = {r["id"]: dict(r) for r in db.query(
+        "SELECT id, library_book_id, format, split_chapters, path, base_name, status, percent, files FROM downloads")}
+    assert rows == {
+        "done-audio": {"id": "done-audio", "library_book_id": 100, "format": "m4b", "split_chapters": 1,
+                       "path": "/audiobooks/Jane - One", "base_name": "One", "status": "done", "percent": 100.0,
+                       "files": None},
+        "done-no-kind": {"id": "done-no-kind", "library_book_id": 101, "format": "mp3", "split_chapters": 0,
+                         "path": "/audiobooks", "base_name": "Two", "status": "done", "percent": 100.0,
+                         "files": None},
+    }
+    assert db.scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = 'jobs'") == 0
+    db.close()
+
+
+def test_0004_downgrades_cleanly(tmp_path):
+    db = at_revision(tmp_path, "head")
+    db.execute("INSERT INTO tasks (id, type, payload, status) VALUES ('t1', 'x', '{}', 'completed')")
+    with db.engine.begin() as conn:
+        command.downgrade(_config(conn), "0003")
+    names = {r["name"] for r in db.query("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert "jobs" in names and "downloads" not in names
+    assert "has_pdf" not in {c["name"] for c in db.query("PRAGMA table_info(books)")}
+    db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
+    db.execute("UPDATE tasks SET status = 'completed'")
+    db.migrate()  # and up again
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0004"
+    db.close()

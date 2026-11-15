@@ -154,7 +154,6 @@
             <button type="button" class="btn-primary h-9 rounded-lg px-3 text-[13px]" :disabled="selectionDownloadable.length === 0" @click="askDownload(selectionDownloadable)">
               Download {{ selectionDownloadable.length }}
             </button>
-            <button type="button" class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]" @click="downloadPdfs">Download PDFs</button>
             <button type="button" class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]" @click="hideSelected">
               {{ library.segment === 'hidden' ? 'Show' : 'Hide' }}
             </button>
@@ -395,17 +394,6 @@ async function queue(books: BookSummary[]) {
     library.clearSelection()
   } catch (e) {
     flash(`Couldn't queue downloads: ${e instanceof Error ? e.message : e}`)
-  }
-}
-
-async function downloadPdfs() {
-  const books = library.selectedBooks
-  try {
-    const ids = await downloads.enqueueMany(books.map((b) => ({ id: b.id, title: b.title })), { kind: 'pdf' })
-    flash(`Fetching PDFs for ${ids.length} book${ids.length === 1 ? '' : 's'} (books without one will say so in Downloads).`)
-    library.clearSelection()
-  } catch (e) {
-    flash(`Couldn't queue PDFs: ${e instanceof Error ? e.message : e}`)
   }
 }
 

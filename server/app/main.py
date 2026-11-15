@@ -18,12 +18,12 @@ from .audible_api.client import AudibleClient
 from .config import Config
 from .context import AppContext
 from .db import Database
-from .jobs.download import make_runner
-from .jobs.queue import DownloadQueue
 from .services import settings as settings_service
+from .services.downloads import DownloadEvents, DownloadsService
 from .services.task_queue import TaskQueueService
 from .services.task_worker import TaskWorkerService
 from .static import FrontendFiles
+from .tasks.downloads import DownloadHandlers, Pipeline
 from .tasks.signals import TaskSignals
 from .telemetry import init_tracing
 
@@ -32,8 +32,8 @@ log = logging.getLogger(__name__)
 
 
 def create_app(config: Config | None = None, db: Database | None = None,
-               audible: AudibleClient | None = None, runner=None) -> FastAPI:
-    """Build the app. Tests pass their own db, Audible client and job runner."""
+               audible: AudibleClient | None = None, pipeline: Pipeline | None = None) -> FastAPI:
+    """Build the app. Tests pass their own db, Audible client and download pipeline."""
     config = config or Config.from_env()
 
     @asynccontextmanager
@@ -42,21 +42,22 @@ def create_app(config: Config | None = None, db: Database | None = None,
         database.migrate()
         settings_service.load_saved(database, config)
         client = audible or AudibleClient(config.accounts_dir)
-        queue = DownloadQueue(runner or make_runner(database, client), database, workers=config.download_workers)
-        queue.start()
         signals = TaskSignals()
         task_queue = TaskQueueService(database, signals)
         task_worker = TaskWorkerService(database, signals, workers=config.download_workers)
-        task_worker.start()  # no handlers yet: downloads still run on DownloadQueue until phase 2
-        app.state.ctx = AppContext(config=config, db=database, audible=client, queue=queue,
-                                   task_queue=task_queue, task_worker=task_worker)
+        events = DownloadEvents()
+        downloads = DownloadsService(database, config, task_queue, events)
+        DownloadHandlers(downloads, pipeline or Pipeline(client)).register(task_worker)
+        task_worker.start()  # releases tasks interrupted by the last shutdown
+        downloads.start()  # then fails downloads left with no live task
+        app.state.ctx = AppContext(config=config, db=database, audible=client, downloads=downloads,
+                                   download_events=events, task_queue=task_queue, task_worker=task_worker)
         log.info("ready: db=%s output=%s workers=%d", config.database_path, config.output_dir,
                  config.download_workers)
         try:
             yield
         finally:
             await task_worker.stop()
-            await queue.stop()
             if db is None:
                 database.close()
 

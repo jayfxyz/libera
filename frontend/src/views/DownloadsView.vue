@@ -21,7 +21,6 @@
               <div class="flex items-start justify-between gap-2">
                 <span class="text-[15px] font-semibold leading-[1.3]">
                   {{ titleFor(job) }}
-                  <span v-if="job.kind === 'pdf'" class="chip ml-1 align-middle">PDF</span>
                 </span>
                 <button
                   v-if="isActive(job)"
@@ -30,6 +29,13 @@
                   :aria-label="`Cancel ${titleFor(job)}`"
                   @click="downloads.cancel(job.job_id)"
                 >Cancel</button>
+                <button
+                  v-if="job.status === 'failed'"
+                  type="button"
+                  class="btn-secondary h-9 shrink-0 px-3 text-[13px]"
+                  :aria-label="`Retry ${titleFor(job)}`"
+                  @click="downloads.retry(job.job_id)"
+                >Retry</button>
               </div>
               <span class="flex items-center gap-1.5 text-xs font-semibold" :class="tone(job).text">
                 <span class="size-2 shrink-0 rounded-full" :class="tone(job).dot" />{{ label(job) }}
@@ -38,7 +44,7 @@
               <div v-if="job.status === 'downloading' || job.status === 'decrypting'" class="h-1 overflow-hidden rounded-full bg-busy-track">
                 <div class="h-1 bg-busy transition-[width]" :style="{ width: `${Math.round(job.percent)}%` }" />
               </div>
-              <p v-if="job.message && (job.status === 'done' || (job.status === 'error' && job.message !== 'Cancelled'))" class="text-xs break-words" :class="job.status === 'error' ? 'text-warn-deep' : 'font-mono text-ink-soft'">
+              <p v-if="job.message && ['done', 'failed', 'queued'].includes(job.status)" class="text-xs break-words" :class="job.status === 'failed' ? 'text-warn-deep' : job.status === 'done' ? 'font-mono text-ink-soft' : 'text-ink-soft'">
                 {{ job.message }}
               </p>
             </div>
@@ -95,8 +101,9 @@ function label(job: DownloadJob) {
     case 'queued': return 'Queued'
     case 'downloading': return `Downloading · ${Math.round(job.percent)}%`
     case 'decrypting': return job.message || 'Decrypting'
-    case 'done': return job.kind === 'pdf' ? 'Saved' : `Downloaded${job.format ? ` · ${job.format.toUpperCase()}` : ''}`
-    default: return job.message === 'Cancelled' ? 'Cancelled' : 'Failed'
+    case 'done': return `Downloaded${job.format ? ` · ${job.format.toUpperCase()}` : ''}`
+    case 'cancelled': return 'Cancelled'
+    default: return 'Failed'
   }
 }
 
@@ -111,9 +118,8 @@ function ago(iso: string) {
 
 function tone(job: DownloadJob) {
   if (job.status === 'done') return { text: 'text-ok-ink', dot: 'bg-ok' }
-  if (job.status === 'error') return job.message === 'Cancelled'
-    ? { text: 'text-ink-soft', dot: 'bg-line' }
-    : { text: 'text-warn-ink', dot: 'bg-warn' }
+  if (job.status === 'cancelled') return { text: 'text-ink-soft', dot: 'bg-line' }
+  if (job.status === 'failed') return { text: 'text-warn-ink', dot: 'bg-warn' }
   if (job.status === 'queued') return { text: 'text-ink-soft', dot: 'bg-ink-faint' }
   return { text: 'text-busy', dot: 'bg-busy' }
 }

@@ -1,5 +1,5 @@
 """Backend pieces behind the redesigned library: genres, hiding, account filter,
-planned save path, bulk and PDF-only downloads."""
+planned save path, bulk downloads."""
 
 import asyncio
 import os
@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.services import library
 from app.db import Database
 from app.main import create_app
-from tests.conftest import add_account, make_book
+from tests.conftest import add_account, make_book, wait_until
 
 LADDERS = [
     [{"id": "1", "name": "Health & Wellness"}, {"id": "2", "name": "Psychology & Mental Health"},
@@ -73,15 +73,8 @@ def test_migration_adds_columns_to_an_existing_database(tmp_path):
 
 
 @pytest.fixture
-def api(config, db):
-    jobs = []
-
-    async def runner(queue, job):
-        jobs.append(job)
-        queue.set_status(job.id, "done", 100, "ok")
-
-    with TestClient(create_app(config, db, runner=runner)) as c:
-        c.jobs = jobs
+def api(config, db, pipeline):
+    with TestClient(create_app(config, db, pipeline=pipeline)) as c:
         yield c
 
 
@@ -111,31 +104,24 @@ def test_book_detail_has_planned_path_and_genres(api, db, config):
     assert api.get(f"/api/library/{a}").json()["file_path"] == "/audiobooks/x/One.m4b"
 
 
-def wait_for(api, n):
-    for _ in range(100):
-        if len(api.jobs) >= n:
-            return
-        time.sleep(0.02)
-    raise AssertionError("jobs not run")
-
-
-def test_bulk_download_and_options(api, db):
+def test_bulk_download_and_options(api, db, pipeline):
     a, b = seed(db)
-    resp = api.post("/api/downloads/bulk", json={"book_ids": [b, a, b, 999], "kind": "pdf", "include_pdf": False})
+    resp = api.post("/api/downloads/bulk", json={"book_ids": [b, a, b, 999], "format": "mp3", "split_chapters": True})
     assert resp.status_code == 202
     assert [j["book_id"] for j in resp.json()["jobs"]] == [b, a]  # duplicate and unknown id skipped
-    wait_for(api, 2)
-    assert [(j.title, j.kind, j.include_pdf) for j in api.jobs] == [("Two", "pdf", False), ("One", "pdf", False)]
+    wait_until(lambda: len(pipeline.decrypted) == 2)
+    # Three workers may start them in any order; the queue order is the response's.
+    assert sorted((t.title, t.format, t.split_chapters) for t in pipeline.decrypted) == [
+        ("One", "mp3", True), ("Two", "mp3", True)]
     assert {j["title"] for j in api.get("/api/downloads").json()} == {"One", "Two"}
-    assert api.post("/api/downloads/bulk", json={"book_ids": [a], "kind": "video"}).status_code == 400
+    assert api.post("/api/downloads/bulk", json={"book_ids": [a], "format": "wav"}).status_code == 400
 
 
-def test_single_download_needs_only_the_book_id(api, db):
+def test_single_download_needs_only_the_book_id(api, db, pipeline):
     a, _ = seed(db)
     assert api.post("/api/downloads", json={"book_id": a}).status_code == 202
-    wait_for(api, 1)
-    assert (api.jobs[0].audible_id, api.jobs[0].audible_account_id, api.jobs[0].kind) == (
-        "A", "amzn1.account.TEST", "audio")
+    wait_until(lambda: pipeline.fetched)
+    assert (pipeline.fetched[0].audible_id, pipeline.fetched[0].audible_account_id) == ("A", "amzn1.account.TEST")
 
 
 def test_pre_alembic_database_with_data_is_adopted_in_place(tmp_path):

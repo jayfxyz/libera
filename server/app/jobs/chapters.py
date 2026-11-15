@@ -43,20 +43,20 @@ def chapter_path(directory: str, book_base: str, n: int, title: str) -> str:
     return os.path.join(directory, sanitize_filename(f"{book_base} - {n + 1:02d} - {chapter_title}"))
 
 
-async def split_into_chapters(audio_file: str, directory: str, book_base: str, ext: str) -> int:
-    """Write one file per chapter embedded in audio_file. Returns files written.
+async def split_into_chapters(audio_file: str, directory: str, book_base: str, ext: str) -> list[str]:
+    """Write one file per chapter embedded in audio_file. Returns the paths written.
 
     Individual chapter failures are logged and skipped.
     """
     code, out, err = await run(["ffprobe", "-v", "error", "-show_chapters", "-of", "json", audio_file])
     if code != 0:
         raise RuntimeError(f"ffprobe failed: {err.decode(errors='replace').strip()}")
-    written = 0
+    written: list[str] = []
     for i, ch in enumerate(parse_chapters(out)):
         dest = chapter_path(directory, book_base, i, ch.title) + ext
         code, _, err = await run(chapter_args(audio_file, dest, ch.start_sec, ch.end_sec))
         if code == 0:
-            written += 1
+            written.append(dest)
         else:
             log.warning("chapter %d extract failed: %s", i, err.decode(errors="replace").strip()[-500:])
     return written

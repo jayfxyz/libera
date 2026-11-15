@@ -1,4 +1,5 @@
-"""A download job end to end with real ffmpeg; only Audible is faked."""
+"""The real download pipeline (fetch, then decrypt with real ffmpeg), run
+through both tasks; only Audible and HTTP are faked."""
 
 import asyncio
 import json
@@ -6,13 +7,18 @@ import os
 import shutil
 import subprocess
 
+import httpx
 import pytest
 
-from app.services import library
 from app.audible_api.content import ContentError, DownloadInfo
 from app.jobs import download
-from app.jobs.download import make_runner, tiny_download_error
-from app.jobs.queue import DownloadJob, DownloadQueue
+from app.jobs.download import read_fetched_bundle, tiny_download_error
+from app.services import library
+from app.services.downloads import DownloadEvents, DownloadsService
+from app.services.task_queue import TaskQueueService
+from app.services.task_worker import TaskWorkerService
+from app.tasks.downloads import DownloadHandlers, Pipeline
+from app.tasks.signals import TaskSignals
 from tests.conftest import add_account, make_book
 
 CHAPTERS = {
@@ -26,11 +32,14 @@ CHAPTERS = {
 
 
 class FakeAudible:
-    def __init__(self, source: str, info: DownloadInfo | None = None, error: str = ""):
-        self.source, self.error = source, error
+    def __init__(self, source: str, info: DownloadInfo | None = None, error: str = "",
+                 pdf: bytes | None = b"%PDF-1.4 test"):
+        self.source, self.error, self.pdf = source, error, pdf
         self.info = info or DownloadInfo(download_url=source, codec="LC_64", format="aax", activation_bytes="deadbeef")
+        self.calls = {"license": 0, "pdf": 0}
 
     async def get_download_info(self, account_id, asin):
+        self.calls["license"] += 1
         if self.error:
             raise ContentError(self.error)
         return self.info
@@ -39,7 +48,8 @@ class FakeAudible:
         return CHAPTERS
 
     async def get_pdf(self, account_id, asin):
-        return b"%PDF-1.4 test"
+        self.calls["pdf"] += 1
+        return self.pdf
 
 
 @pytest.fixture
@@ -74,24 +84,49 @@ def local_download(monkeypatch):
     monkeypatch.setattr(download, "MIN_AUDIOBOOK_BYTES", 1)
 
 
-def make_job(output_dir: str, book_id: int, fmt: str = "m4b", **kw) -> DownloadJob:
-    return DownloadJob(id=f"dl-{book_id}", book_id=book_id, audible_id="B0001", account_id=1,
-                       audible_account_id="amzn1.account.TEST", title="The Book", format=fmt,
-                       output_dir=output_dir, filename_template="{title}", folder_template="{author} - {title}",
-                       authors="Jane Author", **kw)
+class Downloader:
+    """The download services as the app wires them, with the real pipeline."""
+
+    def __init__(self, db, config, audible):
+        self.db = db
+        signals = TaskSignals()
+        self.worker = TaskWorkerService(db, signals, workers=1)
+        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents())
+        DownloadHandlers(self.svc, Pipeline(audible)).register(self.worker)
+        self.worker.start()
+        self.svc.start()
+
+    async def run(self, book_id: int, **opts) -> dict:
+        return await self.wait(self.svc.enqueue(book_id, **opts))
+
+    async def wait(self, download_id: str) -> dict:
+        for _ in range(600):
+            view = next(v for v in self.svc.list() if v["job_id"] == download_id)
+            settled = self.db.scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'processing')") == 0
+            if view["status"] in ("done", "failed") and settled:  # the last step and its cleanup are over
+                return view
+            await asyncio.sleep(0.05)
+        raise AssertionError(f"download did not finish: {view}")
 
 
-async def run_job(db, audible, job):
-    q = DownloadQueue(make_runner(db, audible), db, workers=1)
-    q.start()
-    await q.enqueue(job)
-    for _ in range(300):
-        state = q.list_jobs()[0]
-        if state["status"] in ("done", "error"):
-            break
-        await asyncio.sleep(0.05)
-    await q.stop()
-    return state
+@pytest.fixture
+async def make_downloader(db, config):
+    made = []
+
+    def make(audible):
+        made.append(Downloader(db, config, audible))
+        return made[-1]
+
+    yield make
+    for d in made:
+        await d.worker.stop()
+
+
+@pytest.fixture
+def book_id(db):
+    add_account(db)
+    library.import_library(db, 1, [make_book("B0001", title="The Book", authors=["Jane Author"])])
+    return db.scalar("SELECT id FROM books")
 
 
 def probe_chapters(path):
@@ -109,82 +144,70 @@ def probe_cover(path):
 
 
 @pytest.mark.parametrize("fmt", ["m4b", "mp3"])
-async def test_download_writes_book_folder_with_chapters_and_cover(db, tmp_path, source_audio, cover_jpg, fmt):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book")])
-    book_id = db.scalar("SELECT id FROM books")
-    out_dir = tmp_path / "audiobooks"
+async def test_download_writes_book_folder_with_chapters_cover_and_pdf(db, config, book_id, source_audio,
+                                                                       cover_jpg, make_downloader, fmt):
     info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="deadbeef", cover_url=cover_jpg)
+    view = await make_downloader(FakeAudible(source_audio, info)).run(book_id, format=fmt)
 
-    state = await run_job(db, FakeAudible(source_audio, info), make_job(str(out_dir), book_id, fmt))
-
-    book_dir = out_dir / "Jane Author - The Book"
-    assert state["status"] == "done", state
-    assert state["message"] == str(book_dir / f"The Book.{fmt}")
-    assert sorted(os.listdir(out_dir)) == ["Jane Author - The Book"]  # work folder cleaned up
-    assert sorted(os.listdir(book_dir)) == sorted(
-        [f"The Book.{fmt}", "The Book.cue", "The Book.chapters.json", "The Book.pdf", "cover.jpg"])
-    assert probe_chapters(str(book_dir / f"The Book.{fmt}")) == [
+    book_dir = os.path.join(config.output_dir, "Jane Author - The Book")
+    assert view["status"] == "done", view
+    assert view["message"] == os.path.join(book_dir, f"The Book.{fmt}")
+    assert os.listdir(config.output_dir) == ["Jane Author - The Book"]  # work folder cleaned up
+    roles = {f"The Book.{fmt}": "audio", "The Book.cue": "metadata", "The Book.chapters.json": "metadata",
+             "The Book.pdf": "pdf", "cover.jpg": "cover"}
+    assert sorted(os.listdir(book_dir)) == sorted(roles)
+    # The manifest lists every file with its role and size.
+    assert {f["name"]: f["role"] for f in view["files"]} == roles
+    assert all(f["size_bytes"] == os.path.getsize(os.path.join(book_dir, f["name"])) for f in view["files"])
+    assert probe_chapters(os.path.join(book_dir, f"The Book.{fmt}")) == [
         ("Opening Credits", 0.0), ("Part One: Chapter 1", 1.0)]
-    assert probe_cover(str(book_dir / f"The Book.{fmt}")) == [("mjpeg", 64)]
-    assert (book_dir / "cover.jpg").read_bytes() == open(cover_jpg, "rb").read()
-    row = db.query_one("SELECT liberation_status, last_format FROM library_books WHERE book_id = ?", (book_id,))
-    assert (row["liberation_status"], row["last_format"]) == ("liberated", fmt)
+    assert probe_cover(os.path.join(book_dir, f"The Book.{fmt}")) == [("mjpeg", 64)]
+    with open(os.path.join(book_dir, "cover.jpg"), "rb") as a, open(cover_jpg, "rb") as b:
+        assert a.read() == b.read()
+    lib = db.query_one("SELECT liberation_status, last_format FROM library_books WHERE book_id = ?", (book_id,))
+    assert (lib["liberation_status"], lib["last_format"]) == ("liberated", fmt)
 
 
-async def test_missing_cover_does_not_fail_the_job(db, tmp_path, source_audio):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book")])
-    book_id = db.scalar("SELECT id FROM books")
-    info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="ab", cover_url=str(tmp_path / "nope.jpg"))
+async def test_missing_or_bad_cover_does_not_fail_the_download(config, book_id, tmp_path, source_audio,
+                                                               make_downloader):
     not_jpeg = tmp_path / "cover.png"
     not_jpeg.write_bytes(b"\x89PNG not a jpeg")
-
-    for attempt, cover_url in enumerate((str(not_jpeg), "")):
-        info.cover_url = cover_url
-        job = make_job(str(tmp_path / "out"), book_id)
-        job.id = f"dl-{attempt}"  # job ids are unique (they're stored)
-        state = await run_job(db, FakeAudible(source_audio, info), job)
-        assert state["status"] == "done", state
-        audio = tmp_path / "out" / "Jane Author - The Book" / "The Book.m4b"
-        assert probe_cover(str(audio)) == []
-        assert not (audio.parent / "cover.jpg").exists()
+    for cover_url in (str(not_jpeg), ""):
+        info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="ab", cover_url=cover_url)
+        view = await make_downloader(FakeAudible(source_audio, info)).run(book_id)
+        assert view["status"] == "done", view
+        audio = os.path.join(config.output_dir, "Jane Author - The Book", "The Book.m4b")
+        assert probe_cover(audio) == []
+        assert not os.path.exists(os.path.join(os.path.dirname(audio), "cover.jpg"))
 
 
-async def test_split_chapters(db, tmp_path, source_audio):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book")])
-    book_id = db.scalar("SELECT id FROM books")
-    state = await run_job(db, FakeAudible(source_audio), make_job(str(tmp_path), book_id, split_chapters=True))
-    assert state["status"] == "done", state
-    files = os.listdir(tmp_path / "Jane Author - The Book")
-    assert "The Book - 01 - Opening Credits.m4b" in files
-    assert "The Book - 02 - Part One_ Chapter 1.m4b" in files
+async def test_split_chapters(config, book_id, source_audio, make_downloader):
+    view = await make_downloader(FakeAudible(source_audio)).run(book_id, split_chapters=True)
+    assert view["status"] == "done", view
+    chapters = sorted(f["name"] for f in view["files"] if f["role"] == "chapter")
+    assert chapters == ["The Book - 01 - Opening Credits.m4b", "The Book - 02 - Part One_ Chapter 1.m4b"]
+    assert set(chapters) <= set(os.listdir(os.path.join(config.output_dir, "Jane Author - The Book")))
 
 
-async def test_license_denial_explains_tiny_download(db, tmp_path, monkeypatch):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001")])
-    book_id = db.scalar("SELECT id FROM books")
+async def test_license_denial_explains_tiny_download(db, config, book_id, tmp_path, monkeypatch, make_downloader):
     body = tmp_path / "body.txt"
     body.write_text("No Library Record Found for user.")
     info = DownloadInfo(str(body), "c", "aax", activation_bytes="ab", license_denied="Audible is throttling.")
     monkeypatch.setattr(download, "MIN_AUDIOBOOK_BYTES", 1024)
+    audible = FakeAudible(str(body), info)
 
-    state = await run_job(db, FakeAudible(str(body), info), make_job(str(tmp_path / "out"), book_id))
+    view = await make_downloader(audible).run(book_id)
 
-    assert state["status"] == "error"
-    assert state["message"] == "Audible is throttling. (fallback AAX download also failed: No Library Record Found for user.)"
+    assert view["status"] == "failed"
+    assert view["message"] == "Audible is throttling. (fallback AAX download also failed: No Library Record Found for user.)"
     assert db.scalar("SELECT liberation_status FROM library_books WHERE book_id = ?", (book_id,)) == "error"
-    assert os.listdir(tmp_path / "out") == []  # nothing left behind
+    assert os.listdir(config.output_dir) == []  # nothing left behind
+    assert audible.calls["license"] == 1  # a refusal is not retried
 
 
-async def test_download_info_error(db, tmp_path):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001")])
-    book_id = db.scalar("SELECT id FROM books")
-    state = await run_job(db, FakeAudible("", error="Library fetch failed: 401"), make_job(str(tmp_path), book_id))
-    assert (state["status"], state["message"]) == ("error", "get download info: Library fetch failed: 401")
+async def test_download_info_error(book_id, make_downloader):
+    view = await make_downloader(FakeAudible("", error="Library fetch failed: 401")).run(book_id)
+    assert (view["status"], view["message"]) == ("failed", "get download info: Library fetch failed: 401")
 
 
 def test_tiny_download_error():
@@ -193,38 +216,54 @@ def test_tiny_download_error():
     assert tiny_download_error(33, "oops", "") == "download returned 33 bytes (expected an audiobook file): oops"
 
 
-class NoPdfAudible(FakeAudible):
-    async def get_pdf(self, account_id, asin):
-        return None
+async def test_a_missing_pdf_does_not_fail_the_download(config, book_id, source_audio, make_downloader):
+    view = await make_downloader(FakeAudible(source_audio, pdf=None)).run(book_id)
+    assert view["status"] == "done", view
+    assert "pdf" not in {f["role"] for f in view["files"]}
+    assert not os.path.exists(os.path.join(config.output_dir, "Jane Author - The Book", "The Book.pdf"))
 
 
-async def test_pdf_only_job_saves_the_pdf_without_a_license(db, tmp_path):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book")])
-    book_id = db.scalar("SELECT id FROM books")
-    audible = FakeAudible("", error="no license requests for a PDF")  # get_download_info must not be called
-    state = await run_job(db, audible, make_job(str(tmp_path), book_id, kind="pdf"))
-    pdf = tmp_path / "Jane Author - The Book" / "The Book.pdf"
-    assert (state["status"], state["message"]) == ("done", str(pdf))
-    assert pdf.read_bytes() == b"%PDF-1.4 test"
-    # A PDF doesn't mark the audiobook as downloaded.
-    assert db.scalar("SELECT liberation_status FROM library_books") == "not_liberated"
+async def test_no_pdf_is_requested_when_the_book_has_none(db, book_id, source_audio, make_downloader):
+    db.execute("UPDATE books SET has_pdf = 0")
+    audible = FakeAudible(source_audio)
+    view = await make_downloader(audible).run(book_id)
+    assert view["status"] == "done" and audible.calls["pdf"] == 0
 
 
-async def test_pdf_only_job_without_a_pdf_fails_without_marking_the_book(db, tmp_path):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book")])
-    book_id = db.scalar("SELECT id FROM books")
-    state = await run_job(db, NoPdfAudible(""), make_job(str(tmp_path), book_id, kind="pdf"))
-    assert (state["status"], state["message"]) == ("error", "This title has no companion PDF")
-    assert db.scalar("SELECT liberation_status FROM library_books") == "not_liberated"
+async def test_a_failed_decrypt_is_retried_from_the_kept_download(book_id, source_audio, make_downloader,
+                                                                  monkeypatch):
+    real_run, failed = download.run, []
+
+    async def ffmpeg_broken_once(args):
+        if args[0] == "ffmpeg" and not failed:
+            failed.append(args)
+            return 1, b"", b"Invalid data found"
+        return await real_run(args)
+
+    monkeypatch.setattr(download, "run", ffmpeg_broken_once)
+    audible = FakeAudible(source_audio)
+    downloader = make_downloader(audible)
+    view = await downloader.run(book_id)
+    assert (view["status"], view["message"]) == ("failed", "ffmpeg: Invalid data found")
+    assert read_fetched_bundle(downloader.svc.work_dir, view["job_id"]) is not None
+
+    assert downloader.svc.retry(view["job_id"])
+    view = await downloader.wait(view["job_id"])
+    assert view["status"] == "done", view
+    assert audible.calls["license"] == 1  # not downloaded again
+    assert not os.path.exists(downloader.svc.work_dir)  # the bundle is gone once done
 
 
-async def test_audio_job_records_path_and_can_skip_the_pdf(db, tmp_path, source_audio):
-    add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book")])
-    book_id = db.scalar("SELECT id FROM books")
-    state = await run_job(db, FakeAudible(source_audio), make_job(str(tmp_path), book_id, include_pdf=False))
-    assert state["status"] == "done", state
-    assert not (tmp_path / "Jane Author - The Book" / "The Book.pdf").exists()
-    assert db.scalar("SELECT file_path FROM library_books") == state["message"]
+async def test_a_network_error_during_download_is_retried(book_id, source_audio, make_downloader, monkeypatch):
+    copy, failures = download._stream_download, [httpx.ConnectError("connection reset")]
+
+    async def flaky(url, dest, on_progress):
+        if failures:
+            raise failures.pop()
+        await copy(url, dest, on_progress)
+
+    monkeypatch.setattr(download, "_stream_download", flaky)
+    audible = FakeAudible(source_audio)
+    view = await make_downloader(audible).run(book_id)
+    assert view["status"] == "done", view
+    assert audible.calls["license"] == 2  # the second attempt asked for the license again

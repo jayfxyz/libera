@@ -12,7 +12,7 @@ from .db import Database
 
 if TYPE_CHECKING:
     from .audible_api.client import AudibleClient
-    from .jobs.queue import DownloadQueue
+    from .services.downloads import DownloadEvents, DownloadsService
     from .services.task_queue import TaskQueueService
     from .services.task_worker import TaskWorkerService
 
@@ -22,7 +22,8 @@ class AppContext:
     config: Config
     db: Database
     audible: "AudibleClient"
-    queue: "DownloadQueue"
+    downloads: "DownloadsService"
+    download_events: "DownloadEvents"
     task_queue: "TaskQueueService"
     task_worker: "TaskWorkerService"
 

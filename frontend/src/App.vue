@@ -24,11 +24,10 @@ const settings = useSettingsStore()
 
 useDownloadProgress((event) => {
   downloads.handleProgressEvent(event)
-  // Keep the library in step when an audiobook download finishes or fails.
-  if ((event.kind ?? 'audio') !== 'audio') return
+  // Keep the library in step when a download finishes or fails.
   if (event.status === 'done') {
     library.patchBooks([event.book_id], { liberation_status: 'liberated', last_format: event.format ?? null })
-  } else if (event.status === 'error') {
+  } else if (event.status === 'failed') {
     const book = library.books.find((b) => b.id === event.book_id)
     if (book && book.liberation_status !== 'liberated') library.patchBooks([event.book_id], { liberation_status: 'error' })
   }

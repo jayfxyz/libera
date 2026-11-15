@@ -2,74 +2,64 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
 
-from ..context import AppContext, get_ctx
-from ..services import downloads as service
+from ..context import AppContext
+from ..deps import DownloadsSvc
+from ..services.downloads import InvalidOptions
+from .schemas import BulkEnqueueRequest, EnqueueRequest
 
 router = APIRouter()
 
 
-class DownloadOptions(BaseModel):
-    format: str = ""  # m4b/mp3; "" = the default from Settings
-    split_chapters: bool = False
-    include_pdf: bool = True  # save the companion PDF next to the audiobook, if there is one
-    kind: str = "audio"  # audio, or pdf for only the companion PDF
-
-    def options(self) -> service.DownloadOptions:
-        return service.DownloadOptions(self.format, self.split_chapters, self.include_pdf, self.kind)
-
-
-class EnqueueRequest(DownloadOptions):
-    book_id: int
-    audible_id: str = ""  # accepted for older clients; the book's own ASIN is used
-    account_id: int | None = None
-
-
-class BulkEnqueueRequest(DownloadOptions):
-    book_ids: list[int]
-
-
 @router.post("/downloads", status_code=202)
-async def enqueue_download(req: EnqueueRequest, ctx: AppContext = Depends(get_ctx)):
+def enqueue_download(req: EnqueueRequest, download_svc: DownloadsSvc):
     try:
-        job_id = await service.enqueue(ctx.db, ctx.queue, ctx.config, req.book_id, req.options(), req.account_id)
-    except service.InvalidOptions as e:
+        download_id = download_svc.enqueue(req.book_id, format=req.format, split_chapters=req.split_chapters,
+                                           account_id=req.account_id)
+    except InvalidOptions as e:
         raise HTTPException(400, str(e))
-    if job_id is None:
+    if download_id is None:
         raise HTTPException(404, "book not found for this account")
-    return {"job_id": job_id}
+    return {"job_id": download_id}
 
 
 @router.post("/downloads/bulk", status_code=202)
-async def enqueue_downloads(req: BulkEnqueueRequest, ctx: AppContext = Depends(get_ctx)):
+def enqueue_downloads(req: BulkEnqueueRequest, download_svc: DownloadsSvc):
     """Queue several books at once (in the order given). Unknown ids are skipped."""
     try:
-        jobs = await service.enqueue_many(ctx.db, ctx.queue, ctx.config, req.book_ids, req.options())
-    except service.InvalidOptions as e:
+        return {"jobs": download_svc.enqueue_many(req.book_ids, format=req.format,
+                                                  split_chapters=req.split_chapters)}
+    except InvalidOptions as e:
         raise HTTPException(400, str(e))
-    return {"jobs": jobs}
 
 
 @router.get("/downloads")
-def list_downloads(ctx: AppContext = Depends(get_ctx)):
+def list_downloads(download_svc: DownloadsSvc):
     """Queued and running downloads, plus recent history (survives restarts)."""
-    return ctx.queue.list_jobs()
+    return download_svc.list()
 
 
 @router.delete("/downloads/{job_id}", status_code=204)
-async def cancel_download(job_id: str, ctx: AppContext = Depends(get_ctx)):
-    if not await ctx.queue.cancel(job_id):
+def cancel_download(job_id: str, download_svc: DownloadsSvc):
+    if not download_svc.cancel(job_id):
         raise HTTPException(404, "no running or queued download with that id")
     return Response(status_code=204)
 
 
+@router.post("/downloads/{job_id}/retry", status_code=202)
+def retry_download(job_id: str, download_svc: DownloadsSvc):
+    """Run a failed download again: only the decrypt step if its downloaded file is still kept."""
+    if not download_svc.retry(job_id):
+        raise HTTPException(404, "no failed download with that id")
+    return {"job_id": job_id}
+
+
 async def download_progress(ws: WebSocket) -> None:
-    """Stream download progress events to the browser."""
+    """Stream download events to the browser (until phase 3's event stream)."""
     ctx: AppContext = ws.app.state.ctx
     await ws.accept()
-    events = ctx.queue.subscribe()
+    events = ctx.download_events.subscribe()
 
     async def drain_client() -> None:
         try:
@@ -91,4 +81,4 @@ async def download_progress(ws: WebSocket) -> None:
         pass
     finally:
         reader.cancel()
-        ctx.queue.unsubscribe(events)
+        ctx.download_events.unsubscribe(events)

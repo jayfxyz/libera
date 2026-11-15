@@ -37,6 +37,7 @@ class TaskQueueService:
             self._signals.nudge()
         else:
             repo.add(session, **fields)
+            session.flush()  # written now (not committed), so the caller's rows can reference it
             event.listen(session, "after_commit", lambda _s: self._signals.nudge(), once=True)
             event.listen(session, "after_rollback", lambda _s: self._signals.forget(task_id), once=True)
         return task_id

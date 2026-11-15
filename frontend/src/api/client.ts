@@ -75,27 +75,31 @@ export interface BookDetail {
   planned_path: string // where a download would go with the current settings
 }
 
-export type JobStatus = 'queued' | 'downloading' | 'decrypting' | 'done' | 'error'
-export type JobKind = 'audio' | 'pdf'
+export type JobStatus = 'queued' | 'downloading' | 'decrypting' | 'done' | 'failed' | 'cancelled'
+
+/** A file a finished download wrote, within the book's folder. */
+export interface DownloadFile {
+  role: 'audio' | 'chapter' | 'pdf' | 'cover' | 'metadata'
+  name: string
+  size_bytes: number
+}
 
 export interface DownloadJob {
   job_id: string
   book_id: number
   title?: string
-  kind?: JobKind
   format?: 'm4b' | 'mp3'
   status: JobStatus
   percent: number
-  message?: string
+  message?: string // failed: why; done: the audio file's path; queued: why it is retrying
   created_at?: string // ISO UTC
   finished_at?: string | null
+  files?: DownloadFile[] | null // what a finished download wrote (null for older downloads)
 }
 
 export interface DownloadOptions {
   format?: 'm4b' | 'mp3' // default: Settings
   split_chapters?: boolean
-  include_pdf?: boolean // default true
-  kind?: JobKind // default audio
 }
 
 export interface Settings {
@@ -156,6 +160,7 @@ export const api = {
       request<{ jobs: { job_id: string; book_id: number }[] }>('POST', '/downloads/bulk', { book_ids: bookIds, ...options }),
     list: () => request<DownloadJob[]>('GET', '/downloads'),
     cancel: (id: string) => request<void>('DELETE', `/downloads/${id}`),
+    retry: (id: string) => request<{ job_id: string }>('POST', `/downloads/${id}/retry`),
   },
 
   settings: {

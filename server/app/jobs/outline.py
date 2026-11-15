@@ -101,8 +101,8 @@ def cue_sheet(audio_file_name: str, chapters: list[OutlineChapter]) -> str:
 
 
 def write_outline_files(audio_file: str, asin: str, title: str, info: dict[str, Any],
-                        chapters: list[OutlineChapter]) -> None:
-    """Write <audio>.cue and <audio>.chapters.json next to the audio file."""
+                        chapters: list[OutlineChapter]) -> list[str]:
+    """Write <audio>.cue and <audio>.chapters.json next to the audio file; returns their paths."""
     base, _ = os.path.splitext(audio_file)
     name = os.path.basename(audio_file)
     with open(base + ".cue", "w", encoding="utf-8") as f:
@@ -117,3 +117,4 @@ def write_outline_files(audio_file: str, asin: str, title: str, info: dict[str, 
     }
     with open(base + ".chapters.json", "w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2, ensure_ascii=False)
+    return [base + ".cue", base + ".chapters.json"]

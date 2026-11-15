@@ -34,8 +34,7 @@
 
       <!-- What can be done now depends on the book's state. -->
       <div v-if="status.state === 'none'" class="flex flex-wrap gap-2">
-        <button type="button" class="btn-primary flex-1" :disabled="busy" @click="download('audio')">Download</button>
-        <button type="button" class="btn-secondary" :disabled="busy" @click="download('pdf')">PDF only</button>
+        <button type="button" class="btn-primary flex-1" :disabled="busy" @click="download">Download</button>
       </div>
 
       <div v-else-if="status.state === 'downloading'" class="flex flex-col gap-2 rounded-xl bg-busy-soft p-3.5">
@@ -57,17 +56,14 @@
       <div v-else-if="status.state === 'error'" class="flex flex-col gap-2.5 rounded-xl bg-warn-soft p-3.5">
         <p class="text-[13px] leading-normal text-warn-deep">
           <strong>The last download failed.</strong>
-          <template v-if="job?.status === 'error' && job.message"> {{ job.message }}</template>
+          <template v-if="job?.status === 'failed' && job.message"> {{ job.message }}</template>
         </p>
-        <button type="button" class="btn-primary h-10 self-start text-[13px]" :disabled="busy" @click="download('audio')">Try again</button>
+        <button type="button" class="btn-primary h-10 self-start text-[13px]" :disabled="busy" @click="tryAgain">Try again</button>
       </div>
 
       <div v-else class="flex flex-col gap-2.5">
         <span class="inline-flex h-7 items-center gap-1.5 self-start rounded-full bg-ok-soft px-2.5 text-xs font-semibold text-ok-ink">{{ status.label }}</span>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn-secondary" :disabled="busy" @click="download('audio')">Download again</button>
-          <button type="button" class="btn-secondary" :disabled="busy" @click="download('pdf')">PDF only</button>
-        </div>
+        <button type="button" class="btn-secondary self-start" :disabled="busy" @click="download">Download again</button>
       </div>
       <p v-if="actionError" class="-mt-2 text-xs text-warn-deep">{{ actionError }}</p>
 
@@ -89,9 +85,7 @@
         <label class="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm">
           <input v-model="splitChapters" type="checkbox" class="checkbox" />Split by chapter
         </label>
-        <label class="flex min-h-10 cursor-pointer items-center gap-2.5 text-sm">
-          <input v-model="includePdf" type="checkbox" class="checkbox" />Companion PDF if available
-        </label>
+        <p class="text-xs text-ink-soft">The companion PDF is saved too, when the book has one.</p>
       </div>
 
       <div v-if="book.genres.length" class="flex flex-col gap-2 border-t border-line-faint pt-4">
@@ -114,7 +108,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { EyeIcon, EyeOffIcon, XIcon } from '@lucide/vue'
-import type { BookDetail, JobKind } from '@/api/client'
+import type { BookDetail } from '@/api/client'
 import { api } from '@/api/client'
 import { bookStatus, formatDuration } from '@/lib/bookStatus'
 import { useDownloadsStore } from '@/stores/downloads'
@@ -136,7 +130,6 @@ const busy = ref(false)
 const actionError = ref('')
 const format = ref<'' | 'm4b' | 'mp3'>('')
 const splitChapters = ref(false)
-const includePdf = ref(true)
 
 async function load() {
   loading.value = true
@@ -163,17 +156,27 @@ watch(() => status.value.state, (now, before) => {
   if (now === 'downloaded' && before === 'downloading') load()
 })
 
-async function download(kind: JobKind) {
+function enqueue() {
+  const b = book.value!
+  return downloads.enqueue(b.id, { format: format.value || undefined, split_chapters: splitChapters.value }, b.title)
+}
+
+async function download() {
+  if (book.value) await act(enqueue)
+}
+
+/** Retry the failed download (reusing what it already fetched), or queue a new one. */
+async function tryAgain() {
   if (!book.value) return
+  const failed = job.value?.status === 'failed' ? job.value : undefined
+  await act(() => (failed ? downloads.retry(failed.job_id) : enqueue()))
+}
+
+async function act(action: () => Promise<unknown>) {
   busy.value = true
   actionError.value = ''
   try {
-    await downloads.enqueue(book.value.id, {
-      kind,
-      format: format.value || undefined,
-      split_chapters: splitChapters.value,
-      include_pdf: includePdf.value,
-    }, book.value.title)
+    await action()
   } catch (e) {
     actionError.value = e instanceof Error ? e.message : String(e)
   } finally {

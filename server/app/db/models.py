@@ -11,7 +11,10 @@ repository.
 
 from __future__ import annotations
 
-from sqlalchemy import Float, ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint, text
+from enum import StrEnum
+
+from sqlalchemy import (Boolean, Enum, Float, ForeignKey, Index, Integer, PrimaryKeyConstraint, String, Text,
+                        UniqueConstraint, text)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -20,6 +23,12 @@ class Base(DeclarativeBase):
 
 
 NOW = text("CURRENT_TIMESTAMP")
+
+
+def _enum(cls: type[StrEnum], name: str) -> Enum:
+    """A StrEnum stored as its values in a text column, with a CHECK constraint."""
+    return Enum(cls, name=name, native_enum=False, create_constraint=True,
+                values_callable=lambda e: [m.value for m in e])
 
 
 class Account(Base):
@@ -54,6 +63,7 @@ class Book(Base):
     publisher: Mapped[str | None] = mapped_column(Text)
     audible_rating: Mapped[float | None] = mapped_column(Float)
     audible_rating_count: Mapped[int | None] = mapped_column(Integer)
+    has_pdf: Mapped[bool | None] = mapped_column(Boolean)  # from the library sync; None until synced
     created_at: Mapped[str] = mapped_column(String, server_default=NOW)
 
 
@@ -141,24 +151,12 @@ class Setting(Base):
     value: Mapped[str] = mapped_column(Text)
 
 
-class Job(Base):
-    """A background job: today, downloads. Survives restarts; finished ones are history."""
-
-    __tablename__ = "jobs"
-
-    id: Mapped[str] = mapped_column(Text, primary_key=True)
-    type: Mapped[str] = mapped_column(Text)  # "download"
-    status: Mapped[str] = mapped_column(Text)  # queued | downloading | decrypting | done | error
-    percent: Mapped[float] = mapped_column(Float, server_default="0")
-    message: Mapped[str | None] = mapped_column(Text)
-    title: Mapped[str | None] = mapped_column(Text)
-    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id", ondelete="SET NULL"))
-    payload: Mapped[str] = mapped_column(Text)  # JSON
-    created_at: Mapped[str] = mapped_column(String, server_default=NOW)
-    started_at: Mapped[str | None] = mapped_column(String)
-    finished_at: Mapped[str | None] = mapped_column(String)
-
-    __table_args__ = (Index("ix_jobs_status_created", "status", "created_at"),)
+class TaskStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Task(Base):
@@ -170,8 +168,7 @@ class Task(Base):
     id: Mapped[str] = mapped_column(Text, primary_key=True)  # uuid4 hex
     type: Mapped[str] = mapped_column(Text)  # task name, e.g. "download_book"
     payload: Mapped[str] = mapped_column(Text)  # JSON, validated by the task's pydantic model
-    # pending | processing | completed | failed | cancelled
-    status: Mapped[str] = mapped_column(Text)
+    status: Mapped[TaskStatus] = mapped_column(_enum(TaskStatus, "task_status"))
     attempts: Mapped[int] = mapped_column(Integer, server_default="0")  # incremented on claim
     max_attempts: Mapped[int] = mapped_column(Integer, server_default="1")
     error: Mapped[str | None] = mapped_column(Text)  # last failure message
@@ -180,3 +177,46 @@ class Task(Base):
     finished_at: Mapped[str | None] = mapped_column(String)
 
     __table_args__ = (Index("ix_tasks_status_created", "status", "created_at"),)
+
+
+class DownloadFormat(StrEnum):
+    M4B = "m4b"
+    MP3 = "mp3"
+
+
+class DownloadStatus(StrEnum):
+    QUEUED = "queued"
+    DOWNLOADING = "downloading"
+    DECRYPTING = "decrypting"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class Download(Base):
+    """What the Downloads page shows: one download of one library book.
+
+    `path` and `base_name` (where it goes) are decided when it is queued;
+    `files` (what it wrote) is filled in when it is done."""
+
+    __tablename__ = "downloads"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    library_book_id: Mapped[int] = mapped_column(ForeignKey("library_books.id", ondelete="CASCADE"))
+    format: Mapped[DownloadFormat] = mapped_column(_enum(DownloadFormat, "download_format"))
+    split_chapters: Mapped[bool] = mapped_column(Boolean, server_default="0")
+    path: Mapped[str] = mapped_column(Text)  # the book's folder (absolute): every file goes here
+    base_name: Mapped[str] = mapped_column(Text)  # file name without extension, e.g. "12 Rules for Life"
+    status: Mapped[DownloadStatus] = mapped_column(_enum(DownloadStatus, "download_status"))
+    percent: Mapped[float] = mapped_column(Float, server_default="0")
+    error: Mapped[str | None] = mapped_column(Text)
+    files: Mapped[str | None] = mapped_column(Text)  # JSON [{role, name, size_bytes}], names within path
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))  # current task
+    created_at: Mapped[str] = mapped_column(String, server_default=NOW)
+    started_at: Mapped[str | None] = mapped_column(String)
+    finished_at: Mapped[str | None] = mapped_column(String)
+
+    __table_args__ = (
+        Index("ix_downloads_status_created", "status", "created_at"),
+        Index("ix_downloads_library_book", "library_book_id"),
+    )

@@ -17,7 +17,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
   }
 
   function remember(jobId: string, bookId: number, options: DownloadOptions, title?: string) {
-    jobs.value.set(jobId, { job_id: jobId, book_id: bookId, title, kind: options.kind ?? 'audio', status: 'queued', percent: 0 })
+    jobs.value.set(jobId, { job_id: jobId, book_id: bookId, title, format: options.format, status: 'queued', percent: 0 })
   }
 
   async function enqueue(bookId: number, options: DownloadOptions = {}, title?: string) {
@@ -39,16 +39,21 @@ export const useDownloadsStore = defineStore('downloads', () => {
     await api.downloads.cancel(jobId)
   }
 
+  /** Run a failed download again (only the decrypt step if its download is still kept). */
+  async function retry(jobId: string) {
+    await api.downloads.retry(jobId)
+  }
+
   const activeJobs = () => Array.from(jobs.value.values()).filter((j) => isActive(j))
 
-  /** The latest audiobook job for a book (the most recent one if there were several). */
+  /** The latest download of a book (the most recent one if there were several). */
   function jobFor(bookId: number): DownloadJob | undefined {
     let found: DownloadJob | undefined
     for (const job of jobs.value.values()) {
-      if (job.book_id === bookId && (job.kind ?? 'audio') === 'audio') found = job
+      if (job.book_id === bookId) found = job
     }
     return found
   }
 
-  return { jobs, load, handleProgressEvent, enqueue, enqueueMany, cancel, activeJobs, jobFor }
+  return { jobs, load, handleProgressEvent, enqueue, enqueueMany, cancel, retry, activeJobs, jobFor }
 })

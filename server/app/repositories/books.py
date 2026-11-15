@@ -265,7 +265,7 @@ def contributors(s: Session, book_ids: list[int]) -> dict[int, dict[str, list[st
 def download_meta(s: Session, book_id: int, account_id: int | None = None) -> dict[str, Any] | None:
     """The book's account and the raw values used for file naming."""
     return _one(s, """
-        SELECT a.audible_account_id, a.id AS account_id, b.audible_id, b.title,
+        SELECT a.audible_account_id, a.id AS account_id, lb.id AS library_book_id, b.audible_id, b.title,
                COALESCE(b.language,'') AS language, COALESCE(b.length_minutes,0) AS length_minutes,
                COALESCE(lb.date_added,'') AS date_added, COALESCE(b.date_published,'') AS date_published
         FROM accounts a
