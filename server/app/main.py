@@ -18,8 +18,10 @@ from .audible_api.client import AudibleClient
 from .config import Config
 from .context import AppContext
 from .db import Database
-from .services import settings as settings_service
+from .services.accounts import AccountsService
 from .services.downloads import DownloadEvents, DownloadsService
+from .services.library import LibraryService
+from .services.settings import SettingsService
 from .services.task_queue import TaskQueueService
 from .services.task_worker import TaskWorkerService
 from .static import FrontendFiles
@@ -40,18 +42,22 @@ def create_app(config: Config | None = None, db: Database | None = None,
     async def lifespan(app: FastAPI):
         database = db or Database(config.database_path)
         database.migrate()
-        settings_service.load_saved(database, config)
+        settings = SettingsService(database, config)
+        settings.load_saved()
         client = audible or AudibleClient(config.accounts_dir)
+        library = LibraryService(database, config)
+        accounts = AccountsService(database, client, library)
         signals = TaskSignals()
         task_queue = TaskQueueService(database, signals)
         task_worker = TaskWorkerService(database, signals, workers=config.download_workers)
         events = DownloadEvents()
-        downloads = DownloadsService(database, config, task_queue, events, client)
+        downloads = DownloadsService(database, config, task_queue, events, client, library)
         DownloadHandlers(downloads, pipeline or Pipeline(client)).register(task_worker)
         task_worker.start()  # releases tasks interrupted by the last shutdown
         downloads.start()  # then fails downloads left with no live task
-        app.state.ctx = AppContext(config=config, db=database, audible=client, downloads=downloads,
-                                   download_events=events, task_queue=task_queue, task_worker=task_worker)
+        app.state.ctx = AppContext(config=config, db=database, audible=client, accounts=accounts, library=library,
+                                   settings=settings, downloads=downloads, download_events=events,
+                                   task_queue=task_queue, task_worker=task_worker)
         log.info("ready: db=%s output=%s workers=%d", config.database_path, config.output_dir,
                  config.download_workers)
         try:

@@ -13,13 +13,13 @@ import pytest
 from app.audible_api.content import ContentError, DownloadInfo
 from app.jobs import download
 from app.jobs.download import read_fetched_bundle, tiny_download_error
-from app.services import library
+from app.services.library import LibraryService
 from app.services.downloads import DownloadEvents, DownloadsService
 from app.services.task_queue import TaskQueueService
 from app.services.task_worker import TaskWorkerService
 from app.tasks.downloads import DownloadHandlers, Pipeline
 from app.tasks.signals import TaskSignals
-from tests.conftest import add_account, make_book
+from tests.conftest import add_account, make_book, import_books
 
 CHAPTERS = {
     "runtime_length_ms": 6000,
@@ -91,7 +91,8 @@ class Downloader:
         self.db = db
         signals = TaskSignals()
         self.worker = TaskWorkerService(db, signals, workers=1)
-        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible)
+        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible,
+                                    LibraryService(db, config))
         DownloadHandlers(self.svc, Pipeline(audible)).register(self.worker)
         self.worker.start()
         self.svc.start()
@@ -125,7 +126,7 @@ async def make_downloader(db, config):
 @pytest.fixture
 def book_id(db):
     add_account(db)
-    library.import_library(db, 1, [make_book("B0001", title="The Book", authors=["Jane Author"])])
+    import_books(db, 1, [make_book("B0001", title="The Book", authors=["Jane Author"])])
     return db.scalar("SELECT id FROM books")
 
 

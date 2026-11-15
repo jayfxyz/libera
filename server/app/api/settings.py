@@ -1,32 +1,23 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Response
 
-from ..context import AppContext, get_ctx
-from ..services import settings as service
+from ..deps import SettingsSvc
+from ..services.settings import InvalidSetting
+from .schemas import SettingsPatch
 
 router = APIRouter()
 
 
 @router.get("/settings")
-def get_settings(ctx: AppContext = Depends(get_ctx)):
-    return service.current(ctx.config)
-
-
-class SettingsPatch(BaseModel):
-    # Unknown fields (the UI sends the whole settings object back) are ignored.
-    output_dir: str | None = None
-    download_workers: int | None = None
-    default_format: str | None = None
-    filename_template: str | None = None
-    folder_template: str | None = None
+def get_settings(settings_svc: SettingsSvc):
+    return settings_svc.current()
 
 
 @router.patch("/settings", status_code=204)
-def update_settings(patch: SettingsPatch, ctx: AppContext = Depends(get_ctx)):
+def update_settings(patch: SettingsPatch, settings_svc: SettingsSvc):
     try:
-        service.update(ctx.db, ctx.config, patch.model_dump())
-    except service.InvalidSetting as e:
+        settings_svc.update(patch.model_dump())
+    except InvalidSetting as e:
         raise HTTPException(400, str(e))
     return Response(status_code=204)

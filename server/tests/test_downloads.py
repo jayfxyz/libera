@@ -10,19 +10,19 @@ import pytest
 from app.jobs.download import DownloadFailed, discard_bundle, read_fetched_bundle
 from app.repositories import downloads as downloads_repo
 from app.services import downloads as downloads_module
-from app.services import library
+from app.services.library import LibraryService
 from app.services.downloads import INTERRUPTED, DownloadEvents, DownloadsService, InvalidOptions
 from app.services.task_queue import TaskQueueService
 from app.services.task_worker import TaskWorkerService
 from app.tasks.downloads import DownloadHandlers
 from app.tasks.signals import TaskSignals
-from tests.conftest import add_account, make_book
+from tests.conftest import add_account, make_book, import_books
 
 
 @pytest.fixture
 def books(db):
     add_account(db)
-    library.import_library(db, 1, [make_book(f"B{i}", title=f"Book {i}", authors=["Jane Author"]) for i in (1, 2)])
+    import_books(db, 1, [make_book(f"B{i}", title=f"Book {i}", authors=["Jane Author"]) for i in (1, 2)])
     return {r["audible_id"]: r["id"] for r in db.query("SELECT id, audible_id FROM books")}
 
 
@@ -35,7 +35,8 @@ async def make_stack(db, config, pipeline):
     def build(start=True):
         signals = TaskSignals()
         worker = TaskWorkerService(db, signals, workers=1, cancel_poll=0.02)
-        svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible=None)
+        svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible=None,
+                               library=LibraryService(db, config))
         DownloadHandlers(svc, pipeline).register(worker)
         workers.append(worker)
         stack = SimpleNamespace(svc=svc, worker=worker, start=lambda: (worker.start(), svc.start()))

@@ -30,7 +30,7 @@ from ..jobs.filename import FilenameData, book_directory, render_filename
 from ..repositories import books as books_repo
 from ..repositories import downloads as repo
 from ..tasks.downloads import DecryptBook, DownloadBook, DownloadPayload
-from . import library
+from .library import LibraryService, naming_data
 from .task_queue import TaskQueueService
 
 log = logging.getLogger(__name__)
@@ -90,12 +90,13 @@ class DownloadEvents:
 
 class DownloadsService:
     def __init__(self, db: Database, config: Config, tasks: TaskQueueService, events: DownloadEvents,
-                 audible: AudibleClient):
+                 audible: AudibleClient, library: LibraryService):
         self._db = db
         self._config = config
         self._tasks = tasks
         self._events = events
         self._audible = audible
+        self._library = library
         self._live: dict[str, dict[str, Any]] = {}  # running downloads: status, percent, message
         self._static: dict[str, dict[str, Any]] = {}  # running downloads: book_id, title, format
         self._last_saved: dict[str, float] = {}
@@ -124,7 +125,7 @@ class DownloadsService:
         is already queued or running), or None if the book isn't in that library.
         format: m4b or mp3; "" means the default from Settings."""
         fmt = self._format(format)
-        meta = library.book_meta(self._db, book_id, account_id)
+        meta = self._library.book_meta(book_id, account_id)
         if meta is None:
             return None
         with self._db.session() as s:
@@ -181,7 +182,7 @@ class DownloadsService:
         """Fetch a book's companion PDF and save it next to its audiobook, or
         where a download would put it. Returns the file's path, or None if the
         book isn't in that library. Raises NoPdf or PdfFailed."""
-        meta = await asyncio.to_thread(library.book_meta, self._db, book_id, account_id)
+        meta = await asyncio.to_thread(self._library.book_meta, book_id, account_id)
         if meta is None:
             return None
         try:
@@ -269,7 +270,7 @@ class DownloadsService:
         if existing := repo.active_for(s, meta["library_book_id"]):
             return existing.id
         settings = self._config.snapshot()  # where it goes is decided now
-        names = FilenameData(**library.naming_data(meta))
+        names = FilenameData(**naming_data(meta))
         download_id = uuid.uuid4().hex
         task_id = self._tasks.enqueue(DownloadBook(payload=DownloadPayload(download_id=download_id)), session=s)
         repo.add(s, id=download_id, library_book_id=meta["library_book_id"], format=fmt,
@@ -294,7 +295,7 @@ class DownloadsService:
         if meta["file_path"]:
             return os.path.splitext(meta["file_path"])[0] + ".pdf"
         settings = self._config.snapshot()
-        names = FilenameData(**library.naming_data(meta))
+        names = FilenameData(**naming_data(meta))
         folder = book_directory(settings.output_dir, settings.folder_template, names)
         return os.path.join(folder, render_filename(settings.filename_template, names) + ".pdf")
 

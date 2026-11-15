@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.services import library
 from app.db import Database
 from app.main import create_app
-from tests.conftest import add_account, make_book, wait_until
+from tests.conftest import add_account, make_book, wait_until, import_books
 
 LADDERS = [
     [{"id": "1", "name": "Health & Wellness"}, {"id": "2", "name": "Psychology & Mental Health"},
@@ -23,36 +23,36 @@ LADDERS = [
 ]
 
 
-def test_genres_are_imported_and_replaced_on_rescan(db):
+def test_genres_are_imported_and_replaced_on_rescan(db, library_svc):
     add_account(db)
-    library.import_library(db, 1, [make_book("A", genres=LADDERS)])
+    import_books(db, 1, [make_book("A", genres=LADDERS)])
     book_id = db.scalar("SELECT id FROM books")
-    assert library.genres(db, [book_id]) == {book_id: ["Psychology", "Personal Development"]}
+    assert library_svc.genres([book_id]) == {book_id: ["Psychology", "Personal Development"]}
     # Parents are kept as the tree.
     assert db.scalar("SELECT p.name FROM categories c JOIN categories p ON p.id = c.parent_id "
                      "WHERE c.name = 'Psychology'") == "Psychology & Mental Health"
-    library.import_library(db, 1, [make_book("A", genres=[LADDERS[1]])])
-    assert library.genres(db, [book_id]) == {book_id: ["Personal Development"]}
+    import_books(db, 1, [make_book("A", genres=[LADDERS[1]])])
+    assert library_svc.genres([book_id]) == {book_id: ["Personal Development"]}
 
 
-def test_list_has_people_genres_and_filters_by_account(db):
+def test_list_has_people_genres_and_filters_by_account(db, library_svc):
     add_account(db, 1)
     add_account(db, 2, "amzn1.account.OTHER")
-    library.import_library(db, 1, [make_book("A", title="One", authors=["Au"], narrators=["Na"], genres=LADDERS)])
-    library.import_library(db, 2, [make_book("B", title="Two")])
-    rows = {b["audible_id"]: b for b in library.list_books(db)}
+    import_books(db, 1, [make_book("A", title="One", authors=["Au"], narrators=["Na"], genres=LADDERS)])
+    import_books(db, 2, [make_book("B", title="Two")])
+    rows = {b["audible_id"]: b for b in library_svc.list_books()}
     assert (rows["A"]["authors"], rows["A"]["narrators"], rows["A"]["genres"]) == (
         ["Au"], ["Na"], ["Psychology", "Personal Development"])
-    assert [b["audible_id"] for b in library.list_books(db, account_id=2)] == ["B"]
-    assert [b["audible_id"] for b in library.list_books(db, search="one", account_id=2)] == []
+    assert [b["audible_id"] for b in library_svc.list_books(account_id=2)] == ["B"]
+    assert [b["audible_id"] for b in library_svc.list_books(search="one", account_id=2)] == []
 
 
-def test_list_page_size(db):
+def test_list_page_size(db, library_svc):
     add_account(db)
-    library.import_library(db, 1, [make_book(f"A{i:03d}") for i in range(120)])
-    assert len(library.list_books(db)) == library.PAGE_SIZE
-    assert len(library.list_books(db, limit=500)) == 120
-    assert len(library.list_books(db, limit=100, page=2)) == 20
+    import_books(db, 1, [make_book(f"A{i:03d}") for i in range(120)])
+    assert len(library_svc.list_books()) == library.PAGE_SIZE
+    assert len(library_svc.list_books(limit=500)) == 120
+    assert len(library_svc.list_books(limit=100, page=2)) == 20
 
 
 def test_migration_adds_columns_to_an_existing_database(tmp_path):
@@ -80,7 +80,7 @@ def api(config, db, pipeline):
 
 def seed(db):
     add_account(db)
-    library.import_library(db, 1, [
+    import_books(db, 1, [
         make_book("A", title="One", authors=["Jane Author"]),
         make_book("B", title="Two", authors=["Jane Author"]),
     ])
@@ -95,12 +95,12 @@ def test_hide_one_and_many(api, db):
     assert {x["is_hidden"] for x in api.get("/api/library").json()} == {False}
 
 
-def test_book_detail_has_planned_path_and_genres(api, db, config):
+def test_book_detail_has_planned_path_and_genres(api, db, config, library_svc):
     a, _ = seed(db)
     detail = api.get(f"/api/library/{a}").json()
     assert detail["planned_path"] == os.path.join(config.output_dir, "Jane Author - One", "One.m4b")
     assert (detail["genres"], detail["file_path"], detail["is_hidden"]) == ([], None, False)
-    library.mark_downloaded(db, a, "m4b", "/audiobooks/x/One.m4b")
+    library_svc.mark_downloaded(a, "m4b", "/audiobooks/x/One.m4b")
     assert api.get(f"/api/library/{a}").json()["file_path"] == "/audiobooks/x/One.m4b"
 
 

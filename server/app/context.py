@@ -1,18 +1,20 @@
-"""Shared application state, reachable from route handlers via ``get_ctx``."""
+"""Shared application state, kept on ``app.state.ctx``. Routes reach the
+services through the typed dependencies in deps.py."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from fastapi import Request
-
 from .config import Config
 from .db import Database
 
 if TYPE_CHECKING:
     from .audible_api.client import AudibleClient
+    from .services.accounts import AccountsService
     from .services.downloads import DownloadEvents, DownloadsService
+    from .services.library import LibraryService
+    from .services.settings import SettingsService
     from .services.task_queue import TaskQueueService
     from .services.task_worker import TaskWorkerService
 
@@ -22,11 +24,10 @@ class AppContext:
     config: Config
     db: Database
     audible: "AudibleClient"
+    accounts: "AccountsService"
+    library: "LibraryService"
+    settings: "SettingsService"
     downloads: "DownloadsService"
     download_events: "DownloadEvents"
     task_queue: "TaskQueueService"
     task_worker: "TaskWorkerService"
-
-
-def get_ctx(request: Request) -> AppContext:
-    return request.app.state.ctx

@@ -9,8 +9,7 @@ from fastapi.testclient import TestClient
 from app.audible_api.content import ContentError
 from app.main import create_app
 from app.repositories import downloads as downloads_repo
-from app.services import library
-from tests.conftest import add_account, make_book
+from tests.conftest import add_account, make_book, import_books
 
 PDF = b"%PDF-1.4 test"
 
@@ -42,7 +41,7 @@ def api(config, db, audible, pipeline):
 @pytest.fixture
 def book_id(db):
     add_account(db)
-    library.import_library(db, 1, [make_book("B1", title="The Book", authors=["Jane Author"])])
+    import_books(db, 1, [make_book("B1", title="The Book", authors=["Jane Author"])])
     return db.scalar("SELECT id FROM books")
 
 
@@ -55,8 +54,8 @@ def test_saves_the_pdf_where_a_download_would_go(api, db, config, book_id):
     assert db.scalar("SELECT COUNT(*) FROM downloads") == db.scalar("SELECT COUNT(*) FROM tasks") == 0  # not a download
 
 
-def test_saves_the_pdf_next_to_the_audiobook(api, db, tmp_path, book_id):
-    library.mark_downloaded(db, book_id, "m4b", str(tmp_path / "elsewhere" / "Old Name.m4b"))
+def test_saves_the_pdf_next_to_the_audiobook(api, db, tmp_path, book_id, library_svc):
+    library_svc.mark_downloaded(book_id, "m4b", str(tmp_path / "elsewhere" / "Old Name.m4b"))
     resp = api.post(f"/api/library/{book_id}/pdf")
     assert resp.json() == {"file_path": str(tmp_path / "elsewhere" / "Old Name.pdf")}
     assert (tmp_path / "elsewhere" / "Old Name.pdf").read_bytes() == PDF
@@ -78,14 +77,14 @@ def test_an_unknown_book_is_a_404(api):
     assert api.post("/api/library/999/pdf").status_code == 404
 
 
-def test_updates_the_manifest_of_a_finished_download(api, db, config, book_id):
+def test_updates_the_manifest_of_a_finished_download(api, db, config, book_id, library_svc):
     folder = os.path.join(config.output_dir, "Jane Author - The Book")
     audio = {"role": "audio", "name": "The Book.m4b", "size_bytes": 10}
     with db.session() as s:
         downloads_repo.add(s, id="d1", library_book_id=db.scalar("SELECT id FROM library_books"), format="m4b",
                            split_chapters=False, path=folder, base_name="The Book", task_id=None)
         downloads_repo.finish(s, "d1", json.dumps([audio]))
-    library.mark_downloaded(db, book_id, "m4b", os.path.join(folder, "The Book.m4b"))
+    library_svc.mark_downloaded(book_id, "m4b", os.path.join(folder, "The Book.m4b"))
 
     for _ in range(2):  # saving again replaces the entry
         assert api.post(f"/api/library/{book_id}/pdf").status_code == 200

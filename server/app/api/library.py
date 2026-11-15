@@ -4,50 +4,44 @@ import csv
 import io
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, Response
 
-from ..context import AppContext, get_ctx
-from ..deps import DownloadSvc
-from ..services import library
+from ..deps import DownloadSvc, LibrarySvc
 from ..services.downloads import NoPdf, PdfFailed
+from ..services.library import EXPORT_FIELDS, MAX_PAGE_SIZE, PAGE_SIZE, InvalidSort
+from .schemas import BookPatch, BulkUpdate
 
 router = APIRouter()
 
 
 @router.get("/library")
 def list_library(
+    library_svc: LibrarySvc,
     q: str = "",
     page: int = 1,
-    limit: int = Query(library.PAGE_SIZE, ge=1, le=library.MAX_PAGE_SIZE),
+    limit: int = Query(PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     sort: str | None = None,
     order: str | None = None,
     account_id: int | None = None,
-    ctx: AppContext = Depends(get_ctx),
 ):
     try:
-        return library.list_books(ctx.db, search=q, sort=sort, order=order, page=page, limit=limit,
-                                  account_id=account_id)
-    except library.InvalidSort:
+        return library_svc.list_books(search=q, sort=sort, order=order, page=page, limit=limit,
+                                      account_id=account_id)
+    except InvalidSort:
         raise HTTPException(400, "invalid sort or order")
 
 
-class BulkUpdate(BaseModel):
-    book_ids: list[int]
-    is_hidden: bool
-
-
 @router.post("/library/bulk", status_code=204)
-def bulk_update(req: BulkUpdate, ctx: AppContext = Depends(get_ctx)):
-    library.set_hidden(ctx.db, req.book_ids, req.is_hidden)
+def bulk_update(req: BulkUpdate, library_svc: LibrarySvc):
+    library_svc.set_hidden(req.book_ids, req.is_hidden)
     return Response(status_code=204)
 
 
 @router.get("/library/export")
-def export_library(format: str = Query("json"), ctx: AppContext = Depends(get_ctx)):
+def export_library(library_svc: LibrarySvc, format: str = Query("json")):
     if format not in ("json", "csv"):
         raise HTTPException(400, "format must be 'json' or 'csv'")
-    rows = library.export_rows(ctx.db)
+    rows = library_svc.export_rows()
     if format == "json":
         return Response(
             json.dumps(rows, ensure_ascii=False),
@@ -56,7 +50,7 @@ def export_library(format: str = Query("json"), ctx: AppContext = Depends(get_ct
         )
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(library.EXPORT_FIELDS)
+    w.writerow(EXPORT_FIELDS)
     for r in rows:
         w.writerow([
             r["audible_id"], r["title"], r["authors"], r["narrators"], r["series"],
@@ -72,19 +66,19 @@ def export_library(format: str = Query("json"), ctx: AppContext = Depends(get_ct
 
 
 @router.post("/library/rescan")
-def rescan_files(ctx: AppContext = Depends(get_ctx)):
+def rescan_files(library_svc: LibrarySvc):
     try:
-        return {"matched": library.rescan(ctx.db, ctx.config.output_dir)}
+        return {"matched": library_svc.rescan()}
     except OSError as e:
         raise HTTPException(500, f"cannot read output directory: {e}")
 
 
 @router.get("/library/{book_id}")
-def get_book(book_id: int, ctx: AppContext = Depends(get_ctx)):
-    book = library.get_book(ctx.db, book_id)
+def get_book(book_id: int, library_svc: LibrarySvc):
+    book = library_svc.get_book(book_id)
     if book is None:
         raise HTTPException(404, "book not found")
-    book["planned_path"] = library.planned_path(ctx.db, book_id, ctx.config)
+    book["planned_path"] = library_svc.planned_path(book_id)
     return book
 
 
@@ -104,15 +98,8 @@ async def save_pdf(book_id: int, download_svc: DownloadSvc, account_id: int | No
     return {"file_path": path}
 
 
-class BookPatch(BaseModel):
-    tags: str | None = None
-    user_rating: float | None = None
-    is_finished: bool | None = None
-    is_hidden: bool | None = None
-
-
 @router.patch("/library/{book_id}", status_code=204)
-def update_book(book_id: int, patch: BookPatch, ctx: AppContext = Depends(get_ctx)):
-    library.update_book(ctx.db, book_id, tags=patch.tags, user_rating=patch.user_rating,
-                        is_finished=patch.is_finished, is_hidden=patch.is_hidden)
+def update_book(book_id: int, patch: BookPatch, library_svc: LibrarySvc):
+    library_svc.update_book(book_id, tags=patch.tags, user_rating=patch.user_rating,
+                            is_finished=patch.is_finished, is_hidden=patch.is_hidden)
     return Response(status_code=204)

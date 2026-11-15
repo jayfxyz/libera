@@ -6,11 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.services import library
 from app.audible_api.auth import LoginError, LoginResult
 from app.jobs.download import DownloadFailed
 from app.main import create_app
-from tests.conftest import add_account, make_book
+from tests.conftest import add_account, make_book, import_books
 
 
 @pytest.fixture
@@ -77,7 +76,7 @@ def test_rename_scan_and_delete_account(api, db, audible):
 
 def seed(db, title="The Book"):
     add_account(db)
-    library.import_library(db, 1, [make_book(
+    import_books(db, 1, [make_book(
         "B0001", title=title, authors=["Jane Author"], release_date="2007-03-27", date_added="2024-01-01",
         runtime_length_min=125, series=[{"asin": "S1", "title": "Saga", "sequence": "1"}])])
     return db.scalar("SELECT id FROM books")

@@ -1,13 +1,13 @@
 import csv
 import io
 
-from tests.conftest import add_account, make_book
+from tests.conftest import add_account, make_book, import_books
 from app.services import library
 
 
 def seed(db):
     add_account(db)
-    library.import_library(db, 1, [make_book("EX01", title="One", authors=["A"]), make_book("EX02", title="Two")])
+    import_books(db, 1, [make_book("EX01", title="One", authors=["A"]), make_book("EX02", title="Two")])
 
 
 def test_list_and_sort(client, db):
