@@ -80,3 +80,26 @@ def test_0005_backfills_updated_at(tmp_path):
     assert db.scalar("SELECT updated_at FROM downloads") == "2026-01-01 00:10:00"
     assert db.scalar("SELECT updated_at FROM library_books") == "2026-01-02 03:04:05"
     db.close()
+
+
+def test_a_legacy_libation_db_is_moved_to_the_new_name(tmp_path):
+    legacy = Database(str(tmp_path / "libation.db"))
+    legacy.migrate()
+    legacy.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    legacy.close()
+    (tmp_path / "libation.db-wal").write_bytes(b"")  # a leftover WAL goes with it
+    db = Database(str(tmp_path / "libera.db"))
+    assert db.scalar("SELECT account_name FROM accounts") == "A"
+    assert not (tmp_path / "libation.db").exists() and not (tmp_path / "libation.db-wal").exists()
+    db.close()
+
+
+def test_an_existing_libera_db_wins_over_a_legacy_one(tmp_path):
+    current = Database(str(tmp_path / "libera.db"))
+    current.migrate()
+    current.close()
+    (tmp_path / "libation.db").write_bytes(b"old")
+    db = Database(str(tmp_path / "libera.db"))
+    assert db.scalar("SELECT version_num FROM alembic_version")  # still the real database
+    db.close()
+    assert (tmp_path / "libation.db").read_bytes() == b"old"  # left alone

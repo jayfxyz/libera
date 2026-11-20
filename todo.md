@@ -1,4 +1,4 @@
-# Libation Web — Feature Parity Todo
+# Libera — Feature Parity Todo
 
 Features ranked by value added on top of a bare library viewer.
 `[x]` = fully implemented · `[~]` = partial / stub · `[ ]` = not started

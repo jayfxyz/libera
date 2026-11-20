@@ -11,7 +11,7 @@
       "args": ["app.main:app", "--host", "0.0.0.0", "--port", "8080"],
       "cwd": "${workspaceFolder}/server",
       "env": {
-        "DATABASE_PATH": "${workspaceFolder}/data/db/libation.db",
+        "DATABASE_PATH": "${workspaceFolder}/data/db/libera.db",
         "ACCOUNTS_DIR": "${workspaceFolder}/data/accounts",
         "OUTPUT_DIR": "${workspaceFolder}/data/audiobooks"
       },

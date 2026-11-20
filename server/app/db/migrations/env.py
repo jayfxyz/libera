@@ -31,6 +31,6 @@ connection = config.attributes.get("connection")
 if connection is not None:
     _configure(connection)
 else:
-    url = config.get_main_option("sqlalchemy.url") or f"sqlite:///{os.environ.get('DATABASE_PATH', './data/db/libation.db')}"
+    url = config.get_main_option("sqlalchemy.url") or f"sqlite:///{os.environ.get('DATABASE_PATH', './data/db/libera.db')}"
     with create_engine(url).connect() as conn:
         _configure(conn)

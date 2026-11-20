@@ -6,6 +6,7 @@ Application code reads and writes through the repositories
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -15,6 +16,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from . import migrate
+
+log = logging.getLogger(__name__)
+
+LEGACY_DB_NAME = "libation.db"  # the database's name before the project became Libera
 
 
 def iso_utc(value: str | None) -> str | None:
@@ -26,12 +31,27 @@ def iso_utc(value: str | None) -> str | None:
     return value.replace(" ", "T") + "Z"
 
 
+def _adopt_legacy_db(path: str) -> None:
+    """If there's no database at path but a libation.db sits next to it, move it
+    (and its -wal/-shm files) to path, so an existing install keeps its data."""
+    target = Path(path)
+    legacy = target.with_name(LEGACY_DB_NAME)
+    if target.exists() or not legacy.exists() or target == legacy:
+        return
+    for suffix in ("-wal", "-shm", ""):  # the main file last
+        old = legacy.with_name(legacy.name + suffix)
+        if old.exists():
+            old.rename(target.with_name(target.name + suffix))
+    log.info("moved %s to %s", legacy, target)
+
+
 def _sqlite_engine(path: str) -> Engine:
     if path == ":memory:":
         # One shared connection, or every session would see its own empty database.
         engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
     else:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+        _adopt_legacy_db(path)
         engine = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
 
     @event.listens_for(engine, "connect")

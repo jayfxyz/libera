@@ -1,9 +1,9 @@
 # One container: the FastAPI backend serving the API and the built frontend.
 # Settings come from .env (see .env.example); the defaults work as-is.
 services:
-  libation-web:
+  libera:
     build: .
-    image: libation-web
+    image: libera
     # Owner of the files written to /audiobooks and /data (default: root)
     user: "${PUID:-0}:${PGID:-0}"
     ports:
@@ -12,9 +12,9 @@ services:
       APP_URL: ${APP_URL:-http://localhost:8888}
       # Tracing is off unless an OTLP endpoint is set (e.g. in an override file).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      OTEL_SERVICE_NAME: libation-web
+      OTEL_SERVICE_NAME: libera
     volumes:
-      # Database (db/libation.db) and Audible login tokens (accounts/)
+      # Database (db/libera.db) and Audible login tokens (accounts/)
       - ${DATA_DIR:-./data}:/data
       - ${AUDIOBOOKS_DIR:-./data/audiobooks}:/audiobooks
     restart: unless-stopped

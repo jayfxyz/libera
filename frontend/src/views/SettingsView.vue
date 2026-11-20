@@ -108,7 +108,7 @@
 
         <section class="card flex flex-col gap-1.5 p-5 md:p-6" aria-labelledby="s-about">
           <h2 id="s-about" class="text-base font-semibold">About</h2>
-          <p class="text-sm text-ink-soft">Libation Web: a self-hosted manager for your Audible library.</p>
+          <p class="text-sm text-ink-soft">Libera: a self-hosted manager for your Audible library.</p>
           <p class="text-sm text-ink-soft">App address: <code class="font-mono text-xs text-ink">{{ settings.app_url }}</code> <span class="text-xs">(set with APP_URL)</span></p>
         </section>
       </template>

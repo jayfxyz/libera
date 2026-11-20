@@ -10,7 +10,7 @@
             <path d="M8 11V7a4 4 0 0 1 7.5-2" />
           </svg>
         </span>
-        Libation Web
+        Libera
       </RouterLink>
       <button
         type="button"

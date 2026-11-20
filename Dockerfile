@@ -1,6 +1,6 @@
 # One image: the Vue frontend, built here, served by the FastAPI backend.
-#   docker build -t libation-web .                                  # the app
-#   docker build --target test -t libation-web-test . && docker run --rm libation-web-test   # the tests
+#   docker build -t libera .                                  # the app
+#   docker build --target test -t libera-test . && docker run --rm libera-test   # the tests
 
 FROM node:22-alpine AS frontend
 WORKDIR /frontend
@@ -29,7 +29,7 @@ FROM python-base
 COPY server/app ./app
 COPY --from=frontend /frontend/dist ./frontend
 
-ENV DATABASE_PATH=/data/db/libation.db \
+ENV DATABASE_PATH=/data/db/libera.db \
     ACCOUNTS_DIR=/data/accounts \
     OUTPUT_DIR=/audiobooks \
     FRONTEND_DIR=/app/frontend \

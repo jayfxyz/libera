@@ -1,4 +1,4 @@
-# Libation Web
+# Libera
 
 A self-hosted web app for your Audible library: scan your books, download and
 decrypt them to M4B or MP3 with Audible's real chapter titles embedded, and
@@ -37,17 +37,17 @@ Host-specific Docker tweaks (an extra network, a tracing endpoint) go in a
 ```sh
 # backend on :8080 (needs Python 3.12, ffmpeg, and SQLite >= 3.43)
 cd server && pip install -r requirements-dev.txt
-DATABASE_PATH=../data/db/libation.db ACCOUNTS_DIR=../data/accounts \
+DATABASE_PATH=../data/db/libera.db ACCOUNTS_DIR=../data/accounts \
   OUTPUT_DIR=../data/audiobooks uvicorn app.main:app --reload --port 8080
 
-# frontend on :5173, proxying /api and /ws to :8080
+# frontend on :5173, proxying /api to :8080
 cd frontend && npm install && npm run dev
 ```
 
 Tests run in the same base image as the app:
 
 ```sh
-docker build --target test -t libation-web-test . && docker run --rm libation-web-test
+docker build --target test -t libera-test . && docker run --rm libera-test
 ```
 
 Layout: `server/app` (API, Audible client, download jobs), `server/tests`,

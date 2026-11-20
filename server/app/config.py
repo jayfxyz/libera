@@ -14,7 +14,7 @@ EDITABLE_KEYS = ("output_dir", "download_workers", "default_format", "filename_t
 
 @dataclass
 class Config:
-    database_path: str = "./data/db/libation.db"
+    database_path: str = "./data/db/libera.db"
     accounts_dir: str = "./data/accounts"
     frontend_dir: str = ""  # built Vue app; empty = don't serve it
     app_url: str = "http://localhost:8080"

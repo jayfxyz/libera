@@ -8,7 +8,7 @@ import os
 from opentelemetry import trace
 
 log = logging.getLogger(__name__)
-tracer = trace.get_tracer("libation-web")
+tracer = trace.get_tracer("libera")
 
 
 def init_tracing(app) -> None:
@@ -24,7 +24,7 @@ def init_tracing(app) -> None:
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-    service_name = os.environ.get("OTEL_SERVICE_NAME", "libation-web")
+    service_name = os.environ.get("OTEL_SERVICE_NAME", "libera")
     insecure = os.environ.get("OTEL_EXPORTER_OTLP_INSECURE", "true").lower() == "true"
     provider = TracerProvider(resource=Resource(attributes={SERVICE_NAME: service_name}))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=insecure)))

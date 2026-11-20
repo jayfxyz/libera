@@ -89,7 +89,7 @@ Compared to the original [Libation](https://github.com/rmcrackan/Libation) deskt
 | **Chapter splitting** | Libation can split one big `.m4b` into per-chapter files |
 | **Quick Filters / hotkeys** | Libation has saved filter presets with keyboard shortcuts |
 | **CLI (`libationcli`)** | Libation has a full CLI for scripting, batch downloads, CI use |
-| **Abridged/Spatial/Plus tags** | Libation surfaces these prominently; web-libation tracks them in the DB but doesn't show them in the UI |
+| **Abridged/Spatial/Plus tags** | Libation surfaces these prominently; Libera tracks them in the DB but doesn't show them in the UI |
 | **Read/Unread tracking** | `is_finished` exists in the DB but isn't surfaced in the UI |
 | **User ratings** | `user_rating` exists in the DB but isn't surfaced in the UI |
 | **Audible rating display** | The book detail view should show the Audible community rating |

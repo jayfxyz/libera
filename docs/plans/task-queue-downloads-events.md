@@ -461,13 +461,13 @@ What changes:
 - The file name template stays free text.
 - **Same folder, different book**: two titles can still render to the
   same folder (two editions with the same author and title). If the
-  target folder already has a `libation.json` for a different ASIN, the
+  target folder already has a `libera.json` for a different ASIN, the
   download appends the release year, e.g.
   `Jordan Peterson - 12 Rules for Life (2018)`. If the year is unknown
   or that folder is also taken by another book, append ` (2)` (then
   ` (3)`, …) instead.
 
-**`libation.json`**, one per book folder, written by every download:
+**`libera.json`**, one per book folder, written by every download:
 
 ```json
 {
@@ -503,7 +503,7 @@ What changes:
 1. `library_books.file_path`, if that file exists. This column is the
    path cache.
 2. An in-memory index of ASIN to folder, built by one walk of the
-   audiobooks folder that reads every `libation.json` (hidden folders
+   audiobooks folder that reads every `libera.json` (hidden folders
    skipped, as today). Rebuilt by a scan and updated after each download.
    The path is the folder joined with the entry's `audio` file; if that
    file is gone (renamed), any single `.m4b` / `.mp3` in the folder.
@@ -525,13 +525,13 @@ has mounted; reject anything else).
 
 Matching, first that yields a known ASIN wins:
 
-1. a `libation.json` in the folder;
+1. a `libera.json` in the folder;
 2. a `.chapters.json` next to an audio file (downloads from before this
    phase have one, and it contains the ASIN);
 3. today's title match, as the last resort for anything older.
 
 A match records `file_path` and marks the book downloaded. **For matches
-from 2 and 3 the scan writes a `libation.json`**, so existing downloads
+from 2 and 3 the scan writes a `libera.json`**, so existing downloads
 are adopted on the first scan and found by method 1 from then on. The
 scan assumes one book per folder; folders holding several books (from a
 blank or custom folder template in older versions) are not supported.
@@ -552,16 +552,16 @@ many audio files matched nothing.
 
 ### Tests
 
-- A download writes `libation.json`; re-downloading replaces it; a
+- A download writes `libera.json`; re-downloading replaces it; a
   different book that renders to the same folder name gets the year
   appended, or ` (2)` when the year is unknown or also taken.
 - Settings reject a folder template other than the two allowed; the
   migration resets a custom one to the default.
 - Lookup: recorded path wins; a renamed or moved folder is found again
-  through its `libation.json`; the hit is written back; a renamed audio
+  through its `libera.json`; the hit is written back; a renamed audio
   file inside the folder is still found.
 - Scan: matches by metadata file, by `.chapters.json` and by title;
-  writes `libation.json` for the latter two; reports unmatched files.
+  writes `libera.json` for the latter two; reports unmatched files.
 - Manual status change survives a scan.
 
 ---
@@ -574,7 +574,7 @@ many audio files matched nothing.
 
 ## Checks for every phase
 
-- `docker build --target test -t libation-web-test . && docker run --rm libation-web-test`
+- `docker build --target test -t libera-test . && docker run --rm libera-test`
 - `cd frontend && npm run type-check && npm run lint`
 - Upgrade a copy of a real database (`data/db/libation.db`) and confirm
   the Downloads page still shows its history.

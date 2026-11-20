@@ -71,7 +71,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
             if db is None:
                 database.close()
 
-    app = FastAPI(title="libation-web", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(title="libera", docs_url=None, redoc_url=None, lifespan=lifespan)
 
     @app.get("/health", response_class=PlainTextResponse)
     def health():
