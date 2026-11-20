@@ -134,8 +134,13 @@
     @apply flex h-11 items-center gap-2 rounded-[10px] border border-line bg-surface px-3 text-sm;
   }
 
-@utility field-select {
-    @apply h-10 cursor-pointer border-0 bg-transparent pr-1 text-[13px] font-semibold text-ink outline-none;
+/* Every dropdown (ui/select, ui/dropdown-menu): the panel and its rows. */
+@utility menu-panel {
+    @apply z-50 rounded-[10px] border border-line bg-surface p-1 shadow-lg;
+  }
+
+@utility menu-item {
+    @apply flex h-10 w-full cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm text-ink outline-none select-none data-highlighted:bg-paper data-disabled:pointer-events-none data-disabled:opacity-50;
   }
 
 @utility textbox {

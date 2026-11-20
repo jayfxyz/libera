@@ -9,7 +9,7 @@
             <p class="mt-1 text-sm text-ink-soft">{{ summaryLine }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <div ref="scanMenuEl" class="relative">
+            <div>
               <div class="flex overflow-hidden rounded-[10px] border border-line bg-surface">
                 <button
                   type="button"
@@ -21,32 +21,23 @@
                   <RefreshCwIcon class="size-4" :class="scanning ? 'animate-spin' : ''" />
                   <span class="hidden sm:inline">{{ scanLabel }}</span>
                 </button>
-                <button
-                  v-if="accounts.accounts.length > 1"
-                  type="button"
-                  class="btn w-10 rounded-none border-l border-line-soft px-0"
-                  aria-label="Scan one account"
-                  aria-haspopup="menu"
-                  :aria-expanded="scanMenuOpen"
-                  :disabled="scanning"
-                  @click="scanMenuOpen = !scanMenuOpen"
-                >
-                  <ChevronDownIcon class="size-3.5" />
-                </button>
-              </div>
-              <div
-                v-if="scanMenuOpen"
-                role="menu"
-                class="absolute right-0 top-full z-20 mt-1 min-w-56 rounded-[10px] border border-line bg-surface p-1 shadow-lg"
-              >
-                <button
-                  v-for="a in accounts.accounts"
-                  :key="a.id"
-                  type="button"
-                  role="menuitem"
-                  class="flex h-10 w-full cursor-pointer items-center rounded-lg px-3 text-left text-sm hover:bg-paper"
-                  @click="scan(a.id)"
-                >Scan {{ accountLabel(a) }}</button>
+                <DropdownMenu v-if="accounts.accounts.length > 1">
+                  <DropdownMenuTrigger as-child>
+                    <button
+                      type="button"
+                      class="btn w-10 rounded-none border-l border-line-soft px-0"
+                      aria-label="Scan one account"
+                      :disabled="scanning"
+                    >
+                      <ChevronDownIcon class="size-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem v-for="a in accounts.accounts" :key="a.id" @select="scan(a.id)">
+                      Scan {{ accountLabel(a) }}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
             <button
@@ -75,19 +66,14 @@
           </label>
           <label class="field order-3 min-w-[140px] flex-1 gap-1 pr-1 pl-3 text-[13px] text-ink-soft sm:order-none sm:flex-none">
             <span class="hidden sm:inline">Sort by</span>
-            <select class="field-select min-w-0 flex-1" aria-label="Sort by" :value="library.sort" @change="library.setSort(($event.target as HTMLSelectElement).value as LibrarySort)">
-              <option v-for="o in sortOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-            </select>
+            <SelectField variant="inline" aria-label="Sort by" :options="sortOptions" :model-value="library.sort" @update:model-value="library.setSort" />
           </label>
           <button type="button" class="btn-secondary btn-icon order-4 text-base font-semibold sm:order-none" :aria-label="orderLabel" :title="orderLabel" @click="library.toggleOrder()">
             {{ library.order === 'asc' ? '↑' : '↓' }}
           </button>
           <label v-if="accounts.accounts.length > 1" class="field order-5 min-w-[140px] flex-1 gap-1 pr-1 pl-3 text-[13px] text-ink-soft sm:order-none sm:flex-none">
             <span class="hidden sm:inline">Account</span>
-            <select class="field-select min-w-0 flex-1" aria-label="Account" :value="library.accountId ?? ''" @change="onAccount">
-              <option value="">All accounts</option>
-              <option v-for="a in accounts.accounts" :key="a.id" :value="a.id">{{ accountLabel(a) }}</option>
-            </select>
+            <SelectField variant="inline" aria-label="Account" :options="accountOptions" :model-value="accountValue" @update:model-value="onAccount" />
           </label>
           <button
             type="button"
@@ -249,14 +235,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { onClickOutside } from '@vueuse/core'
 import { ChevronDownIcon, LayoutGridIcon, ListIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
-import type { Account, BookSummary, LibrarySort } from '@/api/client'
+import type { Account, BookSummary } from '@/api/client'
 import { api, ApiError } from '@/api/client'
 import BookGridCard from '@/components/library/BookGridCard.vue'
 import BookListRow from '@/components/library/BookListRow.vue'
 import BookPanel from '@/components/library/BookPanel.vue'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { SelectField, type SelectOption } from '@/components/ui/select'
 import { bookStatus } from '@/lib/bookStatus'
 import { flag, regionBadge } from '@/lib/regions'
 import { useAccountsStore } from '@/stores/accounts'
@@ -337,21 +324,23 @@ function onSearch() {
   searchTimer = setTimeout(() => library.search(query.value.trim()), 250)
 }
 
-function onAccount(e: Event) {
-  const v = (e.target as HTMLSelectElement).value
-  library.setAccount(v === '' ? null : Number(v))
+const ALL_ACCOUNTS = 'all'
+const accountOptions = computed<SelectOption[]>(() => [
+  { value: ALL_ACCOUNTS, label: 'All accounts' },
+  ...accounts.accounts.map((a) => ({ value: String(a.id), label: accountLabel(a) })),
+])
+const accountValue = computed(() => (library.accountId === null ? ALL_ACCOUNTS : String(library.accountId)))
+
+function onAccount(value: string) {
+  library.setAccount(value === ALL_ACCOUNTS ? null : Number(value))
 }
 
 // --- scanning
 const scanning = ref(false)
 const scanMessage = ref('')
 const scanFailed = ref(false)
-const scanMenuOpen = ref(false)
-const scanMenuEl = ref<HTMLElement | null>(null)
-onClickOutside(scanMenuEl, () => (scanMenuOpen.value = false))
 
 async function scan(accountId: number | null) {
-  scanMenuOpen.value = false
   scanning.value = true
   scanMessage.value = ''
   scanFailed.value = false

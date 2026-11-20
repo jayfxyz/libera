@@ -85,11 +85,7 @@
       <div class="flex flex-col gap-1 border-t border-line-faint pt-4">
         <label class="flex flex-col gap-1.5 text-xs font-semibold text-ink-soft">
           Format for this book
-          <select v-model="format" class="textbox cursor-pointer font-medium">
-            <option value="">Default — {{ settings.defaultFormat.toUpperCase() }}{{ settings.defaultFormat === 'm4b' ? ', original' : '' }}</option>
-            <option value="m4b">M4B (original, no re-encode)</option>
-            <option value="mp3">MP3 (re-encode)</option>
-          </select>
+          <SelectField v-model="format" :options="formatOptions" />
         </label>
         <label class="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm">
           <input v-model="splitChapters" type="checkbox" class="checkbox" />Split by chapter
@@ -119,6 +115,7 @@ import { computed, ref, watch } from 'vue'
 import { EyeIcon, EyeOffIcon, XIcon } from '@lucide/vue'
 import type { BookDetail } from '@/api/client'
 import { api } from '@/api/client'
+import { SelectField, type SelectOption } from '@/components/ui/select'
 import { bookStatus, formatDuration } from '@/lib/bookStatus'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
@@ -139,7 +136,12 @@ const busy = ref(false)
 const actionError = ref('')
 const notice = ref('')
 const savingPdf = ref(false)
-const format = ref<'' | 'm4b' | 'mp3'>('')
+const format = ref<'default' | 'm4b' | 'mp3'>('default')
+const formatOptions = computed<SelectOption<'default' | 'm4b' | 'mp3'>[]>(() => [
+  { value: 'default', label: `Default — ${settings.defaultFormat.toUpperCase()}${settings.defaultFormat === 'm4b' ? ', original' : ''}` },
+  { value: 'm4b', label: 'M4B (original, no re-encode)' },
+  { value: 'mp3', label: 'MP3 (re-encode)' },
+])
 const splitChapters = ref(false)
 
 async function load() {
@@ -171,7 +173,7 @@ watch(() => status.value.state, (now, before) => {
 
 function enqueue() {
   const b = book.value!
-  return downloads.enqueue(b.id, { format: format.value || undefined, split_chapters: splitChapters.value }, b.title)
+  return downloads.enqueue(b.id, { format: format.value === 'default' ? undefined : format.value, split_chapters: splitChapters.value }, b.title)
 }
 
 async function download() {

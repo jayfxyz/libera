@@ -25,10 +25,7 @@
           </label>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
             Default format
-            <select v-model="settings.default_format" class="textbox cursor-pointer">
-              <option value="m4b">M4B (original audio, no re-encode)</option>
-              <option value="mp3">MP3 (re-encoded with LAME)</option>
-            </select>
+            <SelectField v-model="settings.default_format" :options="formatOptions" />
             <span class="text-xs font-normal text-ink-soft">Each book's panel can override this.</span>
           </label>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
@@ -122,7 +119,13 @@ import { ref, computed, onMounted } from 'vue'
 import { DownloadIcon, SearchIcon } from '@lucide/vue'
 import type { Settings } from '@/api/client'
 import { api } from '@/api/client'
+import { SelectField, type SelectOption } from '@/components/ui/select'
 import { useSettingsStore } from '@/stores/settings'
+
+const formatOptions: SelectOption<Settings['default_format']>[] = [
+  { value: 'm4b', label: 'M4B (original audio, no re-encode)' },
+  { value: 'mp3', label: 'MP3 (re-encoded with LAME)' },
+]
 
 const settings = ref<Settings | null>(null)
 const settingsStore = useSettingsStore()

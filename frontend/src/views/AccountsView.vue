@@ -73,9 +73,7 @@
           </label>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
             Region
-            <select v-model="modal.locale" class="textbox cursor-pointer" :disabled="modal.reconnect">
-              <option v-for="r in regions" :key="r.value" :value="r.value">{{ flag(r.value) }} {{ r.label }}</option>
-            </select>
+            <SelectField v-model="modal.locale" :options="regionOptions" :disabled="modal.reconnect" />
           </label>
           <p v-if="modal.error" class="text-xs text-destructive">{{ modal.error }}</p>
         </div>
@@ -174,6 +172,9 @@ import { useAccountsStore } from '@/stores/accounts'
 import { flag, regionBadge, regions } from '@/lib/regions'
 import { api } from '@/api/client'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SelectField, type SelectOption } from '@/components/ui/select'
+
+const regionOptions: SelectOption[] = regions.map((r) => ({ value: r.value, label: `${flag(r.value)} ${r.label}` }))
 
 const regionName = (locale: string) => regions.find((r) => r.value === locale)?.label ?? locale.toUpperCase()
 

@@ -1,5 +1,7 @@
 export { default as Select } from './Select.vue'
 export { default as SelectContent } from './SelectContent.vue'
+export { default as SelectField } from './SelectField.vue'
+export type { SelectOption } from './types'
 export { default as SelectGroup } from './SelectGroup.vue'
 export { default as SelectItem } from './SelectItem.vue'
 export { default as SelectItemText } from './SelectItemText.vue'
