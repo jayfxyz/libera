@@ -118,7 +118,7 @@
             <label class="flex flex-col gap-1.5 border-t border-line-faint pt-4 text-sm font-medium">
               <span>
                 After signing in you'll land on <strong>“Looking for something?”</strong>.
-                Copy that page's whole address and paste it here:
+                Copy that page's whole address (URL) and paste it here:
               </span>
               <input
                 v-model="modal.responseUrl"

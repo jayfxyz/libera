@@ -62,7 +62,6 @@ export const useLibraryStore = defineStore('library', () => {
   const selectMode = ref(false)
   /** Every book shows its checkbox while selecting; otherwise only on hover/focus. */
   const selecting = computed(() => selectMode.value || selected.value.size > 0)
-  const openBookId = ref<number | null>(null)
 
   watch([sort, order, view, accountId], () => {
     try {
@@ -191,7 +190,7 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   return {
-    books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, selectMode, selecting, openBookId,
+    books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, selectMode, selecting,
     segmentBooks, visibleBooks, downloadable, selectedBooks, shelved,
     fetchBooks, toggleSelected, selectAllVisible, clearSelection, setSort, toggleOrder, setAccount, search,
     patchBooks, upsertBook, setHidden, stateOf,

@@ -188,11 +188,11 @@
             :book="b"
             :status="statusFor(b)"
             :checked="library.selected.has(b.id)"
-            :open="library.openBookId === b.id"
+            :open="openBookId === b.id"
             :selecting="library.selecting"
             :account="multipleAccounts ? accountShort(b.account_id) : undefined"
             @toggle="library.toggleSelected(b.id)"
-            @open="library.openBookId = b.id"
+            @open="openBook(b.id)"
           />
         </ul>
 
@@ -203,16 +203,16 @@
             :book="b"
             :status="statusFor(b)"
             :checked="library.selected.has(b.id)"
-            :open="library.openBookId === b.id"
+            :open="openBookId === b.id"
             :selecting="library.selecting"
             @toggle="library.toggleSelected(b.id)"
-            @open="library.openBookId = b.id"
+            @open="openBook(b.id)"
           />
         </section>
       </div>
     </div>
 
-    <BookPanel v-if="library.openBookId !== null" :book-id="library.openBookId" @close="library.openBookId = null" />
+    <BookPanel v-if="openBookId !== null" :book-id="openBookId" @close="closeBook" />
 
     <!-- Confirm before queueing many books: Audible may rate-limit big batches. -->
     <Dialog :open="confirm.open" @update:open="(v) => { if (!v) confirm.open = false }">
@@ -235,6 +235,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ChevronDownIcon, LayoutGridIcon, ListIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import type { Account, BookSummary } from '@/api/client'
 import { api, ApiError } from '@/api/client'
@@ -253,6 +254,36 @@ import { sortOptions, useLibraryStore, type Segment } from '@/stores/library'
 const library = useLibraryStore()
 const downloads = useDownloadsStore()
 const accounts = useAccountsStore()
+const route = useRoute()
+const router = useRouter()
+
+// --- the open book lives in the address (?book=ID): Back closes it, a reload keeps it
+const openBookId = computed(() => {
+  const id = Number(route.query.book)
+  return Number.isInteger(id) && id > 0 ? id : null
+})
+
+function queryWithoutBook() {
+  const rest = { ...route.query }
+  delete rest.book
+  return rest
+}
+
+function openBook(id: number) {
+  const next = { ...route.query, book: String(id) }
+  // Switching books keeps one history entry, so Back closes the panel instead of
+  // stepping back through every book looked at.
+  if (openBookId.value === null) router.push({ query: next })
+  else router.replace({ query: next })
+}
+
+function closeBook() {
+  const listPath = router.resolve({ query: queryWithoutBook() }).fullPath
+  // Opened from the list: the same as pressing Back. Arrived on a ?book= link: drop it,
+  // so closing never leaves the app.
+  if (router.options.history.state.back === listPath) router.back()
+  else router.replace({ query: queryWithoutBook() })
+}
 
 const query = ref(library.searchQuery)
 const notice = ref('')
