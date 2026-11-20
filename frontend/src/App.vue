@@ -16,24 +16,21 @@ import MobileNav from '@/components/shared/MobileNav.vue'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useSettingsStore } from '@/stores/settings'
-import { useDownloadProgress } from '@/composables/useWebSocket'
+import { useEventStream } from '@/composables/useEventStream'
 
 const downloads = useDownloadsStore()
 const library = useLibraryStore()
 const settings = useSettingsStore()
 
-useDownloadProgress((event) => {
-  downloads.handleProgressEvent(event)
-  // Keep the library in step when a download finishes or fails.
-  if (event.status === 'done') {
-    library.patchBooks([event.book_id], { liberation_status: 'liberated', last_format: event.format ?? null })
-  } else if (event.status === 'failed') {
-    const book = library.books.find((b) => b.id === event.book_id)
-    if (book && book.liberation_status !== 'liberated') library.patchBooks([event.book_id], { liberation_status: 'error' })
-  }
+const stream = useEventStream()
+stream.on('download.updated', (download) => downloads.upsert(download))
+stream.on('book.updated', (book) => library.upsertBook(book))
+// The stream has no replay: whatever happened while it was down comes from fresh snapshots.
+stream.onOpen(() => {
+  downloads.load()
+  if (library.books.length) library.fetchBooks()
 })
 settings.load()
-downloads.load()
 
-const activeCount = computed(() => downloads.activeJobs().length)
+const activeCount = computed(() => downloads.active().length)
 </script>

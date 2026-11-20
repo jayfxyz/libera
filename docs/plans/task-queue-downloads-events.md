@@ -372,9 +372,14 @@ has the flag, so the option is hidden for all.
   events a second per download.
 - **`GET /api/events`**: `text/event-stream`, one SSE message per event,
   a comment line every 15 s as keep-alive, `Cache-Control: no-cache` and
-  `X-Accel-Buffering: no`. Check that `GZipMiddleware` in `main.py` and
-  the reverse proxy in front of the dev site do not buffer the stream;
-  exclude the route from compression if they do.
+  `X-Accel-Buffering: no`. `GZipMiddleware` buffered the stream, so it
+  now wraps only the static frontend mount; API responses, the stream
+  included, are not compressed.
+- **`updated_at`** (migration `0005_updated_at.py`) on `downloads` and
+  `library_books`, set by every write. A snapshot and an event can cross
+  (a reconnect while a reload is in flight), so clients keep the copy with
+  the later `updated_at`. `book.updated` is published only for
+  download-state changes; other edits still bump the stamp.
 - Remove the WebSocket routes, `download_progress` and the broadcaster
   class from phase 2.
 
@@ -386,8 +391,9 @@ has the flag, so the option is hidden for all.
   store, `book.updated` into the library store.
 - **On every open, including reconnects, each store reloads its
   snapshot.** This is the catch-up mechanism; there is no event replay.
-- Rename `job_id` to `id` in the downloads store and views to match the
-  resource shape.
+- `job_id` becomes `id` across the API (responses, the bulk endpoint's
+  `{"downloads": [...]}`, path parameters) and in the downloads store and
+  views, to match the resource shape.
 
 ### Tests
 

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.audible_api.models import AudibleBook
 from app.config import Config
 from app.db import Database
+from app.events import EventBus
 from app.jobs.download import FileEntry, Target
 from app.main import create_app
 from app.services.library import LibraryService
@@ -50,12 +51,12 @@ def add_account(db, account_id: int = 1, audible_account_id: str = "amzn1.accoun
 
 @pytest.fixture
 def library_svc(db, config):
-    return LibraryService(db, config)
+    return LibraryService(db, config, EventBus())
 
 
 def import_books(db, account_id: int, books: list[AudibleBook]) -> int:
     """Test setup: import books for an account as a library scan would."""
-    return LibraryService(db, Config()).import_library(account_id, books)
+    return LibraryService(db, Config(), EventBus()).import_library(account_id, books)
 
 
 def make_book(asin: str, **overrides) -> AudibleBook:

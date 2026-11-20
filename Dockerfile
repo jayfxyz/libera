@@ -39,5 +39,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
-# Exactly one worker: the download queue and WebSocket subscribers live in memory.
+# Exactly one worker: task workers and event-stream subscribers live in memory.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

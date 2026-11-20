@@ -1,59 +1,62 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { DownloadJob, DownloadOptions } from '@/api/client'
+import type { Download, DownloadOptions } from '@/api/client'
 import { api } from '@/api/client'
 import { isActive } from '@/lib/bookStatus'
+import { isNewer } from '@/lib/freshness'
 
 export const useDownloadsStore = defineStore('downloads', () => {
-  const jobs = ref<Map<string, DownloadJob>>(new Map())
+  const byId = ref<Map<string, Download>>(new Map())
 
-  /** Jobs the server already has (e.g. after a page reload). */
+  /** The server's downloads: on start, and whenever the event stream (re)opens. */
   async function load() {
-    for (const job of await api.downloads.list()) jobs.value.set(job.job_id, job)
+    for (const download of await api.downloads.list()) upsert(download)
   }
 
-  function handleProgressEvent(event: DownloadJob) {
-    jobs.value.set(event.job_id, { ...jobs.value.get(event.job_id), ...event })
+  /** A download from a snapshot or an event; kept unless we already have a newer copy. */
+  function upsert(download: Download) {
+    const current = byId.value.get(download.id)
+    if (!current || isNewer(download.updated_at, current.updated_at)) byId.value.set(download.id, download)
   }
 
-  function remember(jobId: string, bookId: number, options: DownloadOptions, title?: string) {
-    jobs.value.set(jobId, { job_id: jobId, book_id: bookId, title, format: options.format, status: 'queued', percent: 0 })
+  function remember(id: string, bookId: number, options: DownloadOptions, title?: string) {
+    byId.value.set(id, { id, book_id: bookId, title, format: options.format, status: 'queued', percent: 0 })
   }
 
   async function enqueue(bookId: number, options: DownloadOptions = {}, title?: string) {
-    const { job_id } = await api.downloads.enqueue(bookId, options)
-    remember(job_id, bookId, options, title)
-    return job_id
+    const { id } = await api.downloads.enqueue(bookId, options)
+    remember(id, bookId, options, title)
+    return id
   }
 
   async function enqueueMany(books: { id: number; title?: string }[], options: DownloadOptions = {}) {
     if (books.length === 0) return []
-    const { jobs: queued } = await api.downloads.enqueueMany(books.map((b) => b.id), options)
-    for (const { job_id, book_id } of queued) {
-      remember(job_id, book_id, options, books.find((b) => b.id === book_id)?.title)
+    const { downloads: queued } = await api.downloads.enqueueMany(books.map((b) => b.id), options)
+    for (const { id, book_id } of queued) {
+      remember(id, book_id, options, books.find((b) => b.id === book_id)?.title)
     }
-    return queued.map((j) => j.job_id)
+    return queued.map((d) => d.id)
   }
 
-  async function cancel(jobId: string) {
-    await api.downloads.cancel(jobId)
+  async function cancel(id: string) {
+    await api.downloads.cancel(id)
   }
 
   /** Run a failed download again (only the decrypt step if its download is still kept). */
-  async function retry(jobId: string) {
-    await api.downloads.retry(jobId)
+  async function retry(id: string) {
+    await api.downloads.retry(id)
   }
 
-  const activeJobs = () => Array.from(jobs.value.values()).filter((j) => isActive(j))
+  const active = () => Array.from(byId.value.values()).filter((d) => isActive(d))
 
   /** The latest download of a book (the most recent one if there were several). */
-  function jobFor(bookId: number): DownloadJob | undefined {
-    let found: DownloadJob | undefined
-    for (const job of jobs.value.values()) {
-      if (job.book_id === bookId) found = job
+  function latestFor(bookId: number): Download | undefined {
+    let found: Download | undefined
+    for (const download of byId.value.values()) {
+      if (download.book_id === bookId) found = download
     }
     return found
   }
 
-  return { jobs, load, handleProgressEvent, enqueue, enqueueMany, cancel, retry, activeJobs, jobFor }
+  return { byId, load, upsert, enqueue, enqueueMany, cancel, retry, active, latestFor }
 })

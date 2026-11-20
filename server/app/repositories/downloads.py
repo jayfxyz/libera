@@ -18,7 +18,7 @@ def add(s: Session, *, id: str, library_book_id: int, format: str, split_chapter
         path: str, base_name: str, task_id: str) -> None:
     s.add(Download(id=id, library_book_id=library_book_id, format=format, split_chapters=split_chapters,
                    path=path, base_name=base_name, task_id=task_id, status=DownloadStatus.QUEUED, percent=0,
-                   created_at=now()))
+                   created_at=now(), updated_at=now()))
 
 
 def get(s: Session, download_id: str) -> Download | None:
@@ -40,7 +40,7 @@ def latest_done(s: Session, library_book_id: int) -> Download | None:
 
 
 def set_files(s: Session, download_id: str, files: str) -> None:
-    s.execute(update(Download).where(Download.id == download_id).values(files=files))
+    s.execute(update(Download).where(Download.id == download_id).values(files=files, updated_at=now()))
 
 
 def run_info(s: Session, download_id: str) -> dict[str, Any] | None:
@@ -58,12 +58,12 @@ def run_info(s: Session, download_id: str) -> dict[str, Any] | None:
 
 
 def set_task(s: Session, download_id: str, task_id: str) -> None:
-    s.execute(update(Download).where(Download.id == download_id).values(task_id=task_id))
+    s.execute(update(Download).where(Download.id == download_id).values(task_id=task_id, updated_at=now()))
 
 
 def set_progress(s: Session, download_id: str, status: DownloadStatus, percent: float) -> bool:
     """Only while the download is active, so a late tick can't revive a cancelled one."""
-    values: dict[str, Any] = {"status": status, "percent": percent}
+    values: dict[str, Any] = {"status": status, "percent": percent, "updated_at": now()}
     if status != DownloadStatus.QUEUED:
         values["started_at"] = func.coalesce(Download.started_at, now())
     result = s.execute(update(Download).where(Download.id == download_id, Download.status.in_(ACTIVE))
@@ -74,20 +74,20 @@ def set_progress(s: Session, download_id: str, status: DownloadStatus, percent: 
 def finish(s: Session, download_id: str, files: str) -> bool:
     result = s.execute(update(Download).where(Download.id == download_id, Download.status.in_(ACTIVE))
                        .values(status=DownloadStatus.DONE, percent=100, error=None, files=files,
-                               finished_at=now()))
+                               finished_at=now(), updated_at=now()))
     return result.rowcount > 0
 
 
 def fail(s: Session, download_id: str, error: str) -> bool:
     result = s.execute(update(Download).where(Download.id == download_id, Download.status.in_(ACTIVE))
-                       .values(status=DownloadStatus.FAILED, error=error, finished_at=now()))
+                       .values(status=DownloadStatus.FAILED, error=error, finished_at=now(), updated_at=now()))
     return result.rowcount > 0
 
 
 def cancel(s: Session, download_id: str) -> Download | None:
     """Cancel an active download; returns it (with its task_id), or None if it wasn't active."""
     result = s.execute(update(Download).where(Download.id == download_id, Download.status.in_(ACTIVE))
-                       .values(status=DownloadStatus.CANCELLED, finished_at=now()))
+                       .values(status=DownloadStatus.CANCELLED, finished_at=now(), updated_at=now()))
     return s.get(Download, download_id, populate_existing=True) if result.rowcount else None
 
 
@@ -96,7 +96,7 @@ def requeue(s: Session, download_id: str, task_id: str) -> bool:
     result = s.execute(update(Download).where(Download.id == download_id,
                                               Download.status == DownloadStatus.FAILED)
                        .values(status=DownloadStatus.QUEUED, percent=0, error=None, files=None,
-                               task_id=task_id, started_at=None, finished_at=None))
+                               task_id=task_id, started_at=None, finished_at=None, updated_at=now()))
     return result.rowcount > 0
 
 
@@ -106,7 +106,7 @@ def fail_orphans(s: Session, error: str) -> list[str]:
     return list(s.scalars(
         update(Download)
         .where(Download.status.in_(ACTIVE), or_(Download.task_id.is_(None), Download.task_id.not_in(live)))
-        .values(status=DownloadStatus.FAILED, error=error, finished_at=now())
+        .values(status=DownloadStatus.FAILED, error=error, finished_at=now(), updated_at=now())
         .returning(Download.id)))
 
 

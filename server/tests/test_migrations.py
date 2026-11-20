@@ -64,5 +64,19 @@ def test_0004_downgrades_cleanly(tmp_path):
     db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
     db.execute("UPDATE tasks SET status = 'completed'")
     db.migrate()  # and up again
-    assert db.scalar("SELECT version_num FROM alembic_version") == "0004"
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0005"
+    db.close()
+
+
+def test_0005_backfills_updated_at(tmp_path):
+    db = at_revision(tmp_path, "0004")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (10, 'B1', 'One', 'uk')")
+    db.execute("INSERT INTO library_books (id, book_id, account_id, date_added, last_downloaded) "
+               "VALUES (100, 10, 1, '2024-01-01', '2026-01-02 03:04:05')")
+    db.execute("INSERT INTO downloads (id, library_book_id, format, path, base_name, status, created_at, finished_at) "
+               "VALUES ('d1', 100, 'm4b', '/p', 'One', 'done', '2026-01-01 00:00:00', '2026-01-01 00:10:00')")
+    db.migrate()
+    assert db.scalar("SELECT updated_at FROM downloads") == "2026-01-01 00:10:00"
+    assert db.scalar("SELECT updated_at FROM library_books") == "2026-01-02 03:04:05"
     db.close()

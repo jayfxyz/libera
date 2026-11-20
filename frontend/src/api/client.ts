@@ -57,6 +57,7 @@ export interface BookSummary {
   length_minutes: number
   date_added: string
   has_pdf: boolean | null // a companion PDF exists; null until the next library sync
+  updated_at: string | null // ISO UTC; which copy is newer when a snapshot and an event cross
 }
 
 export interface BookDetail {
@@ -84,6 +85,7 @@ export interface BookDetail {
   file_path: string | null // where the last download was saved
   planned_path: string // where a download would go with the current settings
   has_pdf: boolean | null // a companion PDF exists; null until the next library sync
+  updated_at: string | null // ISO UTC; which copy is newer when a snapshot and an event cross
 }
 
 export type JobStatus = 'queued' | 'downloading' | 'decrypting' | 'done' | 'failed' | 'cancelled'
@@ -95,8 +97,8 @@ export interface DownloadFile {
   size_bytes: number
 }
 
-export interface DownloadJob {
-  job_id: string
+export interface Download {
+  id: string
   book_id: number
   title?: string
   format?: 'm4b' | 'mp3'
@@ -106,6 +108,7 @@ export interface DownloadJob {
   created_at?: string // ISO UTC
   finished_at?: string | null
   files?: DownloadFile[] | null // what a finished download wrote (null for older downloads)
+  updated_at?: string // ISO UTC; which copy is newer when a snapshot and an event cross
 }
 
 export interface DownloadOptions {
@@ -167,12 +170,12 @@ export const api = {
 
   downloads: {
     enqueue: (bookId: number, options: DownloadOptions = {}) =>
-      request<{ job_id: string }>('POST', '/downloads', { book_id: bookId, ...options }),
+      request<{ id: string }>('POST', '/downloads', { book_id: bookId, ...options }),
     enqueueMany: (bookIds: number[], options: DownloadOptions = {}) =>
-      request<{ jobs: { job_id: string; book_id: number }[] }>('POST', '/downloads/bulk', { book_ids: bookIds, ...options }),
-    list: () => request<DownloadJob[]>('GET', '/downloads'),
+      request<{ downloads: { id: string; book_id: number }[] }>('POST', '/downloads/bulk', { book_ids: bookIds, ...options }),
+    list: () => request<Download[]>('GET', '/downloads'),
     cancel: (id: string) => request<void>('DELETE', `/downloads/${id}`),
-    retry: (id: string) => request<{ job_id: string }>('POST', `/downloads/${id}/retry`),
+    retry: (id: string) => request<{ id: string }>('POST', `/downloads/${id}/retry`),
   },
 
   settings: {

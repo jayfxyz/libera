@@ -156,7 +156,7 @@ async function load() {
 }
 watch(() => props.bookId, load, { immediate: true })
 
-const job = computed(() => downloads.jobFor(props.bookId))
+const job = computed(() => downloads.latestFor(props.bookId))
 // The list's copy is updated live by download events; the detail is fetched once.
 const summary = computed(() => library.books.find((b) => b.id === props.bookId))
 // The list's copy is the fresher one after a sync; null means "not known yet".
@@ -182,7 +182,7 @@ async function download() {
 async function tryAgain() {
   if (!book.value) return
   const failed = job.value?.status === 'failed' ? job.value : undefined
-  await act(() => (failed ? downloads.retry(failed.job_id) : enqueue()))
+  await act(() => (failed ? downloads.retry(failed.id) : enqueue()))
 }
 
 async function savePdf() {
@@ -210,7 +210,7 @@ async function act(action: () => Promise<unknown>) {
 }
 
 async function cancel() {
-  if (job.value) await downloads.cancel(job.value.job_id)
+  if (job.value) await downloads.cancel(job.value.id)
 }
 
 // --- hidden

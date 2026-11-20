@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from .tasks import now
+
 if TYPE_CHECKING:
     from ..audible_api.models import AudibleBook, Genre
 
@@ -60,10 +62,11 @@ def upsert_book(s: Session, b: AudibleBook) -> int:
 def upsert_library_entry(s: Session, book_id: int, account_id: int, date_added: str, is_plus: bool) -> None:
     """Link a book to an account's library (restoring it if it had been removed)."""
     s.execute(text("""
-        INSERT INTO library_books (book_id, account_id, date_added, is_audible_plus, is_deleted)
-        VALUES (:book, :account, :added, :plus, 0)
-        ON CONFLICT(book_id, account_id) DO UPDATE SET date_added = excluded.date_added, is_deleted = 0
-    """), {"book": book_id, "account": account_id, "added": date_added, "plus": int(is_plus)})
+        INSERT INTO library_books (book_id, account_id, date_added, is_audible_plus, is_deleted, updated_at)
+        VALUES (:book, :account, :added, :plus, 0, :now)
+        ON CONFLICT(book_id, account_id) DO UPDATE SET date_added = excluded.date_added, is_deleted = 0,
+            updated_at = excluded.updated_at
+    """), {"book": book_id, "account": account_id, "added": date_added, "plus": int(is_plus), "now": now()})
 
 
 def set_contributors(s: Session, book_id: int, role: str, names: list[str]) -> None:
@@ -122,11 +125,12 @@ def mark_missing_as_removed(s: Session, account_id: int, present_asins: list[str
     """Flag an account's books that the latest scan didn't return."""
     if present_asins:
         _rows_exec(s, """
-            UPDATE library_books SET is_deleted = 1 WHERE account_id = :account
-            AND book_id IN (SELECT id FROM books WHERE audible_id NOT IN :asins)
-        """, account=account_id, asins=present_asins)
+            UPDATE library_books SET is_deleted = 1, updated_at = :now WHERE account_id = :account
+            AND is_deleted = 0 AND book_id IN (SELECT id FROM books WHERE audible_id NOT IN :asins)
+        """, account=account_id, asins=present_asins, now=now())
     else:
-        s.execute(text("UPDATE library_books SET is_deleted = 1 WHERE account_id = :account"), {"account": account_id})
+        s.execute(text("UPDATE library_books SET is_deleted = 1, updated_at = :now WHERE account_id = :account "
+                       "AND is_deleted = 0"), {"account": account_id, "now": now()})
 
 
 def _rows_exec(s: Session, sql: str, **params: Any) -> None:
@@ -197,7 +201,7 @@ def order_by(sort: str | None, order: str | None) -> str:
 
 _SUMMARY_COLUMNS = """b.id, b.audible_id, b.title, COALESCE(b.cover_url, '') AS cover_url,
     lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.tags, lb.account_id,
-    lb.last_format, b.length_minutes, lb.date_added, b.has_pdf"""
+    lb.last_format, b.length_minutes, lb.date_added, b.has_pdf, lb.updated_at"""
 
 
 def list_summaries(s: Session, *, fts_match: str = "", sort: str | None = None, order: str | None = None,
@@ -224,6 +228,13 @@ def list_summaries(s: Session, *, fts_match: str = "", sort: str | None = None, 
         LIMIT :limit OFFSET :offset""", **params)
 
 
+def get_summary(s: Session, book_id: int) -> dict[str, Any] | None:
+    """One book as the library list shows it."""
+    return _one(s, f"""
+        SELECT {_SUMMARY_COLUMNS} FROM books b JOIN library_books lb ON lb.book_id = b.id
+        WHERE b.id = :id ORDER BY lb.is_deleted, lb.id LIMIT 1""", id=book_id)
+
+
 def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
     return _one(s, """
         SELECT b.id, b.audible_id, b.title, COALESCE(b.subtitle,'') AS subtitle,
@@ -231,7 +242,7 @@ def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
                b.length_minutes, COALESCE(b.publisher,'') AS publisher,
                COALESCE(b.language,'') AS language, COALESCE(b.audible_rating,0) AS audible_rating,
                lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
-               lb.is_hidden, lb.last_format, lb.file_path, b.has_pdf
+               lb.is_hidden, lb.last_format, lb.file_path, b.has_pdf, lb.updated_at
         FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE b.id = :id""", id=book_id)
 
@@ -288,26 +299,27 @@ def update_fields(s: Session, book_id: int, **fields: Any) -> None:
     for column, value in fields.items():
         if column not in allowed:
             raise ValueError(column)
-        s.execute(text(f"UPDATE library_books SET {column} = :v WHERE book_id = :id"), {"v": value, "id": book_id})
+        s.execute(text(f"UPDATE library_books SET {column} = :v, updated_at = :now WHERE book_id = :id"),
+                  {"v": value, "id": book_id, "now": now()})
 
 
 def set_hidden(s: Session, book_ids: list[int], hidden: bool) -> None:
     if book_ids:
-        _rows_exec(s, "UPDATE library_books SET is_hidden = :hidden WHERE book_id IN :ids",
-                   hidden=int(hidden), ids=book_ids)
+        _rows_exec(s, "UPDATE library_books SET is_hidden = :hidden, updated_at = :now WHERE book_id IN :ids",
+                   hidden=int(hidden), ids=book_ids, now=now())
 
 
 def mark_downloaded(s: Session, book_id: int, fmt: str, file_path: str | None = None) -> None:
     s.execute(text("""
         UPDATE library_books SET liberation_status = 'liberated', last_downloaded = CURRENT_TIMESTAMP,
-            last_format = :fmt, file_path = COALESCE(:path, file_path)
-        WHERE book_id = :id"""), {"fmt": fmt, "path": file_path, "id": book_id})
+            last_format = :fmt, file_path = COALESCE(:path, file_path), updated_at = :now
+        WHERE book_id = :id"""), {"fmt": fmt, "path": file_path, "id": book_id, "now": now()})
 
 
 def mark_error(s: Session, book_id: int) -> None:
     s.execute(text("""
-        UPDATE library_books SET liberation_status = 'error'
-        WHERE book_id = :id AND liberation_status != 'liberated'"""), {"id": book_id})
+        UPDATE library_books SET liberation_status = 'error', updated_at = :now
+        WHERE book_id = :id AND liberation_status != 'liberated'"""), {"id": book_id, "now": now()})
 
 
 def not_downloaded_titles(s: Session) -> list[dict[str, Any]]:

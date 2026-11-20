@@ -9,6 +9,7 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
+from .events import EventBus
 from .services.accounts import AccountsService
 from .services.downloads import DownloadsService
 from .services.library import LibraryService
@@ -23,6 +24,10 @@ def get_download_svc(request: Request) -> DownloadsService:
     return request.app.state.ctx.downloads
 
 
+def get_event_bus(request: Request) -> EventBus:
+    return request.app.state.ctx.events
+
+
 def get_library_svc(request: Request) -> LibraryService:
     return request.app.state.ctx.library
 
@@ -33,5 +38,6 @@ def get_settings_svc(request: Request) -> SettingsService:
 
 AccountSvc = Annotated[AccountsService, Depends(get_account_svc)]
 DownloadSvc = Annotated[DownloadsService, Depends(get_download_svc)]
+EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 LibrarySvc = Annotated[LibraryService, Depends(get_library_svc)]
 SettingsSvc = Annotated[SettingsService, Depends(get_settings_svc)]

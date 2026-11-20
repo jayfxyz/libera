@@ -82,9 +82,9 @@ def seed(db, title="The Book"):
     return db.scalar("SELECT id FROM books")
 
 
-def wait_finished(api, job_id):
+def wait_finished(api, download_id):
     for _ in range(150):
-        job = next(j for j in api.get("/api/downloads").json() if j["job_id"] == job_id)
+        job = next(j for j in api.get("/api/downloads").json() if j["id"] == download_id)
         if job["status"] in ("done", "failed", "cancelled"):
             return job
         time.sleep(0.02)
@@ -96,11 +96,12 @@ def test_enqueue_names_the_download_from_book_and_settings(api, db, config, pipe
     config.filename_template = "{series} {series_index} - {title} ({year}, {duration_h}h)"
     resp = api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1})
     assert resp.status_code == 202
-    job = wait_finished(api, resp.json()["job_id"])
+    job = wait_finished(api, resp.json()["id"])
     assert job.pop("created_at").endswith("Z") and job.pop("finished_at").endswith("Z")
+    assert job.pop("updated_at").endswith("Z")
     book_dir = os.path.join(config.output_dir, "Jane Author - The Book")
     base = "Saga 1 - The Book (2007, 2h)"
-    assert job == {"job_id": resp.json()["job_id"], "book_id": book_id, "title": "The Book", "format": "m4b",
+    assert job == {"id": resp.json()["id"], "book_id": book_id, "title": "The Book", "format": "m4b",
                    "status": "done", "percent": 100, "message": os.path.join(book_dir, f"{base}.m4b"),
                    "files": [{"role": "audio", "name": f"{base}.m4b", "size_bytes": 1}]}
     t = pipeline.decrypted[0]
@@ -117,11 +118,11 @@ def test_enqueue_validation(api, db):
 
 def test_cancel_download(api, db):
     book_id = seed(db, title="Slow")
-    job_id = api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1}).json()["job_id"]
-    assert api.delete(f"/api/downloads/{job_id}").status_code == 204  # queued or running, both cancel
-    job = wait_finished(api, job_id)
+    download_id = api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1}).json()["id"]
+    assert api.delete(f"/api/downloads/{download_id}").status_code == 204  # queued or running, both cancel
+    job = wait_finished(api, download_id)
     assert job["status"] == "cancelled" and "message" not in job
-    assert api.delete(f"/api/downloads/{job_id}").status_code == 404
+    assert api.delete(f"/api/downloads/{download_id}").status_code == 404
 
 
 def test_retry_a_failed_download(api, db, pipeline):
@@ -132,20 +133,10 @@ def test_retry_a_failed_download(api, db, pipeline):
             raise DownloadFailed(failures.pop())
 
     pipeline.on_decrypt = broken_once
-    job_id = api.post("/api/downloads", json={"book_id": seed(db)}).json()["job_id"]
-    assert wait_finished(api, job_id)["message"] == "ffmpeg: boom"
-    assert api.post(f"/api/downloads/{job_id}/retry").status_code == 202
-    assert wait_finished(api, job_id)["status"] == "done"
+    download_id = api.post("/api/downloads", json={"book_id": seed(db)}).json()["id"]
+    assert wait_finished(api, download_id)["message"] == "ffmpeg: boom"
+    assert api.post(f"/api/downloads/{download_id}/retry").status_code == 202
+    assert wait_finished(api, download_id)["status"] == "done"
     assert (len(pipeline.fetched), len(pipeline.decrypted)) == (1, 2)
-    assert api.post(f"/api/downloads/{job_id}/retry").status_code == 404
+    assert api.post(f"/api/downloads/{download_id}/retry").status_code == 404
 
-
-@pytest.mark.parametrize("path", ["/ws/downloads", "/api/ws/downloads"])
-def test_progress_websocket(api, db, path):
-    book_id = seed(db)
-    with api.websocket_connect(path) as ws:
-        api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1})
-        statuses = []
-        while not statuses or statuses[-1] != "done":
-            statuses.append(ws.receive_json()["status"])
-    assert statuses == ["queued", "downloading", "decrypting", "done"]

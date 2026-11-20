@@ -1,4 +1,4 @@
-import type { BookSummary, DownloadJob } from '@/api/client'
+import type { BookSummary, Download } from '@/api/client'
 
 /** What a book looks like right now: the library's record plus any live download job. */
 export type BookState = 'downloaded' | 'downloading' | 'queued' | 'error' | 'none'
@@ -14,13 +14,13 @@ export interface BookStatus {
 
 const ACTIVE = new Set(['queued', 'downloading', 'decrypting'])
 
-export function isActive(job: DownloadJob | undefined): job is DownloadJob {
+export function isActive(job: Download | undefined): job is Download {
   return !!job && ACTIVE.has(job.status)
 }
 
 export function bookStatus(
   book: Pick<BookSummary, 'liberation_status' | 'last_format'>,
-  job?: DownloadJob,
+  job?: Download,
 ): BookStatus {
   if (isActive(job)) {
     if (job.status === 'queued') {

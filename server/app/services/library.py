@@ -14,7 +14,8 @@ from typing import Any
 
 from ..audible_api.models import AudibleBook
 from ..config import Config
-from ..db import Database
+from ..db import Database, iso_utc
+from ..events import EventBus
 from ..repositories import books as repo
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
 
@@ -27,9 +28,10 @@ EXPORT_FIELDS = [
 
 
 class LibraryService:
-    def __init__(self, db: Database, config: Config):
+    def __init__(self, db: Database, config: Config, events: EventBus):
         self._db = db
         self._config = config
+        self._events = events
 
     # --- import -------------------------------------------------------------------------
 
@@ -73,19 +75,20 @@ class LibraryService:
                                        account_id=account_id)
             ids = [r["id"] for r in rows]
             people, genre_names = repo.contributors(s, ids), repo.genres(s, ids)
-        return [
-            {
-                **r,
-                "is_finished": bool(r["is_finished"]),
-                "is_deleted": bool(r["is_deleted"]),
-                "is_hidden": bool(r["is_hidden"]),
-                "has_pdf": _has_pdf(r["has_pdf"]),
-                "authors": people[r["id"]]["author"],
-                "narrators": people[r["id"]]["narrator"],
-                "genres": genre_names[r["id"]],
-            }
-            for r in rows
-        ]
+        return [_summary(r, people[r["id"]], genre_names[r["id"]]) for r in rows]
+
+    def book_summary(self, book_id: int) -> dict[str, Any] | None:
+        """One book as list_books shows it (the data of a book.updated event)."""
+        with self._db.session() as s:
+            r = repo.get_summary(s, book_id)
+            if r is None:
+                return None
+            return _summary(r, repo.contributors(s, [book_id])[book_id], repo.genres(s, [book_id])[book_id])
+
+    def publish_book(self, book_id: int) -> None:
+        """Announce a book's new download state to open event streams."""
+        if (summary := self.book_summary(book_id)) is not None:
+            self._events.publish("book.updated", book_id, summary)
 
     def get_book(self, book_id: int) -> dict[str, Any] | None:
         with self._db.session() as s:
@@ -98,6 +101,7 @@ class LibraryService:
                 "is_finished": bool(r["is_finished"]),
                 "is_hidden": bool(r["is_hidden"]),
                 "has_pdf": _has_pdf(r["has_pdf"]),
+                "updated_at": iso_utc(r["updated_at"]),
                 "audible_rating": round(r["audible_rating"], 2),
                 "genres": repo.genres(s, [book_id])[book_id],
                 "authors": people["author"],
@@ -166,10 +170,12 @@ class LibraryService:
     def mark_downloaded(self, book_id: int, fmt: str, file_path: str | None = None) -> None:
         with self._db.session() as s:
             repo.mark_downloaded(s, book_id, fmt, file_path)
+        self.publish_book(book_id)
 
     def mark_error(self, book_id: int) -> None:
         with self._db.session() as s:
             repo.mark_error(s, book_id)
+        self.publish_book(book_id)
 
     # --- find downloaded files ------------------------------------------------------------------
 
@@ -183,6 +189,8 @@ class LibraryService:
                        if sanitize_filename(r["title"]) in on_disk]
             for book_id, fmt in matches:
                 repo.mark_downloaded(s, book_id, fmt)
+        for book_id, _ in matches:
+            self.publish_book(book_id)
         return len(matches)
 
     # --- export ------------------------------------------------------------------------------------
@@ -258,6 +266,21 @@ def audio_files_on_disk(root: str) -> dict[str, str]:
             if ext in (".m4b", ".mp3"):
                 found[p.stem] = ext[1:]
     return found
+
+
+def _summary(r: dict[str, Any], people: dict[str, list[str]], genre_names: list[str]) -> dict[str, Any]:
+    """A library list row as the API returns it."""
+    return {
+        **r,
+        "is_finished": bool(r["is_finished"]),
+        "is_deleted": bool(r["is_deleted"]),
+        "is_hidden": bool(r["is_hidden"]),
+        "has_pdf": _has_pdf(r["has_pdf"]),
+        "updated_at": iso_utc(r["updated_at"]),
+        "authors": people["author"],
+        "narrators": people["narrator"],
+        "genres": genre_names,
+    }
 
 
 def _has_pdf(value: int | None) -> bool | None:

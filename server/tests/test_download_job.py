@@ -14,7 +14,8 @@ from app.audible_api.content import ContentError, DownloadInfo
 from app.jobs import download
 from app.jobs.download import read_fetched_bundle, tiny_download_error
 from app.services.library import LibraryService
-from app.services.downloads import DownloadEvents, DownloadsService
+from app.events import EventBus
+from app.services.downloads import DownloadsService
 from app.services.task_queue import TaskQueueService
 from app.services.task_worker import TaskWorkerService
 from app.tasks.downloads import DownloadHandlers, Pipeline
@@ -91,8 +92,9 @@ class Downloader:
         self.db = db
         signals = TaskSignals()
         self.worker = TaskWorkerService(db, signals, workers=1)
-        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible,
-                                    LibraryService(db, config))
+        bus = EventBus()
+        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), bus, audible,
+                                    LibraryService(db, config, bus))
         DownloadHandlers(self.svc, Pipeline(audible)).register(self.worker)
         self.worker.start()
         self.svc.start()
@@ -102,7 +104,7 @@ class Downloader:
 
     async def wait(self, download_id: str) -> dict:
         for _ in range(600):
-            view = next(v for v in self.svc.list() if v["job_id"] == download_id)
+            view = next(v for v in self.svc.list() if v["id"] == download_id)
             settled = self.db.scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'processing')") == 0
             if view["status"] in ("done", "failed") and settled:  # the last step and its cleanup are over
                 return view
@@ -246,10 +248,10 @@ async def test_a_failed_decrypt_is_retried_from_the_kept_download(book_id, sourc
     downloader = make_downloader(audible)
     view = await downloader.run(book_id)
     assert (view["status"], view["message"]) == ("failed", "ffmpeg: Invalid data found")
-    assert read_fetched_bundle(downloader.svc.work_dir, view["job_id"]) is not None
+    assert read_fetched_bundle(downloader.svc.work_dir, view["id"]) is not None
 
-    assert downloader.svc.retry(view["job_id"])
-    view = await downloader.wait(view["job_id"])
+    assert downloader.svc.retry(view["id"])
+    view = await downloader.wait(view["id"])
     assert view["status"] == "done", view
     assert audible.calls["license"] == 1  # not downloaded again
     assert not os.path.exists(downloader.svc.work_dir)  # the bundle is gone once done

@@ -108,7 +108,7 @@ def test_bulk_download_and_options(api, db, pipeline):
     a, b = seed(db)
     resp = api.post("/api/downloads/bulk", json={"book_ids": [b, a, b, 999], "format": "mp3", "split_chapters": True})
     assert resp.status_code == 202
-    assert [j["book_id"] for j in resp.json()["jobs"]] == [b, a]  # duplicate and unknown id skipped
+    assert [j["book_id"] for j in resp.json()["downloads"]] == [b, a]  # duplicate and unknown id skipped
     wait_until(lambda: len(pipeline.decrypted) == 2)
     # Three workers may start them in any order; the queue order is the response's.
     assert sorted((t.title, t.format, t.split_chapters) for t in pipeline.decrypted) == [

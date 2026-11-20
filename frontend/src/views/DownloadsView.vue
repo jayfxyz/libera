@@ -15,7 +15,7 @@
       <section v-for="group in groups" v-show="group.jobs.length" :key="group.title" :aria-label="group.title" class="flex flex-col gap-2">
         <h2 class="eyebrow">{{ group.title }}</h2>
         <ul class="card overflow-hidden">
-          <li v-for="job in group.jobs" :key="job.job_id" class="flex items-start gap-3.5 border-b border-line-faint p-3 last:border-b-0 sm:px-4">
+          <li v-for="job in group.jobs" :key="job.id" class="flex items-start gap-3.5 border-b border-line-faint p-3 last:border-b-0 sm:px-4">
             <BookCover :src="coverFor(job.book_id)" :title="titleFor(job)" size="sm" rounded="rounded-lg" class="w-12 shrink-0" />
             <div class="flex min-w-0 flex-1 flex-col gap-1">
               <div class="flex items-start justify-between gap-2">
@@ -27,14 +27,14 @@
                   type="button"
                   class="btn-secondary h-9 shrink-0 px-3 text-[13px]"
                   :aria-label="`Cancel ${titleFor(job)}`"
-                  @click="downloads.cancel(job.job_id)"
+                  @click="downloads.cancel(job.id)"
                 >Cancel</button>
                 <button
                   v-if="job.status === 'failed'"
                   type="button"
                   class="btn-secondary h-9 shrink-0 px-3 text-[13px]"
                   :aria-label="`Retry ${titleFor(job)}`"
-                  @click="downloads.retry(job.job_id)"
+                  @click="downloads.retry(job.id)"
                 >Retry</button>
               </div>
               <span class="flex items-center gap-1.5 text-xs font-semibold" :class="tone(job).text">
@@ -58,7 +58,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { DownloadIcon } from '@lucide/vue'
-import type { DownloadJob } from '@/api/client'
+import type { Download } from '@/api/client'
 import BookCover from '@/components/library/BookCover.vue'
 import { isActive } from '@/lib/bookStatus'
 import { useDownloadsStore } from '@/stores/downloads'
@@ -72,7 +72,7 @@ onMounted(() => {
   if (library.books.length === 0) library.fetchBooks()
 })
 
-const jobs = computed(() => Array.from(downloads.jobs.values()))
+const jobs = computed(() => Array.from(downloads.byId.values()))
 const active = computed(() => {
   const order = { downloading: 0, decrypting: 0, queued: 1 } as Record<string, number>
   return jobs.value.filter((j) => isActive(j)).sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2))
@@ -89,14 +89,14 @@ const groups = computed(() => [
 function bookFor(id: number) {
   return library.books.find((b) => b.id === id)
 }
-function titleFor(job: DownloadJob) {
+function titleFor(job: Download) {
   return job.title || bookFor(job.book_id)?.title || `Book #${job.book_id}`
 }
 function coverFor(id: number) {
   return bookFor(id)?.cover_url ?? ''
 }
 
-function label(job: DownloadJob) {
+function label(job: Download) {
   switch (job.status) {
     case 'queued': return 'Queued'
     case 'downloading': return `Downloading · ${Math.round(job.percent)}%`
@@ -116,7 +116,7 @@ function ago(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
-function tone(job: DownloadJob) {
+function tone(job: Download) {
   if (job.status === 'done') return { text: 'text-ok-ink', dot: 'bg-ok' }
   if (job.status === 'cancelled') return { text: 'text-ink-soft', dot: 'bg-line' }
   if (job.status === 'failed') return { text: 'text-warn-ink', dot: 'bg-warn' }

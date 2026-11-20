@@ -8,11 +8,12 @@ from typing import TYPE_CHECKING
 
 from .config import Config
 from .db import Database
+from .events import EventBus
 
 if TYPE_CHECKING:
     from .audible_api.client import AudibleClient
     from .services.accounts import AccountsService
-    from .services.downloads import DownloadEvents, DownloadsService
+    from .services.downloads import DownloadsService
     from .services.library import LibraryService
     from .services.settings import SettingsService
     from .services.task_queue import TaskQueueService
@@ -28,6 +29,6 @@ class AppContext:
     library: "LibraryService"
     settings: "SettingsService"
     downloads: "DownloadsService"
-    download_events: "DownloadEvents"
+    events: EventBus
     task_queue: "TaskQueueService"
     task_worker: "TaskWorkerService"

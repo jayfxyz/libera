@@ -11,7 +11,8 @@ from app.jobs.download import DownloadFailed, discard_bundle, read_fetched_bundl
 from app.repositories import downloads as downloads_repo
 from app.services import downloads as downloads_module
 from app.services.library import LibraryService
-from app.services.downloads import INTERRUPTED, DownloadEvents, DownloadsService, InvalidOptions
+from app.events import EventBus
+from app.services.downloads import INTERRUPTED, DownloadsService, InvalidOptions
 from app.services.task_queue import TaskQueueService
 from app.services.task_worker import TaskWorkerService
 from app.tasks.downloads import DownloadHandlers
@@ -35,11 +36,13 @@ async def make_stack(db, config, pipeline):
     def build(start=True):
         signals = TaskSignals()
         worker = TaskWorkerService(db, signals, workers=1, cancel_poll=0.02)
-        svc = DownloadsService(db, config, TaskQueueService(db, signals), DownloadEvents(), audible=None,
-                               library=LibraryService(db, config))
+        bus = EventBus()
+        bus.attach(asyncio.get_running_loop())
+        svc = DownloadsService(db, config, TaskQueueService(db, signals), bus, audible=None,
+                               library=LibraryService(db, config, bus))
         DownloadHandlers(svc, pipeline).register(worker)
         workers.append(worker)
-        stack = SimpleNamespace(svc=svc, worker=worker, start=lambda: (worker.start(), svc.start()))
+        stack = SimpleNamespace(svc=svc, worker=worker, bus=bus, start=lambda: (worker.start(), svc.start()))
         if start:
             stack.start()
         return stack
@@ -69,17 +72,24 @@ def tasks_settled(db):
     return db.scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'processing')") == 0
 
 
-def drain(q):
-    return [q.get_nowait() for _ in range(q.qsize())]
+async def read_all(subscription, timeout=0.1):
+    """Every event waiting for this subscription."""
+    events = []
+    while True:
+        try:
+            events.append(await asyncio.wait_for(subscription.next(), timeout))
+        except asyncio.TimeoutError:
+            return events
 
 
 # --- the happy path ------------------------------------------------------------------
 
 async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline, make_stack):
     stack = make_stack()
-    events = stack.svc._events.subscribe()
-    download_id = stack.svc.enqueue(books["B1"])
-    await wait_for(lambda: status(db, download_id) == "done" and tasks_settled(db))
+    with stack.bus.subscribe() as subscription:
+        download_id = stack.svc.enqueue(books["B1"])
+        await wait_for(lambda: status(db, download_id) == "done" and tasks_settled(db))
+        events = await read_all(subscription)
 
     assert [t.download_id for t in pipeline.fetched] == [t.download_id for t in pipeline.decrypted] == [download_id]
     book_dir = os.path.join(config.output_dir, "Jane Author - Book 1")
@@ -96,8 +106,10 @@ async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline,
     assert [(r["type"], r["status"]) for r in db.query("SELECT type, status FROM tasks ORDER BY created_at")] == [
         ("download_book", "completed"), ("decrypt_book", "completed")]
     assert read_fetched_bundle(stack.svc.work_dir, download_id) is None  # gone once done
-    await asyncio.sleep(0.05)  # events from worker threads arrive on the next loop turns
-    assert [e["status"] for e in drain(events)] == ["queued", "downloading", "decrypting", "done"]
+    # Read only at the end: each resource's latest state, the earlier ones coalesced away.
+    assert [(e.type, e.id, e.data.get("status") or e.data.get("liberation_status")) for e in events] == [
+        ("download.updated", download_id, "done"), ("book.updated", str(books["B1"]), "liberated")]
+    assert events[0].data == view  # the same shape as REST
 
 
 async def test_where_it_goes_is_decided_when_queued(db, books, config, pipeline, make_stack):

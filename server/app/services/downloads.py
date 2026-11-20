@@ -25,6 +25,7 @@ from ..audible_api.content import ContentError
 from ..config import FORMATS, Config
 from ..db import Database, iso_utc
 from ..db.models import Download, DownloadStatus
+from ..events import EventBus
 from ..jobs.download import INCOMPLETE_DIR, FileEntry, Target, discard_bundle, prune_work_dir, read_fetched_bundle
 from ..jobs.filename import FilenameData, book_directory, render_filename
 from ..repositories import books as books_repo
@@ -37,6 +38,7 @@ log = logging.getLogger(__name__)
 
 HISTORY_LIMIT = 500
 PROGRESS_SAVE_INTERVAL = 3.0  # seconds
+PROGRESS_EVENT_INTERVAL = 0.5  # seconds: about two progress events a second per download
 BUNDLE_MAX_AGE = 7 * 24 * 3600  # fetched bundles nobody retried are deleted after this (seconds)
 INTERRUPTED = "Interrupted; download again"
 
@@ -57,39 +59,9 @@ class _Rollback(Exception):
     """Abandon the current transaction, including any task it queued."""
 
 
-class DownloadEvents:
-    """Live download events for WebSocket subscribers, until phase 3's event
-    stream. emit() is safe to call from any thread."""
-
-    def __init__(self) -> None:
-        self._subscribers: set[asyncio.Queue] = set()
-        self._loop: asyncio.AbstractEventLoop | None = None
-
-    def attach(self, loop: asyncio.AbstractEventLoop) -> None:
-        self._loop = loop
-
-    def subscribe(self) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue(maxsize=64)
-        self._subscribers.add(q)
-        return q
-
-    def unsubscribe(self, q: asyncio.Queue) -> None:
-        self._subscribers.discard(q)
-
-    def emit(self, event: dict[str, Any]) -> None:
-        if self._loop is not None and not self._loop.is_closed():
-            self._loop.call_soon_threadsafe(self._deliver, dict(event))
-
-    def _deliver(self, event: dict[str, Any]) -> None:
-        for q in self._subscribers:
-            try:
-                q.put_nowait(event)
-            except asyncio.QueueFull:
-                pass  # a slow client misses a tick; the next one catches up
-
 
 class DownloadsService:
-    def __init__(self, db: Database, config: Config, tasks: TaskQueueService, events: DownloadEvents,
+    def __init__(self, db: Database, config: Config, tasks: TaskQueueService, events: EventBus,
                  audible: AudibleClient, library: LibraryService):
         self._db = db
         self._config = config
@@ -98,8 +70,9 @@ class DownloadsService:
         self._audible = audible
         self._library = library
         self._live: dict[str, dict[str, Any]] = {}  # running downloads: status, percent, message
-        self._static: dict[str, dict[str, Any]] = {}  # running downloads: book_id, title, format
+        self._static: dict[str, dict[str, Any]] = {}  # running downloads: the resource as last read
         self._last_saved: dict[str, float] = {}
+        self._last_published: dict[str, float] = {}
 
     @property
     def work_dir(self) -> str:
@@ -107,7 +80,6 @@ class DownloadsService:
 
     def start(self) -> None:
         """At startup: fail downloads whose task is gone; prune history and old bundles."""
-        self._events.attach(asyncio.get_running_loop())
         with self._db.session() as s:
             orphans = repo.fail_orphans(s, INTERRUPTED)
             pruned = repo.prune_finished(s, HISTORY_LIMIT)
@@ -140,7 +112,7 @@ class DownloadsService:
         queued = []
         for book_id in dict.fromkeys(book_ids):
             if download_id := self.enqueue(book_id, format=format, split_chapters=split_chapters):
-                queued.append({"job_id": download_id, "book_id": book_id})
+                queued.append({"id": download_id, "book_id": book_id})
         return queued
 
     def cancel(self, download_id: str) -> bool:
@@ -202,15 +174,17 @@ class DownloadsService:
         if info is None or info["download"].status not in repo.ACTIVE:
             return None
         d = info["download"]
-        self._static[download_id] = {"book_id": info["book_id"], "title": info["title"], "format": str(d.format)}
+        self._static[download_id] = self._view(d, info["book_id"], info["title"])
         return Target(download_id=download_id, audible_account_id=info["audible_account_id"],
                       audible_id=info["audible_id"], title=info["title"], format=str(d.format),
                       split_chapters=d.split_chapters, path=d.path, base_name=d.base_name, has_pdf=info["has_pdf"])
 
     def report_progress(self, download_id: str, status: str, percent: float = 0, message: str = "") -> None:
-        """Broadcast every call; save status changes at once and percentages at
-        most every PROGRESS_SAVE_INTERVAL seconds."""
-        live: dict[str, Any] = {"status": str(status), "percent": round(percent, 1)}
+        """Save status changes at once and percentages at most every
+        PROGRESS_SAVE_INTERVAL; publish status changes at once and percentages
+        at most every PROGRESS_EVENT_INTERVAL."""
+        live: dict[str, Any] = {"status": str(status), "percent": round(percent, 1),
+                                "updated_at": iso_utc(repo.now())}
         if message:
             live["message"] = message
         previous = self._live.get(download_id)
@@ -225,7 +199,9 @@ class DownloadsService:
         # Only after saving: list() (another thread) overlays this on the saved
         # row, so it must never see a status the database doesn't have yet.
         self._live[download_id] = live
-        self._events.emit({"job_id": download_id, **self._static.get(download_id, {}), **live})
+        if changed or now - self._last_published.get(download_id, 0) >= PROGRESS_EVENT_INTERVAL:
+            self._last_published[download_id] = now
+            self._events.publish("download.updated", download_id, {**self._static.get(download_id, {}), **live})
 
     def chain_decrypt(self, download_id: str) -> bool:
         """The fetch is done: queue decrypt_book and move to decrypting, in one
@@ -253,6 +229,8 @@ class DownloadsService:
         discard_bundle(self.work_dir, download_id)
         self._forget(download_id)
         self._emit(download_id)
+        if info:
+            self._library.publish_book(info["book_id"])
 
     def fail(self, download_id: str, error: str) -> None:
         """Failed for good: record why and mark the book failed, in one
@@ -263,6 +241,8 @@ class DownloadsService:
                 books_repo.mark_error(s, info["book_id"])
         self._forget(download_id)
         self._emit(download_id)
+        if info:
+            self._library.publish_book(info["book_id"])
 
     # --- helpers -------------------------------------------------------------------------
 
@@ -319,19 +299,22 @@ class DownloadsService:
         self._live.pop(download_id, None)
         self._static.pop(download_id, None)
         self._last_saved.pop(download_id, None)
+        self._last_published.pop(download_id, None)
 
     def _emit(self, download_id: str) -> None:
         with self._db.session() as s:
             info = repo.run_info(s, download_id)
         if info:
-            self._events.emit(self._view(info["download"], info["book_id"], info["title"]))
+            self._events.publish("download.updated", download_id,
+                                 self._view(info["download"], info["book_id"], info["title"]))
 
     def _view(self, d: Download, book_id: int, title: str) -> dict[str, Any]:
-        """A download as the API and the WebSocket present it (`job_id` until phase 3)."""
+        """A download as the API and the event stream present it."""
         view: dict[str, Any] = {
-            "job_id": d.id, "book_id": book_id, "title": title, "format": str(d.format),
+            "id": d.id, "book_id": book_id, "title": title, "format": str(d.format),
             "status": str(d.status), "percent": round(d.percent or 0, 1),
             "created_at": iso_utc(d.created_at), "finished_at": iso_utc(d.finished_at),
+            "updated_at": iso_utc(d.updated_at),
             "files": json.loads(d.files) if d.files else None,
         }
         if d.status == DownloadStatus.FAILED and d.error:

@@ -285,7 +285,7 @@ onMounted(async () => {
 })
 
 function statusFor(b: BookSummary) {
-  return bookStatus(b, downloads.jobFor(b.id))
+  return bookStatus(b, downloads.latestFor(b.id))
 }
 
 const multipleAccounts = computed(() => accounts.accounts.length > 1)

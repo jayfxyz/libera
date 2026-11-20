@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { BookSummary, LibrarySort, SortOrder } from '@/api/client'
 import { api } from '@/api/client'
 import { bookStatus } from '@/lib/bookStatus'
+import { isNewer } from '@/lib/freshness'
 import { useDownloadsStore } from './downloads'
 
 /** Sort options, each with the direction it starts in when picked. */
@@ -89,7 +90,12 @@ export const useLibraryStore = defineStore('library', () => {
         if (batch.length < PAGE) break
       }
       if (seq !== requestSeq) return // a newer search/sort superseded this one
-      books.value = all
+      // An event may have brought a newer copy while this was loading.
+      const loaded = new Map(books.value.map((b) => [b.id, b]))
+      books.value = all.map((b) => {
+        const current = loaded.get(b.id)
+        return current && !isNewer(b.updated_at, current.updated_at) ? current : b
+      })
       // Keep the selection to books that are still listed.
       const ids = new Set(all.map((b) => b.id))
       selected.value = new Set([...selected.value].filter((id) => ids.has(id)))
@@ -100,7 +106,7 @@ export const useLibraryStore = defineStore('library', () => {
     }
   }
 
-  const stateOf = (b: BookSummary) => bookStatus(b, downloads.jobFor(b.id)).state
+  const stateOf = (b: BookSummary) => bookStatus(b, downloads.latestFor(b.id)).state
 
   // Books that count as "in the library": not removed from Audible, not hidden.
   const shelved = computed(() => books.value.filter((b) => !b.is_deleted && !b.is_hidden))
@@ -170,6 +176,12 @@ export const useLibraryStore = defineStore('library', () => {
     books.value = books.value.map((b) => (set.has(b.id) ? { ...b, ...patch } : b))
   }
 
+  /** A book from an event; replaces the loaded copy unless that one is newer.
+   *  Books that aren't loaded (another filter or search) are ignored. */
+  function upsertBook(book: BookSummary) {
+    books.value = books.value.map((b) => (b.id === book.id && isNewer(book.updated_at, b.updated_at) ? book : b))
+  }
+
   async function setHidden(ids: number[], hidden: boolean) {
     await api.library.setHidden(ids, hidden)
     patchBooks(ids, { is_hidden: hidden })
@@ -182,6 +194,6 @@ export const useLibraryStore = defineStore('library', () => {
     books, loading, error, searchQuery, sort, order, view, accountId, segment, selected, selectMode, selecting, openBookId,
     segmentBooks, visibleBooks, downloadable, selectedBooks, shelved,
     fetchBooks, toggleSelected, selectAllVisible, clearSelection, setSort, toggleOrder, setAccount, search,
-    patchBooks, setHidden, stateOf,
+    patchBooks, upsertBook, setHidden, stateOf,
   }
 })

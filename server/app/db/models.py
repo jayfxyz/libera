@@ -88,6 +88,7 @@ class LibraryBook(Base):
     last_format: Mapped[str | None] = mapped_column(Text)
     is_hidden: Mapped[int] = mapped_column(Integer, server_default="0")
     file_path: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str | None] = mapped_column(String)  # set on every change
 
 
 class Contributor(Base):
@@ -212,6 +213,7 @@ class Download(Base):
     error: Mapped[str | None] = mapped_column(Text)
     files: Mapped[str | None] = mapped_column(Text)  # JSON [{role, name, size_bytes}], names within path
     task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id", ondelete="SET NULL"))  # current task
+    updated_at: Mapped[str | None] = mapped_column(String)  # set on every change
     created_at: Mapped[str] = mapped_column(String, server_default=NOW)
     started_at: Mapped[str | None] = mapped_column(String)
     finished_at: Mapped[str | None] = mapped_column(String)
