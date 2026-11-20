@@ -45,14 +45,14 @@ def auth_start(req: AuthStart, account_svc: AccountSvc):
 
 @router.post("/accounts/auth/complete")
 def auth_complete(req: AuthComplete, account_svc: AccountSvc):
-    """Called after the user logged in at Amazon and pasted the maplanding URL."""
+    """Called after the user logged in at Amazon and pasted the maplanding URL.
+    Returns the account's {"id", "email"} (new, or the same login and region again)."""
     if not req.state or not req.response_url:
         raise HTTPException(400, "state and response_url are required")
     try:
-        email = account_svc.complete_login(req.state, req.response_url)
+        return account_svc.complete_login(req.state, req.response_url)
     except LoginError as e:
         raise HTTPException(e.status, str(e))
-    return {"email": email}
 
 
 @router.post("/accounts/{account_id}/scan")

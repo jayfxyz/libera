@@ -25,6 +25,9 @@ class AudibleClient:
     def complete_login(self, state: str, response_url: str) -> LoginResult:
         return self.login.complete(state, response_url)
 
+    def save_login(self, token_key: str, auth: Any) -> None:
+        self.login.save(token_key, auth)
+
     async def get_library(self, account_id: str) -> list[AudibleBook]:
         return await library.fetch_library(self._client(account_id))
 

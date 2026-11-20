@@ -9,6 +9,8 @@ export const regions = [
   { value: 'jp', label: 'Japan' },
   { value: 'in', label: 'India' },
   { value: 'es', label: 'Spain' },
+  { value: 'it', label: 'Italy' },
+  { value: 'br', label: 'Brazil' },
 ]
 
 /** Flag emoji for an Audible locale ("uk" is the ISO code GB). */

@@ -41,14 +41,20 @@ class AccountsService:
         Raises audible_api.auth.LoginError."""
         return self._audible.start_login(locale, name)
 
-    def complete_login(self, state: str, response_url: str) -> str:
-        """Finish a login (blocking network call) and save the account. Returns its email/id.
-        Raises audible_api.auth.LoginError."""
-        result = self._audible.complete_login(state, response_url)
+    def complete_login(self, state: str, response_url: str) -> dict[str, Any]:
+        """Finish a login (blocking network call) and save the account: {"id", "email"}.
+        One account per Amazon login and region. Raises audible_api.auth.LoginError."""
+        login = self._audible.complete_login(state, response_url)
         with self._db.session() as s:
-            repo.save_login(s, name=result.name, email=result.email, locale=result.locale,
-                            audible_account_id=result.account_id)
-        return result.email
+            existing = repo.find_login(s, email=login.email, locale=login.locale)
+            token_key = existing.audible_account_id if existing and existing.audible_account_id else None
+        # Accounts added before regions were told apart keep their file name.
+        token_key = token_key or f"{login.user_id}-{login.locale}"
+        self._audible.save_login(token_key, login.auth)
+        with self._db.session() as s:
+            account_id = repo.save_login(s, name=login.name, email=login.email, locale=login.locale,
+                                         audible_account_id=token_key)
+        return {"id": account_id, "email": login.email}
 
     def rename(self, account_id: int, name: str) -> None:
         with self._db.session() as s:

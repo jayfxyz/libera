@@ -32,12 +32,26 @@ def _config(connection: Connection) -> Config:
 
 
 def upgrade(engine: Engine) -> None:
-    """Adopt a pre-Alembic database if needed, then upgrade to the latest revision."""
-    with engine.begin() as conn:
-        tables = set(inspect(conn).get_table_names())
-        if "alembic_version" not in tables and tables & _baseline_tables():
-            _adopt(conn)
-        command.upgrade(_config(conn), "head")
+    """Adopt a pre-Alembic database if needed, then upgrade to the latest revision.
+
+    Foreign keys are off while migrations run, as SQLite requires for rebuilding a
+    table others refer to (and it ignores the switch inside a transaction); they're
+    checked before the upgrade commits."""
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        conn.commit()
+        try:
+            with conn.begin():
+                tables = set(inspect(conn).get_table_names())
+                if "alembic_version" not in tables and tables & _baseline_tables():
+                    _adopt(conn)
+                command.upgrade(_config(conn), "head")
+                broken = conn.exec_driver_sql("PRAGMA foreign_key_check").all()
+                if broken:
+                    raise RuntimeError(f"migration left rows pointing at missing rows: {broken[:5]}")
+        finally:
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            conn.commit()
 
 
 def _baseline():

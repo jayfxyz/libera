@@ -136,7 +136,7 @@ export const api = {
     authStart: (locale: string, name: string) =>
       request<{ auth_url: string; state: string }>('POST', '/accounts/auth/start', { locale, name }),
     authComplete: (state: string, responseUrl: string) =>
-      request<{ email: string }>('POST', '/accounts/auth/complete', { state, response_url: responseUrl }),
+      request<{ id: number; email: string }>('POST', '/accounts/auth/complete', { state, response_url: responseUrl }),
     scan: (id: number) => request<{ imported: number }>('POST', `/accounts/${id}/scan`),
   },
 

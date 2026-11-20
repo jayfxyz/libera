@@ -158,7 +158,7 @@ def test_login_complete_needs_code(tmp_path):
         flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?foo=bar")
 
 
-def test_login_complete_saves_tokens(tmp_path):
+def test_login_complete_registers_and_returns_the_login_unsaved(tmp_path):
     flow = LoginFlow(str(tmp_path))
     _, state = flow.start("uk", "Me")
     registration = {"customer_info": {"user_id": "amzn1.account.ABC", "name": "Jo"}, "website_cookies": {"session-id": "1"}}
@@ -166,8 +166,8 @@ def test_login_complete_saves_tokens(tmp_path):
          patch("app.audible_api.auth.storage.save_auth") as save:
         result = flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
     assert reg.call_args.kwargs["authorization_code"] == "CODE"
-    assert (result.account_id, result.email, result.name, result.locale) == ("amzn1.account.ABC", "amzn1.account.ABC", "Me", "uk")
-    assert save.call_args.args[:2] == (str(tmp_path), "amzn1.account.ABC")
+    assert (result.user_id, result.email, result.name, result.locale) == ("amzn1.account.ABC", "amzn1.account.ABC", "Me", "uk")
+    assert result.auth is not None and not save.called  # the caller picks the token file
     # The state is single-use.
     with pytest.raises(LoginError):
         flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
@@ -207,31 +207,27 @@ def test_registration_uses_the_libraries_current_app_profile(tmp_path):
     assert len(sent["body"]["registration_data"]["device_serial"]) == 40
 
 
-def test_logging_in_again_deregisters_the_previous_device(tmp_path):
+def test_saving_over_a_login_deregisters_only_that_logins_device(tmp_path):
     flow = LoginFlow(str(tmp_path))
-    registration = {"customer_info": {"user_id": "amzn1.account.ABC"}, "website_cookies": {"session-id": "1"}}
-    previous = MagicMock()
-    for attempt in range(2):
-        _, state = flow.start("uk", "Me")
-        with patch("app.audible_api.auth.register_", return_value=registration), \
-             patch("app.audible_api.auth.storage.save_auth") as save, \
-             patch("app.audible_api.auth.storage.load_auth", return_value=None if attempt == 0 else previous):
-            flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
-        save.assert_called_once()
-    previous.deregister_device.assert_called_once_with()
+    previous_uk = MagicMock()
+    saved = {"amzn1.account.ABC-uk": previous_uk}
+    with patch("app.audible_api.auth.storage.load_auth", side_effect=lambda _dir, key: saved.get(key)), \
+         patch("app.audible_api.auth.storage.save_auth") as save:
+        flow.save("amzn1.account.ABC-us", MagicMock())  # another region: nothing to replace
+        assert not previous_uk.deregister_device.called
+        flow.save("amzn1.account.ABC-uk", MagicMock())  # the same region again
+    previous_uk.deregister_device.assert_called_once_with()
+    assert [c.args[1] for c in save.call_args_list] == ["amzn1.account.ABC-us", "amzn1.account.ABC-uk"]
 
 
-def test_failed_deregistration_does_not_fail_the_login(tmp_path):
+def test_failed_deregistration_does_not_fail_the_save(tmp_path):
     flow = LoginFlow(str(tmp_path))
-    _, state = flow.start("uk", "Me")
     previous = MagicMock()
     previous.deregister_device.side_effect = RuntimeError("Amazon said no")
-    registration = {"customer_info": {"user_id": "amzn1.account.ABC"}, "website_cookies": {"session-id": "1"}}
-    with patch("app.audible_api.auth.register_", return_value=registration), \
-         patch("app.audible_api.auth.storage.save_auth"), \
+    with patch("app.audible_api.auth.storage.save_auth") as save, \
          patch("app.audible_api.auth.storage.load_auth", return_value=previous):
-        result = flow.complete(state, "https://www.amazon.co.uk/ap/maplanding?openid.oa2.authorization_code=CODE")
-    assert result.account_id == "amzn1.account.ABC"
+        flow.save("amzn1.account.ABC-uk", MagicMock())
+    save.assert_called_once()
 
 
 def test_saved_login_is_private(tmp_path):

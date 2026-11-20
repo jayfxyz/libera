@@ -15,6 +15,7 @@ import logging
 import secrets
 import threading
 from dataclasses import dataclass
+from typing import Any
 
 import audible
 import audible.auth as audible_auth
@@ -62,10 +63,12 @@ class _PendingLogin:
 
 @dataclass
 class LoginResult:
-    account_id: str  # stable key for the token file (Amazon user_id)
+    """A completed login, not saved yet: the caller picks its token file (see save)."""
+    user_id: str  # Amazon's id for the person; the same in every region
     email: str
     name: str
     locale: str
+    auth: Any = None  # audible.Authenticator holding the new device's tokens
 
 
 class LoginFlow:
@@ -121,12 +124,17 @@ class LoginFlow:
         info = auth.customer_info or {}
         # Amazon doesn't always return an email (UK returns user_id instead).
         email = info.get("email") or info.get("user_id", "")
-        account_id = info.get("user_id") or email.replace("@", "_at_").replace(".", "_")
-        previous = _load_previous(self.accounts_dir, account_id)
-        storage.save_auth(self.accounts_dir, account_id, auth)
+        user_id = info.get("user_id") or email.replace("@", "_at_").replace(".", "_")
+        return LoginResult(user_id=user_id, email=email, name=pending.name, locale=pending.locale, auth=auth)
+
+    def save(self, token_key: str, auth: Any) -> None:
+        """Save a login's tokens as token_key, replacing the login saved there before:
+        that one's device is deregistered from Amazon. Only the same login in the same
+        region shares a key, so other regions' devices are left alone."""
+        previous = _load_previous(self.accounts_dir, token_key)
+        storage.save_auth(self.accounts_dir, token_key, auth)
         if previous is not None:
-            _deregister(previous, account_id)
-        return LoginResult(account_id=account_id, email=email, name=pending.name, locale=pending.locale)
+            _deregister(previous, token_key)
 
 
 def _load_previous(accounts_dir: str, account_id: str):

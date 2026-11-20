@@ -32,11 +32,13 @@ def _enum(cls: type[StrEnum], name: str) -> Enum:
 
 
 class Account(Base):
+    """One Amazon login in one region: the same login in another region is another account."""
     __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("email", "locale"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     account_name: Mapped[str] = mapped_column(Text)
-    email: Mapped[str] = mapped_column(Text, unique=True)  # Amazon may give a user id instead
+    email: Mapped[str] = mapped_column(Text)  # Amazon may give a user id instead
     locale: Mapped[str] = mapped_column(Text)
     audible_account_id: Mapped[str] = mapped_column(Text, server_default="")  # token file key
     library_scan_enabled: Mapped[int] = mapped_column(Integer, server_default="1")

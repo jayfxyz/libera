@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 from alembic import command
 
 from app.db import Database
@@ -64,7 +65,7 @@ def test_0004_downgrades_cleanly(tmp_path):
     db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
     db.execute("UPDATE tasks SET status = 'completed'")
     db.migrate()  # and up again
-    assert db.scalar("SELECT version_num FROM alembic_version") == "0005"
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0006"
     db.close()
 
 
@@ -79,6 +80,28 @@ def test_0005_backfills_updated_at(tmp_path):
     db.migrate()
     assert db.scalar("SELECT updated_at FROM downloads") == "2026-01-01 00:10:00"
     assert db.scalar("SELECT updated_at FROM library_books") == "2026-01-02 03:04:05"
+    db.close()
+
+
+def test_0006_allows_one_login_in_several_regions_and_keeps_everything(tmp_path):
+    db = at_revision(tmp_path, "0005")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale, audible_account_id, last_scanned_at) "
+               "VALUES (1, 'A', 'amzn1.account.X', 'uk', 'amzn1.account.X', '2026-01-01 00:00:00'), "
+               "(7, 'B', 'b@x', 'us', 'b', NULL)")
+    db.execute("DELETE FROM accounts WHERE id = 7")  # the next account must not get id 7 again
+    db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (10, 'B1', 'One', 'uk')")
+    db.execute("INSERT INTO library_books (id, book_id, account_id, date_added) VALUES (100, 10, 1, '2024-01-01')")
+    db.migrate()  # the app's path: foreign keys off while the table is rebuilt
+
+    assert db.query_one("SELECT account_name, audible_account_id, last_scanned_at FROM accounts WHERE id = 1") == {
+        "account_name": "A", "audible_account_id": "amzn1.account.X", "last_scanned_at": "2026-01-01 00:00:00"}
+    assert db.scalar("SELECT account_id FROM library_books WHERE id = 100") == 1
+    db.execute("INSERT INTO accounts (account_name, email, locale) VALUES ('A US', 'amzn1.account.X', 'us')")
+    assert db.scalar("SELECT max(id) FROM accounts") == 8
+    with pytest.raises(Exception):  # the same login and region twice is still refused
+        db.execute("INSERT INTO accounts (account_name, email, locale) VALUES ('A', 'amzn1.account.X', 'uk')")
+    assert db.query("PRAGMA foreign_key_check") == []
+    assert db.scalar("PRAGMA foreign_keys") == 1  # back on after migrating
     db.close()
 
 

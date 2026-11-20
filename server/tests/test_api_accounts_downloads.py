@@ -38,15 +38,37 @@ def test_login_flow_creates_account(api, audible):
     assert api.post("/api/accounts/auth/start", json={"locale": "uk", "name": "Mine"}).json() == {
         "auth_url": "https://www.amazon.co.uk/ap/signin?x", "state": "state-1"}
     resp = api.post("/api/accounts/auth/complete", json={"state": "state-1", "response_url": "https://x"})
-    assert resp.json() == {"email": "me@example.com"}
     accounts = api.get("/api/accounts").json()
+    assert resp.json() == {"id": accounts[0]["id"], "email": "me@example.com"}
     assert [(a["account_name"], a["email"], a["locale"], a["library_scan_enabled"]) for a in accounts] == [
         ("Mine", "me@example.com", "uk", True)]
+    audible.save_login.assert_called_once_with("amzn1.account.NEW-uk", None)
 
-    # Logging in again with another region updates the account's region too.
-    audible.complete_login.return_value = LoginResult("amzn1.account.NEW", "me@example.com", "Mine", "us")
-    api.post("/api/accounts/auth/complete", json={"state": "state-2", "response_url": "https://x"})
-    assert [(a["id"], a["locale"]) for a in api.get("/api/accounts").json()] == [(accounts[0]["id"], "us")]
+
+def login(api, audible, locale, name="Mine"):
+    audible.complete_login.return_value = LoginResult("amzn1.account.NEW", "me@example.com", name, locale)
+    return api.post("/api/accounts/auth/complete", json={"state": "s", "response_url": "https://x"}).json()
+
+
+def test_one_login_in_two_regions_is_two_accounts_with_their_own_token_files(api, audible):
+    uk, us = login(api, audible, "uk"), login(api, audible, "us", name="Mine US")
+    assert uk["id"] != us["id"]
+    assert [(a["account_name"], a["locale"]) for a in api.get("/api/accounts").json()] == [
+        ("Mine", "uk"), ("Mine US", "us")]
+    assert [c.args[0] for c in audible.save_login.call_args_list] == ["amzn1.account.NEW-uk", "amzn1.account.NEW-us"]
+
+    # Logging in to the UK again updates that account and replaces only the UK login.
+    assert login(api, audible, "uk", name="Renamed")["id"] == uk["id"]
+    assert audible.save_login.call_args.args[0] == "amzn1.account.NEW-uk"
+    assert [a["account_name"] for a in api.get("/api/accounts").json()] == ["Renamed", "Mine US"]
+
+
+def test_an_account_added_before_regions_keeps_its_token_file(api, db, audible):
+    db.execute("INSERT INTO accounts (account_name, email, locale, audible_account_id) "
+               "VALUES ('Old', 'me@example.com', 'uk', 'amzn1.account.NEW')")
+    login(api, audible, "uk")
+    assert audible.save_login.call_args.args[0] == "amzn1.account.NEW"
+    assert len(api.get("/api/accounts").json()) == 1
 
 
 def test_login_errors(api, audible):
