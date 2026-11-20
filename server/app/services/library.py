@@ -277,6 +277,7 @@ def _summary(r: dict[str, Any], people: dict[str, list[str]], genre_names: list[
         "is_hidden": bool(r["is_hidden"]),
         "has_pdf": _has_pdf(r["has_pdf"]),
         "updated_at": iso_utc(r["updated_at"]),
+        "account_ids": sorted(int(i) for i in r["account_ids"].split(",")) if r["account_ids"] else [],
         "authors": people["author"],
         "narrators": people["narrator"],
         "genres": genre_names,

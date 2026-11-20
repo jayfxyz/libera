@@ -49,7 +49,8 @@ export interface BookSummary {
   is_deleted: boolean
   is_hidden: boolean
   tags: string
-  account_id: number
+  account_id: number // the library entry this row shows
+  account_ids: number[] // every account that owns the book (one row per book across accounts)
   authors: string[]
   narrators: string[]
   genres: string[]

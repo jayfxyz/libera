@@ -190,7 +190,7 @@
             :checked="library.selected.has(b.id)"
             :open="openBookId === b.id"
             :selecting="library.selecting"
-            :account="multipleAccounts ? accountShort(b.account_id) : undefined"
+            :account="multipleAccounts ? accountsShort(b.account_ids) : undefined"
             @toggle="library.toggleSelected(b.id)"
             @open="openBook(b.id)"
           />
@@ -308,10 +308,12 @@ function statusFor(b: BookSummary) {
 
 const multipleAccounts = computed(() => accounts.accounts.length > 1)
 
-/** "🇬🇧 Personal" for the list's Account column. */
-function accountShort(id: number) {
-  const a = accounts.accounts.find((x) => x.id === id)
-  return a ? `${flag(a.locale)} ${a.account_name || a.email}` : ''
+/** "🇬🇧 Personal, 🇬🇧 Family" for the list's Account column: every account that owns the book. */
+function accountsShort(ids: number[]) {
+  return accounts.accounts
+    .filter((a) => ids.includes(a.id))
+    .map((a) => `${flag(a.locale)} ${a.account_name || a.email}`)
+    .join(', ')
 }
 
 function accountLabel(a: Account) {

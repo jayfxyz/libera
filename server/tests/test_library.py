@@ -106,6 +106,22 @@ def test_search_matches_word_prefixes_and_tolerates_punctuation(db, library_svc)
     assert library_svc.list_books(search="?!") == []
 
 
+def test_a_book_in_two_accounts_is_one_row_unless_filtering_by_account(db, library_svc):
+    add_account(db, 1)
+    add_account(db, 2, audible_account_id="amzn1.account.OTHER")
+    import_books(db, 1, [make_book("S", title="Shared", date_added="2021-11-19"), make_book("A", title="Mine")])
+    import_books(db, 2, [make_book("S", title="Shared", date_added="2021-11-27")])
+
+    rows = library_svc.list_books()
+    assert sorted((b["audible_id"], b["account_ids"]) for b in rows) == [("A", [1]), ("S", [1, 2])]
+    shared = next(b for b in rows if b["audible_id"] == "S")
+    assert shared == library_svc.book_summary(shared["id"])  # the same entry book.updated events describe
+    assert [b["audible_id"] for b in library_svc.list_books(search="shared")] == ["S"]
+
+    assert [(b["audible_id"], b["account_id"]) for b in library_svc.list_books(account_id=2)] == [("S", 2)]
+    assert sorted(b["audible_id"] for b in library_svc.list_books(account_id=1)) == ["A", "S"]
+
+
 def test_get_and_update_book(db, library_svc):
     add_account(db)
     import_books(db, 1, [make_book("A", title="T", authors=["Au"], narrators=["Na"],

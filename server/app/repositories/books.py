@@ -199,21 +199,31 @@ def order_by(sort: str | None, order: str | None) -> str:
     return ", ".join(parts)
 
 
+# account_ids: every account that owns the book, as "3,6" (the service makes it a list).
 _SUMMARY_COLUMNS = """b.id, b.audible_id, b.title, COALESCE(b.cover_url, '') AS cover_url,
     lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.tags, lb.account_id,
+    (SELECT group_concat(o.account_id) FROM library_books o WHERE o.book_id = b.id) AS account_ids,
     lb.last_format, b.length_minutes, lb.date_added, b.has_pdf, lb.updated_at"""
+
+# The library entry that stands for a book owned by several accounts: one that isn't
+# removed, then the oldest. get_summary (book.updated events) picks the same one.
+_REPRESENTATIVE_ENTRY = """lb.id = (SELECT e.id FROM library_books e WHERE e.book_id = b.id
+    ORDER BY e.is_deleted, e.id LIMIT 1)"""
 
 
 def list_summaries(s: Session, *, fts_match: str = "", sort: str | None = None, order: str | None = None,
                    page: int = 1, limit: int = PAGE_SIZE, account_id: int | None = None) -> list[dict[str, Any]]:
-    """One page of library rows. fts_match is an FTS5 query (see services); without
-    an explicit sort, search results come in relevance order."""
+    """One page of library rows: one per book, or one per entry of the given account.
+    fts_match is an FTS5 query (see services); without an explicit sort, search results
+    come in relevance order."""
     clause = order_by(sort, order)
     limit = min(max(limit, 1), MAX_PAGE_SIZE)
     where, params = [], {"limit": limit, "offset": (max(page, 1) - 1) * limit}
     if account_id is not None:
         where.append("lb.account_id = :account")
         params["account"] = account_id
+    else:
+        where.append(_REPRESENTATIVE_ENTRY)
     if fts_match:
         where.append("books_fts MATCH :match")
         params["match"] = fts_match
