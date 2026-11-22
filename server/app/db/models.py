@@ -177,6 +177,7 @@ class Task(Base):
     error: Mapped[str | None] = mapped_column(Text)  # last failure message
     created_at: Mapped[str] = mapped_column(String, server_default=NOW)
     locked_at: Mapped[str | None] = mapped_column(String)  # set on claim, refreshed while running
+    not_before: Mapped[str | None] = mapped_column(String)  # workers don't claim it before this; NULL = no restriction
     finished_at: Mapped[str | None] = mapped_column(String)
 
     __table_args__ = (Index("ix_tasks_status_created", "status", "created_at"),)

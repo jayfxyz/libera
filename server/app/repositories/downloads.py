@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Row, delete, func, or_, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import Row, delete, exists, func, or_, select, update
+from sqlalchemy.orm import Session, aliased
 
 from ..db.models import Account, Book, Download, DownloadStatus, LibraryBook, Task, TaskStatus
 from .tasks import now
@@ -120,6 +120,18 @@ def recent(s: Session, limit: int) -> list[Row]:
     finished = s.execute(base.where(Download.status.in_(FINISHED))
                          .order_by(Download.finished_at.desc(), Download.created_at.desc()).limit(limit)).all()
     return sorted([*active, *finished], key=lambda r: r[0].created_at or "")
+
+
+def latest_failed(s: Session) -> list[str]:
+    """Downloads that failed and are their book's latest (an older failure of a
+    book that was downloaded since, or is downloading now, doesn't count), oldest first."""
+    newer = aliased(Download)
+    return list(s.scalars(
+        select(Download.id)
+        .where(Download.status == DownloadStatus.FAILED,
+               ~exists().where(newer.library_book_id == Download.library_book_id,
+                               newer.created_at > Download.created_at))
+        .order_by(Download.created_at)))
 
 
 def prune_finished(s: Session, keep: int) -> int:

@@ -91,7 +91,7 @@ class Downloader:
     def __init__(self, db, config, audible):
         self.db = db
         signals = TaskSignals()
-        self.worker = TaskWorkerService(db, signals, workers=1)
+        self.worker = TaskWorkerService(db, signals, workers=1, retry_base_delay=0)
         bus = EventBus()
         self.svc = DownloadsService(db, config, TaskQueueService(db, signals), bus, audible,
                                     LibraryService(db, config, bus))

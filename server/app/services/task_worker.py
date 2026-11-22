@@ -3,7 +3,10 @@ tasks table. They read only the table; TaskSignals is an optional accelerator.
 
 - A handler is `async def handler(payload, ctx: TaskContext) -> None`.
 - TaskFailed(message, retry=False) fails the task permanently; any other
-  exception retries while attempts remain. No backoff.
+  exception retries while attempts remain, after a growing pause
+  (retry_base_delay, then 4x that, ..., with some jitter).
+- TaskDeferred(message, delay) puts the task back for `delay` seconds
+  without using up an attempt.
 - A task interrupted by shutdown stays `processing` and is released at the
   next startup without losing an attempt.
 - While a handler runs, locked_at is refreshed every HEARTBEAT_INTERVAL and
@@ -16,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 from typing import Any, Awaitable, Callable, NamedTuple
 
@@ -25,7 +29,7 @@ from pydantic import BaseModel
 from ..db import Database
 from ..db.models import Task
 from ..repositories import tasks as repo
-from ..tasks.base import BaseTask, TaskContext, TaskFailed
+from ..tasks.base import BaseTask, TaskContext, TaskDeferred, TaskFailed
 from ..tasks.signals import TaskSignals
 
 log = logging.getLogger(__name__)
@@ -36,6 +40,7 @@ HISTORY_LIMIT = 500  # finished tasks kept
 IDLE_POLL = 30.0  # seconds; workers also wake as soon as something is enqueued
 HEARTBEAT_INTERVAL = 30.0
 CANCEL_POLL = 1.0
+RETRY_BASE_DELAY = 30.0  # seconds before the 2nd attempt; each later one waits 4x longer
 
 
 class Outcome(NamedTuple):
@@ -43,12 +48,14 @@ class Outcome(NamedTuple):
 
     error: str | None = None
     retry: bool = False
+    defer: float | None = None  # seconds: put back without using up an attempt
 
 
 class TaskWorkerService:
     def __init__(self, db: Database, signals: TaskSignals, workers: int = 3, *,
                  idle_poll: float = IDLE_POLL, heartbeat_interval: float = HEARTBEAT_INTERVAL,
-                 cancel_poll: float = CANCEL_POLL, history_limit: int = HISTORY_LIMIT):
+                 cancel_poll: float = CANCEL_POLL, history_limit: int = HISTORY_LIMIT,
+                 retry_base_delay: float = RETRY_BASE_DELAY):
         self._db = db
         self._signals = signals
         self._count = workers
@@ -56,6 +63,7 @@ class TaskWorkerService:
         self._heartbeat_interval = heartbeat_interval
         self._cancel_poll = cancel_poll
         self._history_limit = history_limit
+        self._retry_base_delay = retry_base_delay
         self._handlers: dict[str, tuple[type[BaseTask], Handler]] = {}
         self._workers: list[asyncio.Task] = []
 
@@ -122,11 +130,11 @@ class TaskWorkerService:
         try:
             handler, payload = self._prepare(task)
         except TaskFailed as e:  # can't even start: permanent
-            await asyncio.to_thread(self._finish, task.id, str(e), False)
+            await asyncio.to_thread(self._finish, task, Outcome(str(e)))
             return
         outcome = await self._execute(task, handler, payload)
         if outcome is not None:  # None: cancelled, the row already says so
-            await asyncio.to_thread(self._finish, task.id, *outcome)
+            await asyncio.to_thread(self._finish, task, outcome)
 
     def _prepare(self, task: Task) -> tuple[Handler, BaseModel]:
         """The handler for the task's type and its validated payload."""
@@ -162,6 +170,8 @@ class TaskWorkerService:
             return None
         except TaskFailed as e:
             return Outcome(str(e), e.retry)
+        except TaskDeferred as e:
+            return Outcome(str(e), defer=e.delay)
         except Exception as e:  # a bug in a handler must not kill the worker
             log.exception("task %s (%s) failed", task.id, task.type)
             return Outcome(f"{type(e).__name__}: {e}", retry=True)
@@ -172,18 +182,30 @@ class TaskWorkerService:
             if token is not None:
                 otel_context.detach(token)
 
-    def _finish(self, task_id: str, error: str | None, retry: bool) -> None:
-        """Write the outcome: completed, or failed (back to pending if it will retry)."""
+    def _finish(self, task: Task, outcome: Outcome) -> None:
+        """Write the outcome: completed, deferred, or failed (back to pending,
+        after a pause, if it will retry)."""
         with self._db.session() as s:
-            if error is None:
-                repo.complete(s, task_id)
+            if outcome.defer is not None:
+                repo.defer(s, task.id, outcome.error or "", repo.later(outcome.defer))
+                status = "deferred"
+            elif outcome.error is None:
+                repo.complete(s, task.id)
                 status = "completed"
             else:
-                status = repo.fail(s, task_id, error, retry)
-        if status == "pending":
-            log.warning("task %s failed, will retry: %s", task_id, error)
+                status = repo.fail(s, task.id, outcome.error, outcome.retry,
+                                   not_before=repo.later(self.retry_delay(task.attempts)))
+        if status == "deferred":
+            log.info("task %s deferred for %.0fs: %s", task.id, outcome.defer, outcome.error)
+        elif status == "pending":
+            log.warning("task %s failed, will retry: %s", task.id, outcome.error)
         else:
-            self._signals.forget(task_id)  # no retry coming
+            self._signals.forget(task.id)  # no retry coming
+
+    def retry_delay(self, attempt: int) -> float:
+        """Seconds to wait after failed attempt number `attempt` (1-based): the
+        base delay, 4x more each time, +-20% so retries don't line up."""
+        return self._retry_base_delay * 4 ** (attempt - 1) * random.uniform(0.8, 1.2)
 
     # --- while a handler runs ------------------------------------------------
 

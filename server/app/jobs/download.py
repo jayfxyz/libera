@@ -49,11 +49,13 @@ Written = list[tuple[str, str]]  # (role, path) of files written
 
 class DownloadFailed(Exception):
     """Ends the step with this user-facing message. `retry`: worth trying
-    again as is (a network error), unlike a refusal or a broken file."""
+    again as is (a network error), unlike a refusal or a broken file.
+    `throttled`: Audible refused because it is rate-limiting the account."""
 
-    def __init__(self, message: str, retry: bool = False):
+    def __init__(self, message: str, retry: bool = False, throttled: bool = False):
         super().__init__(message)
         self.retry = retry
+        self.throttled = throttled
 
 
 @dataclass
@@ -197,7 +199,7 @@ async def _request_license(audible: AudibleClient, t: Target) -> DownloadInfo:
     try:
         info = await audible.get_download_info(t.audible_account_id, t.audible_id)
     except ContentError as e:
-        raise DownloadFailed(f"get download info: {e}")
+        raise DownloadFailed(f"get download info: {e}", throttled=e.throttled)
     if info.format == "aaxc" and not (info.key and info.iv):
         raise DownloadFailed("missing AAXC decryption key/iv")
     if info.format == "aax" and not info.activation_bytes:
@@ -222,7 +224,8 @@ def _check_is_audiobook(path: str, info: DownloadInfo) -> None:
     if size < MIN_AUDIOBOOK_BYTES:
         with open(path, "rb") as f:
             snippet = f.read(512).decode(errors="replace")
-        raise DownloadFailed(tiny_download_error(size, snippet, info.license_denied))
+        raise DownloadFailed(tiny_download_error(size, snippet, info.license_denied),
+                             throttled=info.license_throttled)
 
 
 async def _fetch_extras(audible: AudibleClient, t: Target, info: DownloadInfo, work_dir: str) -> None:

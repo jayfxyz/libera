@@ -146,7 +146,7 @@ use a throwaway task type.
     other exception retries if attempts remain. Cancellation during
     shutdown leaves the row `processing` for `release_stale`. An unknown
     `type` fails the task permanently.
-  - No retry backoff. Add a `run_after` column if a task type ever needs
+  - No retry backoff. Add a `not_before` column if a task type ever needs
     one.
   - Keep the OpenTelemetry behaviour: remember the enqueuing request's
     trace context in memory by task id and attach it when the task runs.

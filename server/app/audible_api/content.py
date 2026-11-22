@@ -10,7 +10,12 @@ log = logging.getLogger(__name__)
 
 
 class ContentError(Exception):
-    """Audible couldn't provide what was asked; the message is user-facing."""
+    """Audible couldn't provide what was asked; the message is user-facing.
+    `throttled`: Audible refused because it is rate-limiting the account."""
+
+    def __init__(self, message: str, throttled: bool = False):
+        super().__init__(message)
+        self.throttled = throttled
 
 
 @dataclass
@@ -25,6 +30,7 @@ class DownloadInfo:
     # fallback only works for older titles, so this is usually the real reason
     # a download fails.
     license_denied: str = ""
+    license_throttled: bool = False  # the refusal was "CustomerThrottled"
     cover_url: str = ""  # largest cover Audible offers; "" if none
 
 
@@ -49,6 +55,13 @@ class _LicenseCapture:
         return resp
 
 
+def is_throttled(license_response: dict | None) -> bool:
+    """Whether Audible denied the license with "CustomerThrottled"."""
+    cl = (license_response or {}).get("content_license") or {}
+    return cl.get("status_code") == "Denied" and any(
+        r.get("rejectionReason") == "CustomerThrottled" for r in cl.get("license_denial_reasons") or [])
+
+
 def describe_license_denial(license_response: dict | None) -> str:
     """Plain-language reason for a denied license, or "" if it wasn't denied.
 
@@ -59,7 +72,7 @@ def describe_license_denial(license_response: dict | None) -> str:
     if cl.get("status_code") != "Denied":
         return ""
     reasons = cl.get("license_denial_reasons") or []
-    if any(r.get("rejectionReason") == "CustomerThrottled" for r in reasons):
+    if is_throttled(license_response):
         # Since September 2026 Audible also says this to devices registered with
         # an outdated app profile, regardless of how much was downloaded.
         return (
@@ -109,6 +122,7 @@ async def get_download_info(client, asin: str, quality: str = "best") -> Downloa
             log.info("AAXC not available for %s (%s), trying AAX", asin, e)
 
         denied = describe_license_denial(capture.license_response)
+        throttled = is_throttled(capture.license_response)
         if denied:
             log.warning("AAXC license denied for %s: %s", asin, denied)
 
@@ -116,10 +130,10 @@ async def get_download_info(client, asin: str, quality: str = "best") -> Downloa
             url, codec = await item.get_aax_url_old(quality)
         except Exception as e:
             log.error("AAX fallback failed for %s: %s", asin, e)
-            raise ContentError(denied or f"Get download URL failed: {e}")
+            raise ContentError(denied or f"Get download URL failed: {e}", throttled=throttled)
 
         return DownloadInfo(str(url), codec, "aax", activation_bytes=_activation_bytes(c), license_denied=denied,
-                            cover_url=cover)
+                            license_throttled=throttled, cover_url=cover)
 
 
 def _activation_bytes(client) -> str:

@@ -51,3 +51,9 @@ def retry_download(download_id: str, download_svc: DownloadSvc):
         raise HTTPException(404, "no failed download with that id")
     return {"id": download_id}
 
+
+@router.post("/downloads/retry-failed", status_code=202)
+def retry_failed_downloads(download_svc: DownloadSvc):
+    """Run again every book whose latest download failed."""
+    return {"downloads": [{"id": download_id} for download_id in download_svc.retry_failed()]}
+

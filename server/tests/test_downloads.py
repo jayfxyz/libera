@@ -35,7 +35,7 @@ async def make_stack(db, config, pipeline):
 
     def build(start=True):
         signals = TaskSignals()
-        worker = TaskWorkerService(db, signals, workers=1, cancel_poll=0.02)
+        worker = TaskWorkerService(db, signals, workers=1, cancel_poll=0.02, retry_base_delay=0, idle_poll=0.05)
         bus = EventBus()
         bus.attach(asyncio.get_running_loop())
         svc = DownloadsService(db, config, TaskQueueService(db, signals), bus, audible=None,
@@ -196,6 +196,67 @@ async def test_a_refused_license_is_not_retried(db, books, pipeline, make_stack)
     await wait_for(lambda: status(db, download_id) == "failed")
     await asyncio.sleep(0.1)
     assert len(pipeline.fetched) == 1
+
+
+def throttled_until(pipeline, refusals: int):
+    """on_fetch: Audible refuses the first `refusals` licenses as throttled."""
+    async def fetch(t, report):
+        if len(pipeline.fetched) <= refusals:
+            raise DownloadFailed("get download info: Audible refused the download license (\"throttled\")",
+                                 throttled=True)
+    return fetch
+
+
+async def test_a_throttled_account_pauses_and_its_other_downloads_wait_without_asking(
+        db, books, pipeline, make_stack):
+    pipeline.on_fetch = throttled_until(pipeline, refusals=1)
+    stack = make_stack()
+    stack.svc.pauses = downloads_module.AccountPauses((0.4,))
+    with stack.bus.subscribe() as sub:
+        first, second = stack.svc.enqueue(books["B1"]), stack.svc.enqueue(books["B2"])
+        await wait_for(lambda: any(e.data.get("retry_at") for e in sub._pending.values()))
+        waiting = next(e.data for e in sub._pending.values() if e.data.get("retry_at"))
+        await wait_for(lambda: status(db, first) == "done" and status(db, second) == "done", timeout=5)
+    assert waiting["status"] == "queued" and "throttling" in waiting["message"]
+    # B1 was refused once and asked again after the pause; B2 waited instead of asking meanwhile.
+    assert [t.download_id for t in pipeline.fetched] == [first, first, second]
+    assert db.scalar("SELECT MAX(attempts) FROM tasks WHERE type = 'download_book'") == 1  # waits are free
+    assert stack.svc.pauses.wait(pipeline.fetched[0].audible_account_id) == 0  # cleared by the success
+
+
+async def test_after_the_last_pause_the_accounts_downloads_fail_until_asked_again(
+        db, books, pipeline, make_stack):
+    pipeline.on_fetch = throttled_until(pipeline, refusals=2)
+    stack = make_stack()
+    stack.svc.pauses = downloads_module.AccountPauses((0.2,))
+    first, second = stack.svc.enqueue(books["B1"]), stack.svc.enqueue(books["B2"])
+    await wait_for(lambda: status(db, first) == "failed" and status(db, second) == "failed", timeout=5)
+    assert [t.download_id for t in pipeline.fetched] == [first, first]  # B2 failed without asking
+    assert "remove the account" in row(db, second)["error"]
+
+    assert stack.svc.retry(second)  # asking again tries Audible again (which now says yes)
+    await wait_for(lambda: status(db, second) == "done")
+
+
+async def test_retry_failed_retries_each_books_latest_failed_download(db, books, pipeline, make_stack):
+    async def refused(t, report):
+        raise DownloadFailed("get download info: 403")
+
+    pipeline.on_fetch = refused
+    stack = make_stack()
+    old = stack.svc.enqueue(books["B1"])
+    await wait_for(lambda: status(db, old) == "failed")
+    pipeline.on_fetch = None
+    done = stack.svc.enqueue(books["B1"])  # B1 downloaded since: its old failure doesn't count
+    await wait_for(lambda: status(db, done) == "done")
+    pipeline.on_fetch = refused
+    failed = stack.svc.enqueue(books["B2"])
+    await wait_for(lambda: status(db, failed) == "failed")
+
+    pipeline.on_fetch = None
+    assert stack.svc.retry_failed() == [failed]
+    await wait_for(lambda: status(db, failed) == "done")
+    assert status(db, old) == "failed"
 
 
 async def test_a_failed_decrypt_keeps_the_bundle_and_retry_only_decrypts(db, books, pipeline, make_stack):

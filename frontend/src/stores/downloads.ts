@@ -47,7 +47,15 @@ export const useDownloadsStore = defineStore('downloads', () => {
     await api.downloads.retry(id)
   }
 
+  /** Run again every book whose latest download failed. */
+  async function retryFailed() {
+    await api.downloads.retryFailed()
+  }
+
   const active = () => Array.from(byId.value.values()).filter((d) => isActive(d))
+
+  /** Failed downloads that are their book's latest: what retryFailed() runs again. */
+  const retryable = () => Array.from(byId.value.values()).filter((d) => d.status === 'failed' && latestFor(d.book_id)?.id === d.id)
 
   /** The latest download of a book (the most recent one if there were several). */
   function latestFor(bookId: number): Download | undefined {
@@ -58,5 +66,5 @@ export const useDownloadsStore = defineStore('downloads', () => {
     return found
   }
 
-  return { byId, load, upsert, enqueue, enqueueMany, cancel, retry, active, latestFor }
+  return { byId, load, upsert, enqueue, enqueueMany, cancel, retry, retryFailed, active, retryable, latestFor }
 })

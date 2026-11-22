@@ -106,6 +106,7 @@ export interface Download {
   status: JobStatus
   percent: number
   message?: string // failed: why; done: the audio file's path; queued: why it is retrying
+  retry_at?: string // ISO UTC: a waiting download's next try (e.g. Audible is throttling the account)
   created_at?: string // ISO UTC
   finished_at?: string | null
   files?: DownloadFile[] | null // what a finished download wrote (null for older downloads)
@@ -177,6 +178,7 @@ export const api = {
     list: () => request<Download[]>('GET', '/downloads'),
     cancel: (id: string) => request<void>('DELETE', `/downloads/${id}`),
     retry: (id: string) => request<{ id: string }>('POST', `/downloads/${id}/retry`),
+    retryFailed: () => request<{ downloads: { id: string }[] }>('POST', '/downloads/retry-failed'),
   },
 
   settings: {

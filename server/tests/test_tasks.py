@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.repositories import tasks as repo
 from app.services.task_queue import TaskQueueService
 from app.services.task_worker import TaskWorkerService
-from app.tasks.base import BaseTask, TaskFailed
+from app.tasks.base import BaseTask, TaskDeferred, TaskFailed
 from app.tasks.signals import TaskSignals
 
 
@@ -34,6 +34,7 @@ async def make(db):
     def _make(workers=1, **kw):
         signals = TaskSignals()
         kw.setdefault("cancel_poll", 0.02)
+        kw.setdefault("retry_base_delay", 0)  # retry at once; backoff has its own tests
         worker = TaskWorkerService(db, signals, workers, **kw)
         built.append(worker)
         return TaskQueueService(db, signals), worker
@@ -159,6 +160,52 @@ async def test_task_failed_with_retry_runs_again(db, make):
     worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
     assert row(db, task_id)["attempts"] == 2
+
+
+async def test_retries_wait_longer_each_time(db, make):
+    queue, worker = make(retry_base_delay=10)
+    assert 8 <= worker.retry_delay(1) <= 12 and 32 <= worker.retry_delay(2) <= 48  # 4x each time, +-20%
+    calls = []
+
+    async def handler(p, ctx):
+        calls.append(ctx.attempt)
+        raise RuntimeError("network down")
+
+    worker.register(Retrying, handler)
+    task_id = queue.enqueue(Retrying(payload=Payload()))
+    worker.start()
+    await wait_for(lambda: calls == [1] and status(db, task_id) == "pending")
+    await asyncio.sleep(0.2)
+    not_before = db.scalar("SELECT not_before FROM tasks WHERE id = ?", (task_id,))
+    assert calls == [1] and not_before > repo.later(7)  # not retried at once: about 10 s from now
+
+
+async def test_a_task_is_not_claimed_before_its_not_before(db):
+    with db.session() as s:
+        repo.add(s, id="t1", type="once", payload="{}")
+    db.execute("UPDATE tasks SET not_before = ? WHERE id = 't1'", (repo.later(60),))
+    with db.session() as s:
+        assert repo.claim_next(s) is None
+    db.execute("UPDATE tasks SET not_before = ? WHERE id = 't1'", (repo.now(),))
+    with db.session() as s:
+        assert repo.claim_next(s).id == "t1"
+
+
+async def test_a_deferred_task_runs_later_without_using_up_an_attempt(db, make):
+    queue, worker = make(idle_poll=0.05)
+    runs = []
+
+    async def handler(p, ctx):
+        runs.append((ctx.attempt, time.monotonic()))
+        if len(runs) < 3:
+            raise TaskDeferred("not yet", 0.2)
+
+    worker.register(Once, handler)  # one attempt allowed: deferring mustn't spend it
+    task_id = queue.enqueue(Once(payload=Payload()))
+    worker.start()
+    await wait_for(lambda: status(db, task_id) == "completed")
+    assert [attempt for attempt, _ in runs] == [1, 1, 1]
+    assert runs[1][1] - runs[0][1] >= 0.2 and runs[2][1] - runs[1][1] >= 0.2
 
 
 async def test_handler_exception_does_not_kill_the_worker(db, make):

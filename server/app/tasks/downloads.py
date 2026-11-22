@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from ..jobs import download as steps
 from ..jobs.download import DownloadFailed, FileEntry, Target
-from .base import BaseTask, TaskContext, TaskFailed
+from .base import BaseTask, TaskContext, TaskDeferred, TaskFailed
 
 if TYPE_CHECKING:
     from ..audible_api.client import AudibleClient
@@ -22,13 +22,19 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+WAITING_FOR_AUDIBLE = "Audible is throttling this account; waiting before trying again."
+GAVE_UP = ("Audible kept refusing downloads for this account (\"throttled\") for hours. This usually "
+           "means its device registration is outdated: remove the account under Accounts and add it "
+           "again (your library and downloads are kept), then retry.")
+
 
 class DownloadPayload(BaseModel):
     download_id: str
 
 
 class DownloadBook(BaseTask[DownloadPayload]):
-    """Fetch: license, encrypted file and extras. Network errors are retried."""
+    """Fetch: license, encrypted file and extras. Network errors are retried
+    (after a growing pause); a throttled account's downloads wait (see AccountPauses)."""
 
     name = "download_book"
     max_attempts = 3
@@ -69,10 +75,14 @@ class DownloadHandlers:
         t = await self._target(payload)
         if t is None:
             return  # cancelled meanwhile
+        await self._unless_paused(t)
         try:
             await self.pipeline.fetch(t, self.downloads.work_dir, self._reporter(t))
         except Exception as e:
+            if isinstance(e, DownloadFailed) and e.throttled:
+                await self._throttled(t)
             await self._failed(t, e, attempts_left=ctx.attempt < ctx.max_attempts)
+        self.downloads.pauses.cleared(t.audible_account_id)  # Audible let one through
         await asyncio.to_thread(self.downloads.chain_decrypt, t.download_id)
 
     async def decrypt_book(self, payload: DownloadPayload, ctx: TaskContext) -> None:
@@ -91,6 +101,33 @@ class DownloadHandlers:
     def _reporter(self, t: Target):
         """report_progress(status, percent, message) for this download."""
         return partial(self.downloads.report_progress, t.download_id)
+
+    # --- an account Audible is throttling --------------------------------------------------
+
+    async def _unless_paused(self, t: Target) -> None:
+        """Before asking Audible: wait out the account's pause, or fail if we gave up on it."""
+        pauses = self.downloads.pauses
+        if pauses.gave_up(t.audible_account_id):
+            await asyncio.to_thread(self.downloads.fail, t.download_id, GAVE_UP)
+            raise TaskFailed(GAVE_UP)
+        if (wait := pauses.wait(t.audible_account_id)) > 0:
+            self._wait(t, wait)
+
+    async def _throttled(self, t: Target) -> NoReturn:
+        """Audible refused the license as throttled: pause the account (longer each
+        time) and wait, or fail once the last pause didn't help."""
+        pause = self.downloads.pauses.throttled(t.audible_account_id)
+        if pause is None:
+            await asyncio.to_thread(self.downloads.fail, t.download_id, GAVE_UP)
+            raise TaskFailed(GAVE_UP)
+        log.warning("download %s: Audible is throttling the account; pausing it for %.0f min",
+                    t.download_id, pause / 60)
+        self._wait(t, pause)
+
+    def _wait(self, t: Target, seconds: float) -> NoReturn:
+        """Show the download as waiting, and put its task back until then."""
+        self.downloads.report_progress(t.download_id, "queued", 0, WAITING_FOR_AUDIBLE, retry_in=seconds)
+        raise TaskDeferred(WAITING_FOR_AUDIBLE, seconds)
 
     async def _failed(self, t: Target, e: Exception, attempts_left: bool) -> NoReturn:
         """Turn a pipeline failure into a task failure: retried while worthwhile

@@ -18,6 +18,7 @@ import os
 import time
 import uuid
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from ..audible_api.client import AudibleClient
@@ -41,6 +42,9 @@ PROGRESS_SAVE_INTERVAL = 3.0  # seconds
 PROGRESS_EVENT_INTERVAL = 0.5  # seconds: about two progress events a second per download
 BUNDLE_MAX_AGE = 7 * 24 * 3600  # fetched bundles nobody retried are deleted after this (seconds)
 INTERRUPTED = "Interrupted; download again"
+# When Audible throttles an account, its downloads wait this long, one pause after
+# another while it keeps refusing (about 7 3/4 hours in all); then they fail.
+THROTTLE_PAUSES = (15 * 60, 30 * 60, 60 * 60, 2 * 60 * 60, 4 * 60 * 60)
 
 
 class InvalidOptions(ValueError):
@@ -59,16 +63,57 @@ class _Rollback(Exception):
     """Abandon the current transaction, including any task it queued."""
 
 
+class AccountPauses:
+    """Accounts Audible is throttling, by token key: until when their downloads
+    wait, how many pauses in a row, and whether we gave up on them. In memory: a
+    restart starts over (the tasks' own wait times are in the database)."""
+
+    def __init__(self, pauses: tuple[float, ...] = THROTTLE_PAUSES):
+        self._pauses = pauses
+        self._until: dict[str, float] = {}
+        self._rounds: dict[str, int] = {}
+        self._gave_up: set[str] = set()
+
+    def wait(self, key: str) -> float:
+        """Seconds before this account's downloads may ask Audible again (0: now)."""
+        return max(0.0, self._until.get(key, 0.0) - time.time())
+
+    def gave_up(self, key: str) -> bool:
+        return key in self._gave_up
+
+    def throttled(self, key: str) -> float | None:
+        """Audible refused a license as throttled: start the next, longer pause and
+        return its length, or None after the last one (given up until cleared).
+        Downloads already running when a pause started don't start another."""
+        if (remaining := self.wait(key)) > 0:
+            return remaining
+        rounds = self._rounds.get(key, 0)
+        if rounds >= len(self._pauses):
+            self._until.pop(key, None)
+            self._rounds.pop(key, None)
+            self._gave_up.add(key)
+            return None
+        self._rounds[key] = rounds + 1
+        self._until[key] = time.time() + self._pauses[rounds]
+        return self._pauses[rounds]
+
+    def cleared(self, key: str) -> None:
+        """A download got through, or someone asked to try again: no more pausing."""
+        self._until.pop(key, None)
+        self._rounds.pop(key, None)
+        self._gave_up.discard(key)
+
 
 class DownloadsService:
     def __init__(self, db: Database, config: Config, tasks: TaskQueueService, events: EventBus,
-                 audible: AudibleClient, library: LibraryService):
+                 audible: AudibleClient, library: LibraryService, pauses: AccountPauses | None = None):
         self._db = db
         self._config = config
         self._tasks = tasks
         self._events = events
         self._audible = audible
         self._library = library
+        self.pauses = pauses or AccountPauses()
         self._live: dict[str, dict[str, Any]] = {}  # running downloads: status, percent, message
         self._static: dict[str, dict[str, Any]] = {}  # running downloads: the resource as last read
         self._last_saved: dict[str, float] = {}
@@ -102,6 +147,8 @@ class DownloadsService:
             return None
         with self._db.session() as s:
             download_id = self._add(s, meta, fmt, split_chapters)
+        if self.pauses.gave_up(meta["audible_account_id"]):
+            self.pauses.cleared(meta["audible_account_id"])  # asked again: try Audible again
         self._emit(download_id)
         return download_id
 
@@ -138,10 +185,19 @@ class DownloadsService:
                 task_id = self._tasks.enqueue(task_cls(payload=DownloadPayload(download_id=download_id)), session=s)
                 if not repo.requeue(s, download_id, task_id):
                     raise _Rollback
+                info = repo.run_info(s, download_id)
         except _Rollback:
             return False
+        if info and self.pauses.gave_up(info["audible_account_id"]):
+            self.pauses.cleared(info["audible_account_id"])  # asked again: try Audible again
         self._emit(download_id)
         return True
+
+    def retry_failed(self) -> list[str]:
+        """Retry every book whose latest download failed. Returns the ids queued again."""
+        with self._db.session() as s:
+            ids = repo.latest_failed(s)
+        return [download_id for download_id in ids if self.retry(download_id)]
 
     def list(self) -> list[dict[str, Any]]:
         """Active downloads and recent history, oldest first."""
@@ -179,17 +235,22 @@ class DownloadsService:
                       audible_id=info["audible_id"], title=info["title"], format=str(d.format),
                       split_chapters=d.split_chapters, path=d.path, base_name=d.base_name, has_pdf=info["has_pdf"])
 
-    def report_progress(self, download_id: str, status: str, percent: float = 0, message: str = "") -> None:
+    def report_progress(self, download_id: str, status: str, percent: float = 0, message: str = "",
+                        retry_in: float | None = None) -> None:
         """Save status changes at once and percentages at most every
         PROGRESS_SAVE_INTERVAL; publish status changes at once and percentages
-        at most every PROGRESS_EVENT_INTERVAL."""
+        at most every PROGRESS_EVENT_INTERVAL. retry_in: a waiting download's
+        next try is that many seconds away (shown as retry_at)."""
         live: dict[str, Any] = {"status": str(status), "percent": round(percent, 1),
                                 "updated_at": iso_utc(repo.now())}
         if message:
             live["message"] = message
+        if retry_in is not None:
+            live["retry_at"] = datetime.fromtimestamp(time.time() + retry_in, timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ")
         previous = self._live.get(download_id)
         now = time.monotonic()
-        changed = previous is None or (previous["status"], previous.get("message")) != (live["status"], message or None)
+        changed = previous is None or any(previous.get(k) != live.get(k) for k in ("status", "message", "retry_at"))
         if changed or now - self._last_saved.get(download_id, 0) >= PROGRESS_SAVE_INTERVAL:
             self._last_saved[download_id] = now
             with self._db.session() as s:

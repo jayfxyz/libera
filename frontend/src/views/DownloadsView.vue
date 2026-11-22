@@ -13,7 +13,16 @@
       </div>
 
       <section v-for="group in groups" v-show="group.jobs.length" :key="group.title" :aria-label="group.title" class="flex flex-col gap-2">
-        <h2 class="eyebrow">{{ group.title }}</h2>
+        <div class="flex items-end justify-between gap-2">
+          <h2 class="eyebrow">{{ group.title }}</h2>
+          <button
+            v-if="group.title === 'Finished' && retryable.length"
+            type="button"
+            class="btn-secondary h-9 px-3 text-[13px]"
+            :disabled="retryingAll"
+            @click="retryAll"
+          >Retry all failed ({{ retryable.length }})</button>
+        </div>
         <ul class="card overflow-hidden">
           <li v-for="job in group.jobs" :key="job.id" class="flex items-start gap-3.5 border-b border-line-faint p-3 last:border-b-0 sm:px-4">
             <BookCover :src="coverFor(job.book_id)" :title="titleFor(job)" size="sm" rounded="rounded-lg" class="w-12 shrink-0" />
@@ -45,7 +54,7 @@
                 <div class="h-1 bg-busy transition-[width]" :style="{ width: `${Math.round(job.percent)}%` }" />
               </div>
               <p v-if="job.message && ['done', 'failed', 'queued'].includes(job.status)" class="text-xs break-words" :class="job.status === 'failed' ? 'text-warn-deep' : job.status === 'done' ? 'font-mono text-ink-soft' : 'text-ink-soft'">
-                {{ job.message }}
+                {{ job.message }}<template v-if="job.status === 'queued' && job.retry_at"> Next try at {{ clock(job.retry_at) }}.</template>
               </p>
             </div>
           </li>
@@ -56,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { DownloadIcon } from '@lucide/vue'
 import type { Download } from '@/api/client'
 import BookCover from '@/components/library/BookCover.vue'
@@ -104,6 +113,22 @@ function label(job: Download) {
     case 'done': return `Downloaded${job.format ? ` · ${job.format.toUpperCase()}` : ''}`
     case 'cancelled': return 'Cancelled'
     default: return 'Failed'
+  }
+}
+
+/** "14:30", in the viewer's time zone. */
+function clock(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+const retryable = computed(() => downloads.retryable())
+const retryingAll = ref(false)
+async function retryAll() {
+  retryingAll.value = true
+  try {
+    await downloads.retryFailed()
+  } finally {
+    retryingAll.value = false
   }
 }
 

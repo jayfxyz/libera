@@ -65,7 +65,7 @@ def test_0004_downgrades_cleanly(tmp_path):
     db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
     db.execute("UPDATE tasks SET status = 'completed'")
     db.migrate()  # and up again
-    assert db.scalar("SELECT version_num FROM alembic_version") == "0006"
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0007"
     db.close()
 
 

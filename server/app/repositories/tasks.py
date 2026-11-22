@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Sequence
 
 from sqlalchemy import bindparam, delete, select, text, update
@@ -17,6 +17,11 @@ def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
+def later(seconds: float) -> str:
+    """now() plus `seconds`, in the same format (so the two compare as text)."""
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).strftime("%Y-%m-%d %H:%M:%S.%f")
+
+
 FINISHED = ("completed", "failed", "cancelled")
 
 
@@ -26,13 +31,14 @@ def add(s: Session, *, id: str, type: str, payload: str, max_attempts: int = 1) 
 
 
 def claim_next(s: Session, types: Sequence[str] | None = None) -> Task | None:
-    """Take the oldest pending task (of one of `types`, if given) and mark it
-    processing, in one statement, so two workers can't take the same task."""
+    """Take the oldest pending task that is due (of one of `types`, if given) and
+    mark it processing, in one statement, so two workers can't take the same task."""
     if types is not None and not types:
         return None
     sql = f"""
         UPDATE tasks SET status = 'processing', attempts = attempts + 1, locked_at = :now
         WHERE id = (SELECT id FROM tasks WHERE status = 'pending'
+                    AND (not_before IS NULL OR not_before <= :now)
                     {"AND type IN :types" if types else ""}
                     ORDER BY created_at, rowid LIMIT 1)
           AND status = 'pending'
@@ -59,17 +65,29 @@ def complete(s: Session, task_id: str) -> bool:
     return result.rowcount > 0
 
 
-def fail(s: Session, task_id: str, error: str, retry: bool) -> str | None:
+def fail(s: Session, task_id: str, error: str, retry: bool, not_before: str | None = None) -> str | None:
     """Record a failure. With `retry` and attempts left the task goes back to
-    pending, otherwise it is failed. Returns the new status; None if the task
-    wasn't processing (e.g. cancelled meanwhile)."""
+    pending (not claimed before `not_before`), otherwise it is failed. Returns
+    the new status; None if the task wasn't processing (e.g. cancelled meanwhile)."""
     return s.execute(text("""
         UPDATE tasks SET
           status = CASE WHEN :retry AND attempts < max_attempts THEN 'pending' ELSE 'failed' END,
           finished_at = CASE WHEN :retry AND attempts < max_attempts THEN NULL ELSE :now END,
+          not_before = CASE WHEN :retry AND attempts < max_attempts THEN :not_before ELSE not_before END,
           locked_at = NULL, error = :error
         WHERE id = :id AND status = 'processing'
-        RETURNING status"""), {"retry": int(retry), "now": now(), "error": error, "id": task_id}).scalar()
+        RETURNING status"""),
+        {"retry": int(retry), "now": now(), "error": error, "id": task_id, "not_before": not_before}).scalar()
+
+
+def defer(s: Session, task_id: str, reason: str, not_before: str) -> bool:
+    """Put a processing task back to pending, not claimed before `not_before`, giving back the
+    attempt it was claimed with. False if it wasn't processing (cancelled meanwhile)."""
+    result = s.execute(text("""
+        UPDATE tasks SET status = 'pending', attempts = MAX(attempts - 1, 0), locked_at = NULL,
+          not_before = :not_before, error = :reason
+        WHERE id = :id AND status = 'processing'"""), {"not_before": not_before, "reason": reason, "id": task_id})
+    return result.rowcount > 0
 
 
 def cancel(s: Session, task_id: str) -> bool:

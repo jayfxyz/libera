@@ -220,8 +220,9 @@
         <DialogHeader>
           <DialogTitle>Download {{ confirm.books.length }} books?</DialogTitle>
           <DialogDescription>
-            They'll be queued and downloaded {{ workers }} at a time. Audible may slow down or refuse
-            downloads for a while after many in a row; if that happens, the rest can be retried later.
+            They'll be queued and downloaded {{ workers }} at a time. If Audible starts refusing
+            downloads after many in a row, that account's downloads pause and try again later,
+            waiting longer each time.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

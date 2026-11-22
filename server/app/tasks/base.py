@@ -29,6 +29,15 @@ class TaskFailed(Exception):
         self.retry = retry
 
 
+class TaskDeferred(Exception):
+    """Raised by a handler to put its task back for later, without using up an
+    attempt: the task couldn't run yet (e.g. the service asked us to slow down)."""
+
+    def __init__(self, message: str, delay: float):
+        super().__init__(message)
+        self.delay = delay  # seconds before the task may run again
+
+
 @dataclass(frozen=True)
 class TaskContext:
     task_id: str
