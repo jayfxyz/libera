@@ -88,7 +88,7 @@
               :key="v.value"
               type="button"
               class="flex h-[42px] w-11 cursor-pointer items-center justify-center"
-              :class="library.view === v.value ? 'bg-ink text-white' : 'text-ink'"
+              :class="library.view === v.value ? 'bg-ink text-on-ink' : 'text-ink'"
               :aria-label="v.label"
               :aria-pressed="library.view === v.value"
               @click="library.view = v.value"
@@ -112,7 +112,7 @@
             {{ s.label }}
             <span
               class="rounded-full px-2 py-0.5 font-mono text-xs font-medium"
-              :class="library.segment === s.value ? 'bg-ink text-white' : 'bg-chip text-ink'"
+              :class="library.segment === s.value ? 'bg-ink text-on-ink' : 'bg-chip text-ink'"
             >{{ library.segmentBooks[s.value].length }}</span>
           </button>
         </nav>
@@ -132,7 +132,7 @@
           </label>
           <div
             v-if="library.selected.size > 0"
-            class="flex flex-wrap items-center gap-1.5 rounded-xl bg-ink py-1 pr-1 pl-3.5 text-white"
+            class="flex flex-wrap items-center gap-1.5 rounded-xl bg-rail py-1 pr-1 pl-3.5 text-white dark:ring-1 dark:ring-line"
             role="toolbar"
             aria-label="Selected books"
           >
@@ -143,11 +143,11 @@
             <button
               v-if="selectionWithPdf.length"
               type="button"
-              class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]"
+              class="btn h-9 rounded-lg border border-white/20 px-3 text-[13px]"
               :disabled="savingPdfs"
               @click="savePdfs"
             >{{ savingPdfs ? 'Saving PDFs…' : `Save ${selectionWithPdf.length} PDF${selectionWithPdf.length === 1 ? '' : 's'}` }}</button>
-            <button type="button" class="btn h-9 rounded-lg border border-bar-line px-3 text-[13px]" @click="hideSelected">
+            <button type="button" class="btn h-9 rounded-lg border border-white/20 px-3 text-[13px]" @click="hideSelected">
               {{ library.segment === 'hidden' ? 'Show' : 'Hide' }}
             </button>
             <button type="button" class="btn h-9 rounded-lg px-2.5 text-[13px] text-rail-muted" @click="library.clearSelection()">Clear</button>

@@ -5,7 +5,9 @@
 @import "shadcn-vue/tailwind.css";
 
 /* Design: "Direction A — Refined". Warm paper, near-black ink, one indigo accent.
-   The app is light-only, as the design is. */
+   Dark mode: `.dark` on <html> (set by index.html and lib/theme.ts) swaps the palette below. */
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 #app {
   height: 100dvh;
@@ -16,8 +18,10 @@
   --font-display: 'Space Grotesk', 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --font-heading: var(--font-display);
+}
 
-  /* Palette */
+/* Palette: not `inline`, so utilities read these variables at run time and .dark can change them. */
+@theme {
   --color-ink: #121418;
   --color-ink-soft: #4a4f5c;
   --color-ink-faint: #8a8f9c;
@@ -47,7 +51,11 @@
   --color-warn-ink: #9a3412;
   --color-warn-deep: #7c2d12;
   --color-warn-soft: #fff4eb;
+  --color-rail: #121418; /* the nav rail / mobile bar: dark in both modes */
+  --color-on-ink: #ffffff; /* text on an ink background */
+}
 
+@theme inline {
   /* shadcn-vue components (dialogs, selects, inputs) read these. */
   --color-ring: var(--ring);
   --color-input: var(--input);
@@ -95,6 +103,58 @@
   --radius: 10px;
 }
 
+.dark {
+  color-scheme: dark;
+
+  --color-ink: #ececE8;
+  --color-ink-soft: #a3a8b3;
+  --color-ink-faint: #6f7480;
+  --color-paper: #111317;
+  --color-surface: #1a1d22;
+  --color-line: #2e3239;
+  --color-line-soft: #272a30;
+  --color-line-faint: #212429;
+  --color-chip: #2a2d33;
+  --color-chip-soft: #23262b;
+  --color-row-open: #22252a;
+  --color-row-checked: #1d2025;
+  --color-brand: #6366f1;
+  --color-brand-hover: #4f46e5; /* darker, so white text stays readable */
+  --color-bar-line: #c9ccd3;
+  --color-ok: #22c55e;
+  --color-ok-ink: #86efac;
+  --color-ok-soft: #13291c;
+  --color-busy: #60a5fa;
+  --color-busy-track: #1e2a44;
+  --color-busy-soft: #172033;
+  --color-busy-line: #2a3d66;
+  --color-warn: #fb923c;
+  --color-warn-ink: #fdba74;
+  --color-warn-deep: #fed7aa;
+  --color-warn-soft: #2b1a10;
+  --color-rail: #0b0c0f;
+  --color-on-ink: #121418;
+
+  --background: #111317;
+  --foreground: #ececE8;
+  --card: #1a1d22;
+  --card-foreground: #ececE8;
+  --popover: #1a1d22;
+  --popover-foreground: #ececE8;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #23262b;
+  --secondary-foreground: #ececE8;
+  --muted: #23262b;
+  --muted-foreground: #a3a8b3;
+  --accent: #22252a;
+  --accent-foreground: #ececE8;
+  --destructive: #f04438;
+  --border: #272a30;
+  --input: #2e3239;
+  --ring: #6366f1;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -123,7 +183,7 @@
   }
 
 @utility btn-ink {
-    @apply btn bg-ink font-semibold text-white hover:bg-ink/85;
+    @apply btn bg-ink font-semibold text-on-ink hover:bg-ink/85;
   }
 
 @utility btn-icon {

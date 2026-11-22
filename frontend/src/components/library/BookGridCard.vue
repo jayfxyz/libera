@@ -3,7 +3,7 @@
     <button type="button" class="flex min-w-0 cursor-pointer flex-col gap-2 text-left" :aria-pressed="open" @click="emit('open')">
       <span
         class="block rounded-[10px]"
-        :class="open ? 'shadow-[0_0_0_3px_#F5F5F2,0_0_0_5px_#121418]' : ''"
+        :class="open ? 'shadow-[0_0_0_3px_var(--color-paper),0_0_0_5px_var(--color-ink)]' : ''"
       >
         <BookCover :src="book.cover_url" :title="book.title" :author="book.authors[0]" />
       </span>
@@ -17,7 +17,7 @@
     </button>
     <!-- Not selecting: shown on hover or keyboard focus; touch screens use the Select button. -->
     <label
-      class="absolute left-1.5 top-1.5 flex size-9 cursor-pointer items-center justify-center rounded-lg bg-white/95 shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
+      class="absolute left-1.5 top-1.5 flex size-9 cursor-pointer items-center justify-center rounded-lg bg-surface/95 shadow-[0_1px_2px_rgba(0,0,0,0.18)]"
       :class="selecting ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:hidden'"
     >
       <input type="checkbox" class="checkbox" :checked="checked" :aria-label="`Select ${book.title}`" @change="emit('toggle')" />

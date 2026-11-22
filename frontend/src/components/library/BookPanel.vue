@@ -1,6 +1,6 @@
 <template>
   <!-- Below xl the panel overlays the page; from xl it sits beside the list. -->
-  <div class="fixed inset-0 z-30 bg-ink/20 xl:hidden" aria-hidden="true" @click="emit('close')" />
+  <div class="fixed inset-0 z-30 bg-black/30 xl:hidden" aria-hidden="true" @click="emit('close')" />
   <aside
     aria-label="Book details"
     class="fixed inset-y-0 right-0 z-40 flex w-full flex-col bg-surface shadow-xl sm:w-[420px] xl:static xl:z-auto xl:w-[400px] xl:shrink-0 xl:border-l xl:border-line-soft xl:shadow-none"

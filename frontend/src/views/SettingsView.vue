@@ -15,6 +15,25 @@
         </div>
       </header>
 
+      <section class="card flex flex-col gap-3 p-5 md:p-6" aria-labelledby="s-appearance">
+        <h2 id="s-appearance" class="text-base font-semibold">Appearance</h2>
+        <div role="radiogroup" aria-labelledby="s-appearance" class="flex self-start overflow-hidden rounded-[10px] border border-line bg-surface">
+          <button
+            v-for="option in themeOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            class="flex h-[42px] cursor-pointer items-center gap-2 px-4 text-sm"
+            :class="theme === option.value ? 'bg-ink font-semibold text-on-ink' : 'font-medium text-ink'"
+            :aria-checked="theme === option.value"
+            @click="chooseTheme(option.value)"
+          >
+            <component :is="option.icon" class="size-4" aria-hidden="true" />{{ option.label }}
+          </button>
+        </div>
+        <span class="text-xs text-ink-soft">Applies straight away and is remembered on this device. System follows your device's light or dark setting.</span>
+      </section>
+
       <template v-if="settings">
         <section class="card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-downloads">
           <h2 id="s-downloads" class="text-base font-semibold">Downloads</h2>
@@ -116,11 +135,23 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { DownloadIcon, SearchIcon } from '@lucide/vue'
+import { DownloadIcon, MonitorIcon, MoonIcon, SearchIcon, SunIcon } from '@lucide/vue'
 import type { Settings } from '@/api/client'
 import { api } from '@/api/client'
 import { SelectField, type SelectOption } from '@/components/ui/select'
+import { setThemeChoice, themeChoice, type ThemeChoice } from '@/lib/theme'
 import { useSettingsStore } from '@/stores/settings'
+
+const themeOptions = [
+  { value: 'system', label: 'System', icon: MonitorIcon },
+  { value: 'light', label: 'Light', icon: SunIcon },
+  { value: 'dark', label: 'Dark', icon: MoonIcon },
+] as const
+const theme = ref<ThemeChoice>(themeChoice())
+function chooseTheme(choice: ThemeChoice) {
+  theme.value = choice
+  setThemeChoice(choice)
+}
 
 const formatOptions: SelectOption<Settings['default_format']>[] = [
   { value: 'm4b', label: 'M4B (original audio, no re-encode)' },
