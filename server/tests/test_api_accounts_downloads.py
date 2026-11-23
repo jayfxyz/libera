@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.audible_api.auth import LoginError, LoginResult
+from app.config import NamingPreset
 from app.jobs.download import DownloadFailed
 from app.main import create_app
 from tests.conftest import add_account, make_book, import_books
@@ -115,14 +116,14 @@ def wait_finished(api, download_id):
 
 def test_enqueue_names_the_download_from_book_and_settings(api, db, config, pipeline):
     book_id = seed(db)
-    config.filename_template = "{series} {series_index} - {title} ({year}, {duration_h}h)"
+    config.naming = NamingPreset.AUTHOR_SERIES_YEAR
     resp = api.post("/api/downloads", json={"book_id": book_id, "audible_id": "B0001", "account_id": 1})
     assert resp.status_code == 202
     job = wait_finished(api, resp.json()["id"])
     assert job.pop("created_at").endswith("Z") and job.pop("finished_at").endswith("Z")
     assert job.pop("updated_at").endswith("Z")
-    book_dir = os.path.join(config.output_dir, "Jane Author - The Book")
-    base = "Saga 1 - The Book (2007, 2h)"
+    book_dir = os.path.join(config.output_dir, "Jane Author", "Saga", "1 - 2007 - The Book")
+    base = "The Book"
     assert job == {"id": resp.json()["id"], "book_id": book_id, "title": "The Book", "format": "m4b",
                    "status": "done", "percent": 100, "message": os.path.join(book_dir, f"{base}.m4b"),
                    "files": [{"role": "audio", "name": f"{base}.m4b", "size_bytes": 1}]}

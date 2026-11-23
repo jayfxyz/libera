@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.config import NamingPreset
 from app.jobs.download import DownloadFailed, discard_bundle, read_fetched_bundle
 from app.repositories import downloads as downloads_repo
 from app.services import downloads as downloads_module
@@ -115,12 +116,22 @@ async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline,
 async def test_where_it_goes_is_decided_when_queued(db, books, config, pipeline, make_stack):
     stack = make_stack(start=False)
     download_id = stack.svc.enqueue(books["B1"], format="mp3", split_chapters=True)
-    config.filename_template, config.folder_template = "{author} - {title}", "{title}"  # changed while it waits
+    config.naming = NamingPreset.AUTHOR_FOLDER  # changed while it waits
     stack.start()
     await wait_for(lambda: status(db, download_id) == "done")
     t = pipeline.decrypted[0]
     assert (t.path, t.base_name, t.format, t.split_chapters) == (
         os.path.join(config.output_dir, "Jane Author - Book 1"), "Book 1", "mp3", True)
+
+
+async def test_two_books_with_the_same_name_get_separate_folders(db, books, config, make_stack):
+    import_books(db, 1, [make_book(f"T{i}", title="Twin", authors=["Jane Author"]) for i in (1, 2)])
+    ids = [r["id"] for r in db.query("SELECT id FROM books WHERE audible_id IN ('T1', 'T2') ORDER BY audible_id")]
+    stack = make_stack(start=False)
+    first, second = (stack.svc.enqueue(book_id) for book_id in ids)
+    paths = {r["id"]: r["path"] for r in db.query("SELECT id, path FROM downloads")}
+    folder = os.path.join(config.output_dir, "Jane Author - Twin")
+    assert (paths[first], paths[second]) == (folder, f"{folder} (2)")
 
 
 async def test_queueing_a_book_twice_returns_the_active_download(db, books, make_stack):

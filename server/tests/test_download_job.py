@@ -188,7 +188,7 @@ async def test_split_chapters(config, book_id, source_audio, make_downloader):
     view = await make_downloader(FakeAudible(source_audio)).run(book_id, split_chapters=True)
     assert view["status"] == "done", view
     chapters = sorted(f["name"] for f in view["files"] if f["role"] == "chapter")
-    assert chapters == ["The Book - 01 - Opening Credits.m4b", "The Book - 02 - Part One_ Chapter 1.m4b"]
+    assert chapters == ["The Book - 01 - Opening Credits.m4b", "The Book - 02 - Part One - Chapter 1.m4b"]
     assert set(chapters) <= set(os.listdir(os.path.join(config.output_dir, "Jane Author - The Book")))
 
 

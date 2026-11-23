@@ -1,4 +1,4 @@
-from app.config import DEFAULT_FOLDER_TEMPLATE, Config
+from app.config import Config, NamingPreset
 from app.repositories import settings as settings_repo
 
 
@@ -18,17 +18,17 @@ def all_settings(db):
 
 
 def test_settings_roundtrip(db):
-    assert get_setting(db, "output_dir") is None
-    set_setting(db, "output_dir", "/audiobooks")
-    assert get_setting(db, "output_dir") == "/audiobooks"
-    set_setting(db, "output_dir", "/new/path")
-    assert get_setting(db, "output_dir") == "/new/path"
+    assert get_setting(db, "naming") is None
+    set_setting(db, "naming", "author_folder")
+    assert get_setting(db, "naming") == "author_folder"
+    set_setting(db, "naming", "author_series")
+    assert get_setting(db, "naming") == "author_series"
 
 
 def test_settings_load_all(db):
-    for k, v in {"output_dir": "/a", "default_format": "mp3", "download_workers": "5"}.items():
+    for k, v in {"naming": "author_folder", "default_format": "mp3", "download_workers": "5"}.items():
         set_setting(db, k, v)
-    assert all_settings(db) == {"output_dir": "/a", "default_format": "mp3", "download_workers": "5"}
+    assert all_settings(db) == {"naming": "author_folder", "default_format": "mp3", "download_workers": "5"}
 
 
 def test_config_from_env_and_overrides():
@@ -36,41 +36,60 @@ def test_config_from_env_and_overrides():
     assert c.output_dir == "/audiobooks"
     assert c.download_workers == 2
     assert c.default_format == "m4b"  # invalid value ignored
-    assert c.folder_template == DEFAULT_FOLDER_TEMPLATE
+    assert c.naming == NamingPreset.AUTHOR_TITLE
 
-    c.apply_overrides({"default_format": "mp3", "download_workers": "0", "folder_template": ""})
+    c.apply_overrides({"default_format": "mp3", "download_workers": "0", "naming": "author_series"})
     assert c.default_format == "mp3"
     assert c.download_workers == 2  # must be positive
-    assert c.folder_template == ""  # empty is valid: no per-book folder
+    c.apply_overrides({"download_workers": "20"})
+    assert c.download_workers == 2  # at most MAX_DOWNLOAD_WORKERS
+    assert c.naming == NamingPreset.AUTHOR_SERIES
+    c.apply_overrides({"naming": "{author}/{title}"})
+    assert c.naming == NamingPreset.AUTHOR_SERIES  # only presets
+
+    c.apply_overrides({"output_dir": "/elsewhere"})
+    assert c.output_dir == "/audiobooks"  # only the environment sets the output folder
 
 
 def test_settings_api(client, db):
     got = client.get("/api/settings").json()
     assert got["default_format"] == "m4b"
-    assert got["folder_template"] == DEFAULT_FOLDER_TEMPLATE
+    assert got["naming"] == "author_title"
 
-    # The UI sends the whole object back, including read-only app_url.
-    resp = client.patch("/api/settings", json={**got, "default_format": "mp3", "folder_template": "{title}"})
+    # The UI sends the whole object back, including read-only app_url and output_dir.
+    resp = client.patch("/api/settings", json={**got, "default_format": "mp3", "naming": "author_series",
+                                               "output_dir": "/elsewhere"})
     assert resp.status_code == 204
     assert get_setting(db, "default_format") == "mp3"
     assert get_setting(db, "app_url") is None
+    assert get_setting(db, "output_dir") is None
 
     got = client.get("/api/settings").json()
     assert got["default_format"] == "mp3"
-    assert got["folder_template"] == "{title}"
+    assert got["naming"] == "author_series"
 
 
 def test_settings_api_rejects_bad_format(client):
     assert client.patch("/api/settings", json={"default_format": "wav"}).status_code == 400
 
 
+def test_settings_api_rejects_unknown_naming(client):
+    assert client.patch("/api/settings", json={"naming": "{author}/{title}"}).status_code == 422
+
+
+def test_settings_api_rejects_too_many_workers(client):
+    assert client.patch("/api/settings", json={"download_workers": 6}).status_code == 400
+    assert client.patch("/api/settings", json={"download_workers": 0}).status_code == 400
+    assert client.patch("/api/settings", json={"download_workers": 5}).status_code == 204
+
+
 def test_saved_settings_apply_at_startup(config, db):
     from fastapi.testclient import TestClient
     from app.main import create_app
 
-    set_setting(db, "filename_template", "{author} - {title}")
+    set_setting(db, "naming", "author_folder_year")
     with TestClient(create_app(config, db)) as c:
-        assert c.get("/api/settings").json()["filename_template"] == "{author} - {title}"
+        assert c.get("/api/settings").json()["naming"] == "author_folder_year"
 
 
 def test_health(client):

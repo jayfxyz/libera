@@ -4,12 +4,24 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, replace
+from enum import StrEnum
 
-DEFAULT_FOLDER_TEMPLATE = "{author} - {title}"  # "Patrick Rothfuss - The Name of the Wind"
 FORMATS = ("m4b", "mp3")
+MAX_DOWNLOAD_WORKERS = 5  # more mostly gets Audible to throttle the account
 
 # Settings the user can change from the UI; persisted in the `settings` table.
-EDITABLE_KEYS = ("output_dir", "download_workers", "default_format", "filename_template", "folder_template")
+EDITABLE_KEYS = ("download_workers", "default_format", "naming")
+
+
+class NamingPreset(StrEnum):
+    """Where a book's files go inside the output folder. The audio file is always named after the title.
+    The nested layouts are the ones Audiobookshelf reads authors, series and order from."""
+
+    AUTHOR_TITLE = "author_title"  # Author - Title/
+    AUTHOR_FOLDER = "author_folder"  # Author/Title/
+    AUTHOR_FOLDER_YEAR = "author_folder_year"  # Author/2007 - Title/
+    AUTHOR_SERIES = "author_series"  # Author/Series/1 - Title/
+    AUTHOR_SERIES_YEAR = "author_series_year"  # Author/Series/1 - 2007 - Title/
 
 
 @dataclass
@@ -21,8 +33,7 @@ class Config:
     output_dir: str = "./data/audiobooks"
     download_workers: int = 3
     default_format: str = "m4b"
-    filename_template: str = "{title}"
-    folder_template: str = DEFAULT_FOLDER_TEMPLATE
+    naming: NamingPreset = NamingPreset.AUTHOR_TITLE
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
@@ -32,6 +43,7 @@ class Config:
         c.accounts_dir = env.get("ACCOUNTS_DIR", c.accounts_dir)
         c.frontend_dir = env.get("FRONTEND_DIR", c.frontend_dir)
         c.app_url = env.get("APP_URL", c.app_url)
+        c.output_dir = env.get("OUTPUT_DIR", c.output_dir)  # set by the container's mount, not the UI
         for key in EDITABLE_KEYS:
             if key.upper() in env:
                 c.apply(key, env[key.upper()])
@@ -39,22 +51,19 @@ class Config:
 
     def apply(self, key: str, value: str) -> None:
         """Set one editable setting from its stored string form; invalid values are ignored."""
-        if key == "output_dir":
-            self.output_dir = value
-        elif key == "download_workers":
+        if key == "download_workers":
             try:
                 n = int(value)
             except ValueError:
                 return
-            if n > 0:
+            if 1 <= n <= MAX_DOWNLOAD_WORKERS:
                 self.download_workers = n
         elif key == "default_format":
             if value in FORMATS:
                 self.default_format = value
-        elif key == "filename_template":
-            self.filename_template = value
-        elif key == "folder_template":
-            self.folder_template = value
+        elif key == "naming":
+            if value in NamingPreset:
+                self.naming = NamingPreset(value)
 
     def apply_overrides(self, overrides: dict[str, str]) -> None:
         for key in EDITABLE_KEYS:

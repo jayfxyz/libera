@@ -50,7 +50,7 @@ def test_parse_chapters():
 
 
 def test_chapter_path():
-    assert chapter_path("/out", "Book", 0, "Intro: Part 1") == "/out/Book - 01 - Intro_ Part 1"
+    assert chapter_path("/out", "Book", 0, "Intro: Part 1") == "/out/Book - 01 - Intro - Part 1"
     assert chapter_path("/out", "Book", 4, "") == "/out/Book - 05 - Chapter_05"
 
 

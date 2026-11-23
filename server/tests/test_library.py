@@ -146,15 +146,18 @@ def test_audio_files_on_disk_finds_files_in_book_folders(tmp_path):
 
 def test_rescan_marks_found_books_downloaded(db, config, library_svc, tmp_path):
     add_account(db)
-    import_books(db, 1, [make_book("A", title="Found: Book"), make_book("B", title="Missing")])
+    import_books(db, 1, [make_book("A", title="Found: Book"), make_book("B", title="Missing"),
+                         make_book("C", title="Nested: Book")])
     (tmp_path / "Someone - Found_ Book").mkdir()
-    (tmp_path / "Someone - Found_ Book" / "Found_ Book.m4b").write_bytes(b"")
+    (tmp_path / "Someone - Found_ Book" / "Found_ Book.m4b").write_bytes(b"")  # named before ":" became " -"
+    (tmp_path / "Someone" / "Nested - Book").mkdir(parents=True)
+    (tmp_path / "Someone" / "Nested - Book" / "Nested - Book.mp3").write_bytes(b"")
     config.output_dir = str(tmp_path)
-    assert library_svc.rescan() == 1
+    assert library_svc.rescan() == 2
     status = {r["audible_id"]: (r["liberation_status"], r["last_format"]) for r in db.query(
         "SELECT b.audible_id, lb.liberation_status, lb.last_format FROM books b "
         "JOIN library_books lb ON lb.book_id = b.id")}
-    assert status == {"A": ("liberated", "m4b"), "B": ("not_liberated", None)}
+    assert status == {"A": ("liberated", "m4b"), "B": ("not_liberated", None), "C": ("liberated", "mp3")}
 
 
 def test_has_pdf_comes_from_the_sync_and_survives_a_scan_without_it(db, library_svc):

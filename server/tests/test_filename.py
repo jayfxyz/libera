@@ -1,35 +1,53 @@
-from app.jobs.filename import FilenameData, book_directory, render_filename
+from app.config import NamingPreset
+from app.jobs.filename import FilenameData, book_directory, book_file_name
+from app.services.library import sanitize_filename
+
+WIND = FilenameData(title="The Name of the Wind", author="Patrick Rothfuss", series_name="Kingkiller Chronicle",
+                    series_index="1", year="2007")
+STANDALONE = FilenameData(title="Piranesi", author="Susanna Clarke", year="2020")
 
 
-def test_default_template():
-    assert render_filename("{title}", FilenameData(title="The Great Gatsby", authors="F. Scott")) == "The Great Gatsby"
+def test_each_preset():
+    expected = {
+        NamingPreset.AUTHOR_TITLE: "/a/Patrick Rothfuss - The Name of the Wind",
+        NamingPreset.AUTHOR_FOLDER: "/a/Patrick Rothfuss/The Name of the Wind",
+        NamingPreset.AUTHOR_FOLDER_YEAR: "/a/Patrick Rothfuss/2007 - The Name of the Wind",
+        NamingPreset.AUTHOR_SERIES: "/a/Patrick Rothfuss/Kingkiller Chronicle/1 - The Name of the Wind",
+        NamingPreset.AUTHOR_SERIES_YEAR: "/a/Patrick Rothfuss/Kingkiller Chronicle/1 - 2007 - The Name of the Wind",
+    }
+    assert {preset: book_directory("/a", preset, WIND) for preset in NamingPreset} == expected
 
 
-def test_all_tags():
-    data = FilenameData(title="Dune", authors="Frank Herbert", narrators="Scott Brick", series_name="Dune Chronicles",
-                        series_index="1", year="1965", language="english", duration_h="21")
-    got = render_filename("{author} - {series} {series_index} - {title} ({year}) [{narrator}]", data)
-    assert got == "Frank Herbert - Dune Chronicles 1 - Dune (1965) [Scott Brick]"
+def test_no_series_goes_in_author_title():
+    assert book_directory("/a", NamingPreset.AUTHOR_SERIES, STANDALONE) == "/a/Susanna Clarke/Piranesi"
+    assert book_directory("/a", NamingPreset.AUTHOR_SERIES_YEAR, STANDALONE) == "/a/Susanna Clarke/2020 - Piranesi"
 
 
-def test_missing_tag_drops_its_separator():
-    assert render_filename("{title} - {series}", FilenameData(title="Book")) == "Book"
-    assert render_filename("{author} - {title}", FilenameData(title="Book")) == "Book"
+def test_missing_parts_leave_no_dangling_separator():
+    no_year = FilenameData(title="Book", author="Jane", series_name="Saga", series_index="2")
+    assert book_directory("/a", NamingPreset.AUTHOR_SERIES_YEAR, no_year) == "/a/Jane/Saga/2 - Book"
+    assert book_directory("/a", NamingPreset.AUTHOR_FOLDER_YEAR, no_year) == "/a/Jane/Book"
+    no_index = FilenameData(title="Book", author="Jane", series_name="Saga")
+    assert book_directory("/a", NamingPreset.AUTHOR_SERIES, no_index) == "/a/Jane/Saga/Book"
+    no_author = FilenameData(title="Book")
+    assert book_directory("/a", NamingPreset.AUTHOR_TITLE, no_author) == "/a/Book"
+    assert book_directory("/a", NamingPreset.AUTHOR_FOLDER, no_author) == "/a/Book"
 
 
-def test_unsafe_characters_replaced():
-    got = render_filename("{title}", FilenameData(title="H/G: A <Tale>"))
-    assert not set("/<>:") & set(got)
+def test_file_is_named_after_the_title():
+    assert book_file_name(WIND) == "The Name of the Wind"
 
 
-def test_empty_template_falls_back_to_title():
-    assert render_filename("", FilenameData(title="Fallback")) == "Fallback"
+def test_metadata_cannot_nest_folders():
+    data = FilenameData(title="AC/DC: A Story", author="A/B")
+    assert book_directory("/a", NamingPreset.AUTHOR_FOLDER, data) == "/a/A_B/AC_DC - A Story"
 
 
-def test_book_directory():
-    data = FilenameData(title="The Name of the Wind", authors="Patrick Rothfuss")
-    assert book_directory("/audiobooks", "{author} - {title}", data) == "/audiobooks/Patrick Rothfuss - The Name of the Wind"
-    assert book_directory("/audiobooks", "", data) == "/audiobooks"
-    assert book_directory("/audiobooks", "  ", data) == "/audiobooks"
-    # Missing author: no dangling separator; "/" in metadata can't nest folders.
-    assert book_directory("/audiobooks", "{author} - {title}", FilenameData(title="AC/DC: A Story")) == "/audiobooks/AC_DC_ A Story"
+def test_sanitize_filename():
+    assert sanitize_filename("Dune: Part One") == "Dune - Part One"
+    assert sanitize_filename('H<G> "x"?') == "H_G_ _x__"
+    assert sanitize_filename("..") == "audiobook"  # never the parent folder
+    assert sanitize_filename(".hidden") == "hidden"
+    assert sanitize_filename("Smith Jr.  ") == "Smith Jr"  # Windows and SMB reject trailing dots and spaces
+    long = sanitize_filename("é" * 300)  # 2 bytes each
+    assert len(long.encode()) <= 200 and long == "é" * 100

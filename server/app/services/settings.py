@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..config import FORMATS, Config
+from ..config import FORMATS, MAX_DOWNLOAD_WORKERS, Config
 from ..db import Database
 from ..repositories import settings as repo
 
@@ -30,8 +30,7 @@ class SettingsService:
             "output_dir": c.output_dir,
             "download_workers": c.download_workers,
             "default_format": c.default_format,
-            "filename_template": c.filename_template,
-            "folder_template": c.folder_template,
+            "naming": c.naming.value,
         }
 
     def update(self, changes: dict[str, Any]) -> None:
@@ -39,6 +38,8 @@ class SettingsService:
         changes = {k: v for k, v in changes.items() if v is not None}
         if "default_format" in changes and changes["default_format"] not in FORMATS:
             raise InvalidSetting("default_format must be 'm4b' or 'mp3'")
+        if "download_workers" in changes and not 1 <= changes["download_workers"] <= MAX_DOWNLOAD_WORKERS:
+            raise InvalidSetting(f"download_workers must be between 1 and {MAX_DOWNLOAD_WORKERS}")
         with self._db.session() as s:
             for key, value in changes.items():
                 repo.set(s, key, str(value))

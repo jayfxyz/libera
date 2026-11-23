@@ -20,6 +20,8 @@ from ..repositories import books as repo
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
 
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_COLON = re.compile(r"\s*:\s*")
+MAX_NAME_BYTES = 200  # filesystems allow 255 bytes per name; leave room for " - 01 - chapter", ".part"
 
 EXPORT_FIELDS = [
     "audible_id", "title", "authors", "narrators", "series", "length_minutes", "publisher",
@@ -150,20 +152,21 @@ class LibraryService:
             series = repo.series_of(s, book_id)
         meta = dict(row)
         meta["authors"], meta["narrators"] = ", ".join(people["author"]), ", ".join(people["narrator"])
+        meta["first_author"] = people["author"][0] if people["author"] else ""
         meta["series_name"], meta["series_index"] = (series[0]["name"], series[0]["idx"]) if series else ("", "")
         return meta
 
     def planned_path(self, book_id: int) -> str:
         """Where a download of this book would be saved with the current settings."""
-        from ..jobs.filename import FilenameData, book_directory, render_filename
+        from ..jobs.filename import FilenameData, book_directory, book_file_name
 
         meta = self.book_meta(book_id)
         if meta is None:
             return ""
         c = self._config
         names = FilenameData(**naming_data(meta))
-        folder = book_directory(c.output_dir, c.folder_template, names)
-        return os.path.join(folder, f"{render_filename(c.filename_template, names)}.{c.default_format}")
+        folder = book_directory(c.output_dir, c.naming, names)
+        return os.path.join(folder, f"{book_file_name(names)}.{c.default_format}")
 
     # --- download status ---------------------------------------------------------------------
 
@@ -185,8 +188,8 @@ class LibraryService:
         if not on_disk:
             return 0
         with self._db.session() as s:
-            matches = [(r["id"], on_disk[sanitize_filename(r["title"])]) for r in repo.not_downloaded_titles(s)
-                       if sanitize_filename(r["title"]) in on_disk]
+            matches = [(r["id"], fmt) for r in repo.not_downloaded_titles(s)
+                       if (fmt := file_format_on_disk(r["title"], on_disk))]
             for book_id, fmt in matches:
                 repo.mark_downloaded(s, book_id, fmt)
         for book_id, _ in matches:
@@ -223,8 +226,25 @@ class LibraryService:
 
 # --- pure helpers (no database) ---------------------------------------------------------------
 
+def file_format_on_disk(title: str, on_disk: dict[str, str]) -> str | None:
+    """The format of the book's audio file in on_disk, named as downloads name it now or did before
+    November 2026 (":" became "_", e.g. "Found_ Book")."""
+    for name in (sanitize_filename(title), _UNSAFE.sub("_", title).strip()[:200]):
+        if name in on_disk:
+            return on_disk[name]
+    return None
+
+
+def clean_name(s: str) -> str:
+    """Metadata made safe inside a file or folder name: "Dune: Part One" → "Dune - Part One", no "/" etc."""
+    return _UNSAFE.sub("_", _COLON.sub(" - ", s))
+
+
 def sanitize_filename(s: str) -> str:
-    s = _UNSAFE.sub("_", s).strip()[:200]
+    """A whole file or folder name: cleaned, without leading or trailing dots and spaces (no "..", no hidden
+    folders, nothing Windows or SMB shares reject), and at most MAX_NAME_BYTES of UTF-8."""
+    s = clean_name(s).strip(" .")
+    s = s.encode()[:MAX_NAME_BYTES].decode(errors="ignore").rstrip(" .")
     return s or "audiobook"
 
 
@@ -241,16 +261,12 @@ def naming_data(meta: dict) -> dict[str, str]:
     """Template values (see jobs.filename.FilenameData) from LibraryService.book_meta()."""
     # {year} is the publication year; fall back to when it joined the library.
     year = (meta["date_published"] or meta["date_added"])[:4]
-    minutes = meta["length_minutes"]
     return {
         "title": meta["title"],
-        "authors": meta["authors"],
-        "narrators": meta["narrators"],
+        "author": meta["first_author"],
         "series_name": meta["series_name"],
         "series_index": meta["series_index"],
         "year": year if len(year) == 4 else "",
-        "language": meta["language"],
-        "duration_h": str(minutes // 60) if minutes > 0 else "",
     }
 
 

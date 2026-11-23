@@ -4,7 +4,7 @@
       <header class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 class="page-title">Settings</h1>
-          <p class="mt-1 text-sm text-ink-soft">Where downloads go and how they're named.</p>
+          <p class="mt-1 text-sm text-ink-soft">How books are downloaded and named.</p>
         </div>
         <div class="flex items-center gap-3">
           <span v-if="saved" class="text-sm font-medium text-ok-ink" role="status">Saved</span>
@@ -38,18 +38,13 @@
         <section class="card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-downloads">
           <h2 id="s-downloads" class="text-base font-semibold">Downloads</h2>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
-            Output folder
-            <input v-model="settings.output_dir" class="textbox font-mono text-[13px]" placeholder="/audiobooks" />
-            <span class="text-xs font-normal text-ink-soft">The folder inside the app's container; with Docker it's the AUDIOBOOKS_DIR you mounted.</span>
-          </label>
-          <label class="flex flex-col gap-1.5 text-sm font-medium">
             Default format
             <SelectField v-model="settings.default_format" :options="formatOptions" />
             <span class="text-xs font-normal text-ink-soft">Each book's panel can override this.</span>
           </label>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
             Downloads at the same time
-            <input v-model.number="settings.download_workers" type="number" min="1" max="10" class="textbox w-28" />
+            <SelectField v-model="downloadWorkers" :options="workerOptions" />
             <span class="text-xs font-normal text-ink-soft">Takes effect after the app restarts. Fewer is gentler on Audible's limits.</span>
           </label>
         </section>
@@ -57,47 +52,14 @@
         <section class="card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-naming">
           <h2 id="s-naming" class="text-base font-semibold">File naming</h2>
           <label class="flex flex-col gap-1.5 text-sm font-medium">
-            Book folder
-            <input
-              v-model="settings.folder_template"
-              class="textbox font-mono text-[13px]"
-              placeholder="{author} - {title}"
-              @focus="activeTemplate = 'folder_template'"
-            />
-            <span class="text-xs font-normal text-ink-soft">
-              Each book gets its own folder for the audio, chapter files, cover and PDF. Leave empty to save directly in the output folder.
-            </span>
-          </label>
-          <label class="flex flex-col gap-1.5 text-sm font-medium">
-            File name
-            <input
-              v-model="settings.filename_template"
-              class="textbox font-mono text-[13px]"
-              placeholder="{title}"
-              @focus="activeTemplate = 'filename_template'"
-            />
+            Folder layout
+            <SelectField v-model="settings.naming" :options="namingOptions" />
+            <span class="text-xs font-normal text-ink-soft">{{ namingHint }}</span>
           </label>
           <div class="flex flex-col gap-1.5">
-            <span class="text-xs font-semibold text-ink-soft">Result</span>
+            <span class="text-xs font-semibold text-ink-soft">Example</span>
             <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ examplePath }}</code>
-          </div>
-          <div class="flex flex-col gap-2">
-            <span class="text-xs font-semibold text-ink-soft">
-              Tags · tap to add to the {{ activeTemplate === 'folder_template' ? 'book folder' : 'file name' }}
-            </span>
-            <div class="flex flex-wrap gap-1.5">
-              <button
-                v-for="{ tag, description } in templateTags"
-                :key="tag"
-                type="button"
-                class="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full border border-line bg-surface pr-3 pl-1.5 text-xs hover:bg-paper"
-                :title="description"
-                @mousedown.prevent
-                @click="appendTag(tag)"
-              >
-                <span class="chip">{{ tag }}</span>{{ description }}
-              </button>
-            </div>
+            <span class="text-xs text-ink-soft">Applies to new downloads. Books already downloaded keep their folders.</span>
           </div>
         </section>
 
@@ -136,7 +98,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { DownloadIcon, MonitorIcon, MoonIcon, SearchIcon, SunIcon } from '@lucide/vue'
-import type { Settings } from '@/api/client'
+import type { NamingPreset, Settings } from '@/api/client'
 import { api } from '@/api/client'
 import { SelectField, type SelectOption } from '@/components/ui/select'
 import { setThemeChoice, themeChoice, type ThemeChoice } from '@/lib/theme'
@@ -158,55 +120,62 @@ const formatOptions: SelectOption<Settings['default_format']>[] = [
   { value: 'mp3', label: 'MP3 (re-encoded with LAME)' },
 ]
 
+// 1 to 5 at once: more than that mostly gets Audible to throttle the account.
+const workerOptions: SelectOption[] = [
+  { value: '1', label: '1 (gentlest)' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3 (recommended)' },
+  { value: '4', label: '4' },
+  { value: '5', label: '5' },
+]
+
 const settings = ref<Settings | null>(null)
+// The dropdown works in strings; the setting is a number.
+const downloadWorkers = computed({
+  get: () => String(settings.value?.download_workers ?? 3),
+  set: (value: string) => {
+    if (settings.value) settings.value.download_workers = Number(value)
+  },
+})
 const settingsStore = useSettingsStore()
 const saved = ref(false)
 const saving = ref(false)
 const saveError = ref('')
 const loadError = ref('')
 
-const templateTags = [
-  { tag: '{title}', description: 'Book title' },
-  { tag: '{author}', description: 'Primary author' },
-  { tag: '{narrator}', description: 'Primary narrator' },
-  { tag: '{series}', description: 'Series name' },
-  { tag: '{series_index}', description: 'Position in series' },
-  { tag: '{year}', description: 'Publication year' },
-  { tag: '{language}', description: 'Language code' },
-  { tag: '{duration_h}', description: 'Duration in hours' },
+// Each layout and where "The Name of the Wind" goes with it.
+const namingOptions: SelectOption<NamingPreset>[] = [
+  { value: 'author_title', label: 'Author - Title (flat)' },
+  { value: 'author_folder', label: 'Author / Title' },
+  { value: 'author_folder_year', label: 'Author / Year - Title' },
+  { value: 'author_series', label: 'Author / Series / Title' },
+  { value: 'author_series_year', label: 'Author / Series / Year - Title' },
 ]
-
-// Which template the tag buttons append to: the last one focused.
-const activeTemplate = ref<'folder_template' | 'filename_template'>('folder_template')
-
-function appendTag(tag: string) {
-  if (!settings.value) return
-  const current = settings.value[activeTemplate.value]
-  settings.value[activeTemplate.value] = current ? `${current} ${tag}` : tag
-}
-
-// Preview using the same sample book as the placeholder text.
-const sample: Record<string, string> = {
-  '{title}': 'The Name of the Wind',
-  '{author}': 'Patrick Rothfuss',
-  '{narrator}': 'Nick Podehl',
-  '{series}': 'The Kingkiller Chronicle',
-  '{series_index}': '1',
-  '{year}': '2007',
-  '{language}': 'english',
-  '{duration_h}': '27',
-}
-
-function render(tmpl: string) {
-  return tmpl.replace(/\{[a-z_]+\}/g, (t) => sample[t] ?? t).trim()
+const exampleFolders: Record<NamingPreset, string> = {
+  author_title: 'Patrick Rothfuss - The Name of the Wind',
+  author_folder: 'Patrick Rothfuss/The Name of the Wind',
+  author_folder_year: 'Patrick Rothfuss/2007 - The Name of the Wind',
+  author_series: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - The Name of the Wind',
+  author_series_year: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - 2007 - The Name of the Wind',
 }
 
 const examplePath = computed(() => {
   if (!settings.value) return ''
   const s = settings.value
-  const file = `${render(s.filename_template) || sample['{title}']}.${s.default_format}`
-  const folder = render(s.folder_template)
-  return [s.output_dir, folder, file].filter(Boolean).join('/').replace(/\/{2,}/g, '/')
+  return `${s.output_dir}/${exampleFolders[s.naming]}/The Name of the Wind.${s.default_format}`.replace(/\/{2,}/g, '/')
+})
+
+const namingHint = computed(() => {
+  switch (settings.value?.naming) {
+    case 'author_series':
+    case 'author_series_year':
+      return 'The layout Audiobookshelf reads author, series and order from. Books not in a series go in Author / Title.'
+    case 'author_folder':
+    case 'author_folder_year':
+      return 'Audiobookshelf reads the author from the first folder.'
+    default:
+      return 'One folder per book, all side by side.'
+  }
 })
 
 onMounted(async () => {
@@ -222,8 +191,8 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
-    const { app_url: _readOnly, ...editable } = settings.value
-    await api.settings.update(editable)
+    const { download_workers, default_format, naming } = settings.value
+    await api.settings.update({ download_workers, default_format, naming })
     await settingsStore.load() // the book panel's "Default — M4B" follows this
     saved.value = true
     setTimeout(() => (saved.value = false), 2500)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from ..config import NamingPreset
+
 # --- accounts -------------------------------------------------------------------------
 
 
@@ -59,8 +61,6 @@ class BulkEnqueueRequest(DownloadOptions):
 
 class SettingsPatch(BaseModel):
     # Unknown fields (the UI sends the whole settings object back) are ignored.
-    output_dir: str | None = None
     download_workers: int | None = None
     default_format: str | None = None
-    filename_template: str | None = None
-    folder_template: str | None = None
+    naming: NamingPreset | None = None

@@ -120,12 +120,14 @@ export interface DownloadOptions {
 
 export interface Settings {
   app_url: string
-  output_dir: string
+  output_dir: string // read-only: set by OUTPUT_DIR (the Docker mount)
   download_workers: number
   default_format: 'm4b' | 'mp3'
-  filename_template: string
-  folder_template: string
+  naming: NamingPreset
 }
+
+/** Where a book's files go in the output folder; the audio file is always named after the title. */
+export type NamingPreset = 'author_title' | 'author_folder' | 'author_folder_year' | 'author_series' | 'author_series_year'
 
 // --- Accounts ---
 

@@ -1,4 +1,4 @@
-"""Filename and folder templates, e.g. "{author} - {title}"."""
+"""Where a book's files go: a folder (or nested folders) chosen by a NamingPreset, and the audio file's name."""
 
 from __future__ import annotations
 
@@ -6,52 +6,56 @@ import os
 import re
 from dataclasses import dataclass
 
-from ..services.library import sanitize_filename
+from ..config import NamingPreset
+from ..services.library import clean_name, sanitize_filename
 
-_UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _EMPTY = "\x00"
 # An empty tag, together with a separator right before or after it.
-_EMPTY_WITH_SEPARATOR = re.compile(r"\s*[-_,/]\s*\x00|\x00\s*[-_,/]\s*|\x00")
+_EMPTY_WITH_SEPARATOR = re.compile(r"\s*[-_,]\s*\x00|\x00\s*[-_,]\s*|\x00")
+
+# Each preset is a list of folder names, outermost first. A folder whose tags are all empty is left out,
+# so a book with no series goes in Author/Title and one with no author in Title.
+_FOLDERS: dict[NamingPreset, tuple[str, ...]] = {
+    NamingPreset.AUTHOR_TITLE: ("{author} - {title}",),
+    NamingPreset.AUTHOR_FOLDER: ("{author}", "{title}"),
+    NamingPreset.AUTHOR_FOLDER_YEAR: ("{author}", "{year} - {title}"),
+    NamingPreset.AUTHOR_SERIES: ("{author}", "{series}", "{series_index} - {title}"),
+    NamingPreset.AUTHOR_SERIES_YEAR: ("{author}", "{series}", "{series_index} - {year} - {title}"),
+}
 
 
 @dataclass
 class FilenameData:
     title: str = ""
-    authors: str = ""  # comma-separated
-    narrators: str = ""
+    author: str = ""  # the first author only
     series_name: str = ""
     series_index: str = ""
     year: str = ""
-    language: str = ""
-    duration_h: str = ""  # whole hours, e.g. "21"
 
 
-def render_filename(template: str, data: FilenameData) -> str:
-    """Fill a template's tags; an empty tag is dropped with its separator.
+def book_file_name(data: FilenameData) -> str:
+    """The audio file's name without its extension: the title."""
+    return sanitize_filename(data.title)
 
-    Tags: {title} {author} {narrator} {series} {series_index} {year}
-    {language} {duration_h}. An empty template means {title}.
-    """
+
+def book_directory(output_dir: str, naming: NamingPreset, data: FilenameData) -> str:
+    """The folder a book's files go in, inside output_dir."""
+    folders = [fill(template=template, data=data) for template in _FOLDERS[naming]]
+    return os.path.join(output_dir, *(folder for folder in folders if folder))
+
+
+def fill(template: str, data: FilenameData) -> str:
+    """One folder name: the template's tags filled in, an empty tag dropped with its separator.
+    Returns "" when every tag is empty."""
     tags = {
         "{title}": data.title,
-        "{author}": data.authors,
-        "{narrator}": data.narrators,
+        "{author}": data.author,
         "{series}": data.series_name,
         "{series_index}": data.series_index,
         "{year}": data.year,
-        "{language}": data.language,
-        "{duration_h}": data.duration_h,
     }
-    result = template or "{title}"
+    result = template
     for tag, value in tags.items():
-        result = result.replace(tag, _UNSAFE.sub("_", value) if value else _EMPTY)
+        result = result.replace(tag, clean_name(value) or _EMPTY)
     result = _EMPTY_WITH_SEPARATOR.sub("", result).strip()
-    return sanitize_filename(result or _UNSAFE.sub("_", data.title))
-
-
-def book_directory(output_dir: str, folder_template: str, data: FilenameData) -> str:
-    """The folder a book's files go in: a folder named by the template inside
-    output_dir, or output_dir itself when the template is blank."""
-    if not folder_template.strip():
-        return output_dir
-    return os.path.join(output_dir, render_filename(folder_template, data))
+    return sanitize_filename(result) if result else ""

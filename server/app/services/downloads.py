@@ -28,7 +28,7 @@ from ..db import Database, iso_utc
 from ..db.models import Download, DownloadStatus
 from ..events import EventBus
 from ..jobs.download import INCOMPLETE_DIR, FileEntry, Target, discard_bundle, prune_work_dir, read_fetched_bundle
-from ..jobs.filename import FilenameData, book_directory, render_filename
+from ..jobs.filename import FilenameData, book_directory, book_file_name
 from ..repositories import books as books_repo
 from ..repositories import downloads as repo
 from ..tasks.downloads import DecryptBook, DownloadBook, DownloadPayload
@@ -313,11 +313,11 @@ class DownloadsService:
         settings = self._config.snapshot()  # where it goes is decided now
         names = FilenameData(**naming_data(meta))
         download_id = uuid.uuid4().hex
+        folder = free_folder(s, folder=book_directory(settings.output_dir, settings.naming, names),
+                             library_book_id=meta["library_book_id"])
         task_id = self._tasks.enqueue(DownloadBook(payload=DownloadPayload(download_id=download_id)), session=s)
         repo.add(s, id=download_id, library_book_id=meta["library_book_id"], format=fmt,
-                 split_chapters=split_chapters, task_id=task_id,
-                 path=book_directory(settings.output_dir, settings.folder_template, names),
-                 base_name=render_filename(settings.filename_template, names))
+                 split_chapters=split_chapters, task_id=task_id, path=folder, base_name=book_file_name(names))
         return download_id
 
     def _store_pdf(self, meta: dict[str, Any], pdf: bytes) -> str:
@@ -337,8 +337,8 @@ class DownloadsService:
             return os.path.splitext(meta["file_path"])[0] + ".pdf"
         settings = self._config.snapshot()
         names = FilenameData(**naming_data(meta))
-        folder = book_directory(settings.output_dir, settings.folder_template, names)
-        return os.path.join(folder, render_filename(settings.filename_template, names) + ".pdf")
+        folder = book_directory(settings.output_dir, settings.naming, names)
+        return os.path.join(folder, book_file_name(names) + ".pdf")
 
     def _add_pdf_to_manifest(self, library_book_id: int, path: str) -> None:
         """Keep the latest finished download's manifest true: add or replace its PDF entry."""
@@ -389,3 +389,13 @@ class DownloadsService:
 
 def _audio_path(d: Download) -> str:
     return os.path.join(d.path, f"{d.base_name}.{d.format}")
+
+
+def free_folder(s, *, folder: str, library_book_id: int) -> str:
+    """The folder, or "folder (2)", "folder (3)"… when another book already downloads there:
+    two editions with the same name never overwrite each other."""
+    candidate, n = folder, 1
+    while repo.folder_taken(s, candidate, library_book_id):
+        n += 1
+        candidate = f"{folder} ({n})"
+    return candidate
