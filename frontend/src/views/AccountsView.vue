@@ -1,52 +1,114 @@
 <template>
   <div class="min-w-0 flex-1 overflow-y-auto">
-    <div class="flex max-w-[1100px] flex-col gap-[18px] px-4 pt-5 pb-12 md:px-9 md:pt-7">
-      <header class="flex flex-wrap items-end justify-between gap-3">
-        <div>
+    <div class="flex max-w-[760px] flex-col gap-5 px-4 pt-5 pb-12 md:px-9 md:pt-7">
+      <header class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
           <h1 class="page-title">Accounts</h1>
-          <p class="mt-1 text-sm text-ink-soft">Your Audible accounts. Each one's library is scanned into the app.</p>
+          <p class="mt-1 hidden text-sm text-ink-soft sm:block">Your Audible accounts. Each one's library is scanned into the app.</p>
         </div>
-        <button type="button" class="btn-primary" @click="openAddModal()">
-          <PlusIcon class="size-4" />Add account
+        <button v-if="store.accounts.length" type="button" class="btn-primary h-10 px-3.5" @click="openAddModal()">
+          <PlusIcon class="size-4" /><span>Add<span class="hidden sm:inline"> account</span></span>
         </button>
       </header>
 
-      <div v-if="store.accounts.length === 0 && !store.loading" class="card flex flex-col items-center gap-2 px-6 py-12 text-center">
-        <UserRoundIcon class="size-8 text-ink-faint" aria-hidden="true" />
-        <p class="font-semibold">No accounts yet</p>
-        <p class="text-sm text-ink-soft">Add your Audible account to import your library.</p>
-        <button type="button" class="btn-primary mt-2" @click="openAddModal()">Add account</button>
-      </div>
+      <section v-if="store.accounts.length === 0 && !store.loading" class="card flex flex-col items-center px-6 py-10 text-center">
+        <span class="mb-4 flex size-12 items-center justify-center rounded-xl border border-line bg-paper text-ink-soft">
+          <LibraryBigIcon class="size-6" aria-hidden="true" />
+        </span>
+        <h2 class="mb-1.5 text-base font-semibold">No Audible accounts yet</h2>
+        <p class="mb-6 max-w-[260px] text-sm leading-relaxed text-ink-soft">Connect an Audible account to scan its library into Libera.</p>
+        <button type="button" class="btn-primary" @click="openAddModal()"><PlusIcon class="size-4" />Add account</button>
+      </section>
 
-      <div v-else class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <article v-for="account in store.accounts" :key="account.id" class="card flex flex-col gap-4 p-5">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <h2 class="truncate text-base font-semibold">{{ account.account_name || account.email }}</h2>
-              <p class="truncate font-mono text-xs text-ink-soft" :title="account.email">{{ account.email }}</p>
+      <template v-else>
+        <ul class="flex flex-col gap-2.5">
+          <li
+            v-for="account in store.accounts"
+            :key="account.id"
+            class="card flex min-h-[72px] items-center gap-3 px-4 py-3.5"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2.5">
+                <span class="size-2 shrink-0 rounded-full" :class="dotFor(account)" :title="scans[account.id]?.failed ? 'Last scan failed' : 'Connected'" />
+                <h2 class="truncate text-[15px] font-semibold leading-snug">{{ account.account_name || account.email }}</h2>
+              </div>
+              <p class="mt-0.5 truncate pl-[18px] text-[13px] leading-snug text-ink-soft">
+                <span :title="regionName(account.locale)">{{ regionBadge(account.locale) }}</span>
+                <span class="mx-1 text-ink-faint">·</span>
+                <span :class="scans[account.id]?.failed ? 'font-medium text-warn-ink' : scans[account.id]?.scanning ? 'text-brand' : ''">{{ metaFor(account) }}</span>
+              </p>
             </div>
-            <span class="chip shrink-0 gap-1 font-sans text-xs" :title="regionName(account.locale)">{{ regionBadge(account.locale) }}</span>
-          </div>
-          <dl class="flex justify-between text-sm">
-            <dt class="text-ink-soft">Last scanned</dt>
-            <dd class="font-medium">{{ account.last_scanned_at ? formatRelative(account.last_scanned_at) : 'Never' }}</dd>
-          </dl>
-          <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn-secondary flex-1" :disabled="scanningId === account.id" @click="scan(account)">
-              <RefreshCwIcon class="size-4" :class="scanningId === account.id ? 'animate-spin' : ''" />
-              {{ scanningId === account.id ? 'Scanning…' : 'Scan library' }}
+
+            <button
+              type="button"
+              class="btn-secondary size-9 shrink-0 px-0"
+              :disabled="scans[account.id]?.scanning"
+              :aria-label="`Scan library for ${accountLabel(account)}`"
+              title="Scan library"
+              @click="scan(account)"
+            >
+              <RefreshCwIcon class="size-4" :class="scans[account.id]?.scanning ? 'animate-spin text-brand' : ''" />
             </button>
-            <button type="button" class="btn-secondary flex-1" title="Log in again, e.g. if Audible refuses downloads" @click="openAddModal(account)">
-              <KeyRoundIcon class="size-4" />Reconnect
-            </button>
-          </div>
-          <p v-if="scanResult[account.id]" class="-mt-2 text-xs text-ink-soft">{{ scanResult[account.id] }}</p>
-          <div class="flex gap-2 border-t border-line-faint pt-3">
-            <button type="button" class="btn flex-1 h-10 text-ink-soft hover:bg-paper" @click="openEditModal(account)">Rename</button>
-            <button type="button" class="btn flex-1 h-10 text-destructive hover:bg-warn-soft" @click="removeModal.account = account">Remove</button>
-          </div>
-        </article>
-      </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <button
+                  type="button"
+                  class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-ink-soft hover:bg-paper hover:text-ink data-[state=open]:bg-paper data-[state=open]:text-ink"
+                  :aria-label="`More options for ${accountLabel(account)}`"
+                >
+                  <EllipsisVerticalIcon class="size-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-64 p-0 py-1.5">
+                <div class="border-b border-line-faint px-3.5 pt-1 pb-2.5">
+                  <p class="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-soft">Account ID</p>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="truncate font-mono text-[11px] select-all" :title="account.email">{{ account.email }}</span>
+                    <button
+                      type="button"
+                      class="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium"
+                      :class="copiedId === account.id ? 'bg-ok-soft text-ok-ink' : 'bg-chip-soft text-ink hover:bg-chip'"
+                      @click="copyAccountId(account)"
+                    >
+                      <CheckIcon v-if="copiedId === account.id" class="size-3" /><CopyIcon v-else class="size-3" />
+                      {{ copiedId === account.id ? 'Copied' : 'Copy' }}
+                    </button>
+                  </div>
+                </div>
+                <div class="px-1.5 py-1">
+                  <DropdownMenuItem :disabled="scans[account.id]?.scanning" @select="scan(account)">
+                    <RefreshCwIcon class="size-4 text-ink-soft" />Scan library
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @select="openAddModal(account)">
+                    <KeyRoundIcon class="size-4 text-ink-soft" />Reconnect
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @select="openEditModal(account)">
+                    <PencilIcon class="size-4 text-ink-soft" />Rename
+                  </DropdownMenuItem>
+                </div>
+                <div class="border-t border-line-faint px-1.5 pt-1">
+                  <DropdownMenuItem class="text-destructive data-highlighted:bg-warn-soft" @select="removeModal.account = account">
+                    <Trash2Icon class="size-4" />Remove
+                  </DropdownMenuItem>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </li>
+        </ul>
+
+        <div class="-mt-2 flex items-center justify-between px-1">
+          <span class="text-xs text-ink-faint">{{ store.accounts.length }} account{{ store.accounts.length === 1 ? '' : 's' }}</span>
+          <button
+            type="button"
+            class="-mr-2 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-ink-soft hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="scanningAll"
+            @click="scanAll"
+          >
+            <RefreshCwIcon class="size-3.5" :class="scanningAll ? 'animate-spin' : ''" />{{ scanningAll ? 'Scanning…' : 'Scan all' }}
+          </button>
+        </div>
+      </template>
     </div>
   </div>
 
@@ -205,12 +267,16 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
-import { CheckIcon, CopyIcon, ExternalLinkIcon, KeyRoundIcon, PlusIcon, RefreshCwIcon, UserRoundIcon } from '@lucide/vue'
+import {
+  CheckIcon, CopyIcon, EllipsisVerticalIcon, ExternalLinkIcon, KeyRoundIcon, LibraryBigIcon, PencilIcon, PlusIcon,
+  RefreshCwIcon, Trash2Icon,
+} from '@lucide/vue'
 import type { Account } from '@/api/client'
 import { useAccountsStore } from '@/stores/accounts'
 import { flag, regionBadge, regions } from '@/lib/regions'
 import { api } from '@/api/client'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { SelectField, type SelectOption } from '@/components/ui/select'
 
 const regionOptions: SelectOption[] = regions.map((r) => ({ value: r.value, label: `${flag(r.value)} ${r.label}` }))
@@ -319,19 +385,70 @@ onMounted(() => {
   restorePendingLogin()
 })
 
-const scanningId = ref<number | null>(null)
-const scanResult = reactive<Record<number, string>>({})
+const accountLabel = (account: Account) => account.account_name || account.email
+
+// --- scanning: each row shows its own progress and result ---------------------------
+interface ScanState {
+  scanning: boolean
+  message: string // "Found 54 books" for a few seconds, or why the scan failed
+  failed: boolean
+}
+const scans = reactive<Record<number, ScanState>>({})
+const SCAN_RESULT_SHOWN_MS = 4000
+
 async function scan(account: Account) {
-  scanningId.value = account.id
-  scanResult[account.id] = ''
+  const state: ScanState = { scanning: true, message: '', failed: false }
+  scans[account.id] = state
   try {
     const { imported } = await api.accounts.scan(account.id)
-    scanResult[account.id] = `Found ${imported} book${imported === 1 ? '' : 's'}.`
+    state.message = `Found ${imported} book${imported === 1 ? '' : 's'}`
     await store.fetchAccounts()
-  } catch (e: any) {
-    scanResult[account.id] = `Scan failed: ${e.message}`
+    setTimeout(() => clearScanMessage(account.id, state), SCAN_RESULT_SHOWN_MS)
+  } catch (e: unknown) {
+    state.failed = true
+    state.message = `Couldn't scan: ${e instanceof Error ? e.message : String(e)}`
   } finally {
-    scanningId.value = null
+    state.scanning = false
+  }
+}
+
+/** Back to "Scanned … ago", unless another scan has started since. */
+function clearScanMessage(accountId: number, state: ScanState) {
+  if (scans[accountId] === state) delete scans[accountId]
+}
+
+const scanningAll = ref(false)
+async function scanAll() {
+  scanningAll.value = true
+  try {
+    for (const account of store.accounts) await scan(account)
+  } finally {
+    scanningAll.value = false
+  }
+}
+
+function metaFor(account: Account) {
+  const state = scans[account.id]
+  if (state?.scanning) return 'Scanning…'
+  if (state?.message) return state.message
+  return account.last_scanned_at ? `Scanned ${formatRelative(account.last_scanned_at)}` : 'Never scanned'
+}
+
+function dotFor(account: Account) {
+  const state = scans[account.id]
+  if (state?.scanning) return 'bg-brand animate-pulse'
+  if (state?.failed) return 'bg-warn'
+  return 'bg-ok'
+}
+
+const copiedId = ref<number | null>(null)
+async function copyAccountId(account: Account) {
+  try {
+    await navigator.clipboard.writeText(account.email)
+    copiedId.value = account.id
+    setTimeout(() => { if (copiedId.value === account.id) copiedId.value = null }, 1500)
+  } catch {
+    // Clipboard blocked: the ID is selectable instead.
   }
 }
 
