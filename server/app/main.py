@@ -32,7 +32,10 @@ from .tasks.downloads import DownloadHandlers, Pipeline
 from .tasks.signals import TaskSignals
 from .telemetry import init_tracing
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+_log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+if not isinstance(_log_level, int):
+    _log_level = logging.INFO
+logging.basicConfig(level=_log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
 
 

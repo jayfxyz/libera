@@ -287,6 +287,7 @@ class DownloadsService:
             if info and repo.finish(s, download_id, json.dumps([asdict(f) for f in files])):
                 d = info["download"]
                 books_repo.mark_downloaded(s, info["book_id"], str(d.format), _audio_path(d))
+                log.info("download %s: finished %s (%s, %s)", download_id, info["audible_id"], info["title"], d.format)
         discard_bundle(self.work_dir, download_id)
         self._forget(download_id)
         self._emit(download_id)
@@ -300,6 +301,7 @@ class DownloadsService:
             info = repo.run_info(s, download_id)
             if info and repo.fail(s, download_id, error):
                 books_repo.mark_error(s, info["book_id"])
+                log.error("download %s: failed %s (%s): %s", download_id, info["audible_id"], info["title"], error)
         self._forget(download_id)
         self._emit(download_id)
         if info:

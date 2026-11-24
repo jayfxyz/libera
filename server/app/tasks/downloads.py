@@ -76,6 +76,7 @@ class DownloadHandlers:
         if t is None:
             return  # cancelled meanwhile
         await self._unless_paused(t)
+        log.info("download %s: starting %s (%s, %s)", t.download_id, t.audible_id, t.title, t.format)
         try:
             await self.pipeline.fetch(t, self.downloads.work_dir, self._reporter(t))
         except Exception as e:

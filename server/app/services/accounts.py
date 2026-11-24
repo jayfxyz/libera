@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 from ..audible_api.client import AudibleClient
@@ -10,6 +11,8 @@ from ..audible_api.storage import AccountNotFound
 from ..db import Database, iso_utc
 from ..repositories import accounts as repo
 from .library import LibraryService
+
+log = logging.getLogger(__name__)
 
 
 class ScanFailed(Exception):
@@ -79,6 +82,7 @@ class AccountsService:
         except AccountNotFound:
             raise
         except Exception as e:
+            log.exception("library scan failed for account %d", account_id)
             raise ScanFailed(f"Audible library fetch failed: {e}") from e
         imported = await asyncio.to_thread(self._library.import_library, account_id, books)
         await asyncio.to_thread(self._mark_scanned, account_id)
