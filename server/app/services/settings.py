@@ -26,7 +26,6 @@ class SettingsService:
     def current(self) -> dict[str, Any]:
         c = self._config
         return {
-            "app_url": c.app_url,
             "output_dir": c.output_dir,
             "download_workers": c.download_workers,
             "default_format": c.default_format,

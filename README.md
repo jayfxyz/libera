@@ -53,7 +53,7 @@ Optional environment variables:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `APP_URL` | `http://localhost:8888` | The app's public URL, shown in Settings |
+| `AUDIOBOOKS_DIR` | `./audiobooks` | Where downloaded books go |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Send OpenTelemetry traces to an OTLP gRPC endpoint (helpful during development) |
 
 Folder layout presets, default audio format, and parallel download count are

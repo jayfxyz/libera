@@ -29,7 +29,6 @@ class Config:
     database_path: str = "./data/db/libera.db"
     accounts_dir: str = "./data/accounts"
     frontend_dir: str = ""  # built Vue app; empty = don't serve it
-    app_url: str = "http://localhost:8080"
     output_dir: str = "./data/audiobooks"
     download_workers: int = 3
     default_format: str = "m4b"
@@ -42,7 +41,6 @@ class Config:
         c.database_path = env.get("DATABASE_PATH", c.database_path)
         c.accounts_dir = env.get("ACCOUNTS_DIR", c.accounts_dir)
         c.frontend_dir = env.get("FRONTEND_DIR", c.frontend_dir)
-        c.app_url = env.get("APP_URL", c.app_url)
         c.output_dir = env.get("OUTPUT_DIR", c.output_dir)  # set by the container's mount, not the UI
         for key in EDITABLE_KEYS:
             if key.upper() in env:

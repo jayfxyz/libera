@@ -119,7 +119,6 @@ export interface DownloadOptions {
 }
 
 export interface Settings {
-  app_url: string
   output_dir: string // read-only: set by OUTPUT_DIR (the Docker mount)
   download_workers: number
   default_format: 'm4b' | 'mp3'

@@ -56,12 +56,11 @@ def test_settings_api(client, db):
     assert got["default_format"] == "m4b"
     assert got["naming"] == "author_title"
 
-    # The UI sends the whole object back, including read-only app_url and output_dir.
+    # The UI sends the whole object back, including read-only output_dir.
     resp = client.patch("/api/settings", json={**got, "default_format": "mp3", "naming": "author_series",
                                                "output_dir": "/elsewhere"})
     assert resp.status_code == 204
     assert get_setting(db, "default_format") == "mp3"
-    assert get_setting(db, "app_url") is None
     assert get_setting(db, "output_dir") is None
 
     got = client.get("/api/settings").json()
