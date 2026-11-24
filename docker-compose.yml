@@ -4,8 +4,6 @@ services:
   libera:
     build: .
     image: libera
-    # Owner of the files written to /audiobooks and /data (default: root)
-    user: "${PUID:-0}:${PGID:-0}"
     ports:
       - "${PORT:-8888}:8080"
     environment:
@@ -15,6 +13,9 @@ services:
       OTEL_SERVICE_NAME: libera
     volumes:
       # Database (db/libera.db) and Audible login tokens (accounts/)
-      - ${DATA_DIR:-./data}:/data
-      - ${AUDIOBOOKS_DIR:-./data/audiobooks}:/audiobooks
+      - libera_data:/data
+      - ${AUDIOBOOKS_DIR:-./audiobooks}:/audiobooks
     restart: unless-stopped
+
+volumes:
+  libera_data:

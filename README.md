@@ -20,7 +20,7 @@ One container: a FastAPI backend that also serves the Vue 3 frontend.
 ## Quick start
 
 ```sh
-cp .env.example .env      # set AUDIOBOOKS_DIR, PUID/PGID, PORT
+cp .env.example .env      # set AUDIOBOOKS_DIR, PORT
 docker compose up -d --build
 ```
 
@@ -30,9 +30,7 @@ Libera will scan your library.
 | Setting (`.env`) | Default | What it does |
 |---|---|---|
 | `PORT` | `8888` | Host port for the app |
-| `AUDIOBOOKS_DIR` | `./data/audiobooks` | Where downloaded books go |
-| `DATA_DIR` | `./data` | Database (`db/`) and Audible login tokens (`accounts/`) |
-| `PUID` / `PGID` | `0` (root) | Owner of the files the app writes; match your media folder (`id -u` / `id -g`) |
+| `AUDIOBOOKS_DIR` | `./audiobooks` | Where downloaded books go |
 | `APP_URL` | `http://localhost:8888` | The app's public URL, shown in Settings |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Optional: send OpenTelemetry traces to an OTLP gRPC endpoint |
 
@@ -52,8 +50,7 @@ Tailscale or WireGuard).
 
 ## Data & backups
 
-- **`DATA_DIR/db/libera.db`**: Your library metadata, tags, ratings, settings, and download history.
-- **`DATA_DIR/accounts/*.json`**: Your Audible device credentials (written with `0600` permissions). Treat these files as secrets and exclude them from public backups.
+- **`libera_data` Docker volume (`/data`)**: Holds your SQLite database (`db/libera.db` — library metadata, tags, ratings, settings, download history) and Audible device credentials (`accounts/*.json`, written with `0600` permissions). Treat `accounts/` as secrets and exclude it from public backups.
 - **`AUDIOBOOKS_DIR`**: Your decrypted audiobooks, covers, chapter files, and companion PDFs. Temporary work files live in `AUDIOBOOKS_DIR/.incomplete/` while a download is in progress or waiting to be retried.
 
 ## Develop
