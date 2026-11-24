@@ -1,8 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const router = createRouter({
-  // Hash history so the Go backend can serve index.html for all routes
-  // without needing wildcard routing config.
+  // Hash history so routes work under any subpath or reverse proxy without extra config.
   history: createWebHashHistory(import.meta.env.BASE_URL),
   routes: [
     {
