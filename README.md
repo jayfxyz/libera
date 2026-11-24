@@ -21,6 +21,10 @@ One container: a FastAPI backend that also serves the Vue 3 frontend.
 - **Search, organize & export:** Instant SQLite FTS5 search, status filters, sorting, tags, ratings, finished status, light/dark mode, and CSV/JSON export.
 - **Resilient downloads:** Persistent queue with live progress (SSE), automatic backoff when Audible throttles, and retry from the decrypt step without re-downloading.
 
+### Coming soon
+
+- Scheduled scans and downloads
+
 ## Quick start
 
 Create a `docker-compose.yml`:
