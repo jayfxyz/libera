@@ -84,3 +84,7 @@ Inspired by [Libation](https://github.com/rmcrackan/Libation), and built on
 [audible](https://github.com/mkb79/Audible),
 [audible-cli](https://github.com/mkb79/audible-cli), and
 [FFmpeg](https://ffmpeg.org/).
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
