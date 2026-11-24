@@ -7,10 +7,9 @@ Audiobookshelf. Inspired by [Libation](https://github.com/rmcrackan/Libation).
 
 One container: a FastAPI backend that also serves the Vue 3 frontend.
 
-<p align="center">
-  <img src="docs/screenshots/library-light.png" alt="Libera library view in light mode" width="49%" />
-  <img src="docs/screenshots/library-dark.png" alt="Libera book details panel in dark mode" width="49%" />
-</p>
+![Libera library view in light mode](docs/screenshots/library-light.png)
+
+![Libera book details panel in dark mode](docs/screenshots/library-dark.png)
 
 ## Features
 
