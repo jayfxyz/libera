@@ -1,0 +1,24 @@
+[project]
+name = "libera-server"
+version = "0.1.0"
+description = "Self-hosted web app for managing and backing up your Audible library"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic==1.14.0",
+    "audible-cli==0.6.0",
+    "audible[cryptography]==0.13.1",
+    "fastapi==0.115.6",
+    "httpx==0.27.2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.28.0",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
+    "opentelemetry-instrumentation-httpx>=0.49b0",
+    "opentelemetry-sdk>=1.28.0",
+    "sqlalchemy==2.0.36",
+    "uvicorn[standard]==0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.0",
+]

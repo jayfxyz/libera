@@ -59,10 +59,10 @@ Tailscale or WireGuard).
 ## Develop
 
 ```sh
-# backend on :8080 (needs Python 3.12, ffmpeg, and SQLite >= 3.43)
-cd server && pip install -r requirements-dev.txt
+# backend on :8080 (needs Python 3.12, uv, ffmpeg, and SQLite >= 3.43)
+cd server && uv sync
 DATABASE_PATH=../data/db/libera.db ACCOUNTS_DIR=../data/accounts \
-  OUTPUT_DIR=../data/audiobooks uvicorn app.main:app --reload --port 8080
+  OUTPUT_DIR=../data/audiobooks uv run uvicorn app.main:app --reload --port 8080
 
 # frontend on :5173, proxying /api to :8080
 cd frontend && npm install && npm run dev

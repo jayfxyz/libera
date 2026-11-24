@@ -27,6 +27,7 @@ Libation/
 # Python
 __pycache__/
 .pytest_cache/
+.venv/
 
 # Local compose overrides (e.g. joining a host-specific network)
 docker-compose.override.yml

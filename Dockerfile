@@ -2,6 +2,8 @@
 #   docker build -t libera .                                  # the app
 #   docker build --target test -t libera-test . && docker run --rm libera-test   # the tests
 
+FROM ghcr.io/astral-sh/uv:0.7 AS uv
+
 FROM node:22-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package*.json ./
@@ -11,16 +13,19 @@ RUN npm run build
 
 # trixie: SQLite >= 3.43 is required by the search index (contentless_delete).
 FROM python:3.12-slim-trixie AS python-base
+COPY --from=uv /uv /usr/local/bin/uv
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY server/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
+COPY server/pyproject.toml server/uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 FROM python-base AS test
-COPY server/requirements-dev.txt .
-RUN pip install --no-cache-dir -r requirements-dev.txt
+RUN uv sync --frozen --no-install-project
 COPY server/ .
 ENV PYTHONDONTWRITEBYTECODE=1
 CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
