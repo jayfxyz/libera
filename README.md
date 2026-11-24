@@ -7,6 +7,10 @@ Audiobookshelf. Inspired by [Libation](https://github.com/rmcrackan/Libation).
 
 One container: a FastAPI backend that also serves the Vue 3 frontend.
 
+![Libera library view in light mode](docs/screenshots/library-light.png)
+
+![Libera book details panel in dark mode](docs/screenshots/library-dark.png)
+
 ## Features
 
 - **Lossless M4B or MP3:** Decrypts AAXC (with AAX fallback) via `ffmpeg` — stream-copied M4B by default, or re-encoded MP3, with per-book overrides.
