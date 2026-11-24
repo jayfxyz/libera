@@ -7,6 +7,7 @@ from .models import AudibleBook
 RESPONSE_GROUPS = ",".join([
     "product_desc", "product_attrs", "contributors", "series", "category_ladders",
     "media", "rating", "claim_code_url", "is_returnable", "origin_asin", "relationships", "pdf_url",
+    "customer_rights",
 ])
 
 

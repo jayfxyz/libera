@@ -168,3 +168,81 @@ def test_has_pdf_comes_from_the_sync_and_survives_a_scan_without_it(db, library_
     import_books(db, 1, [make_book("A"), make_book("B"), make_book("C")])  # a scan without the flag
     assert {b["audible_id"]: b["has_pdf"] for b in library_svc.list_books()} == flags
     assert library_svc.get_book(db.scalar("SELECT id FROM books WHERE audible_id = 'A'"))["has_pdf"] is True
+
+
+def test_is_downloadable_tracked_and_updated_on_rescan(db, library_svc):
+    from app.audible_api.models import AudibleBook
+
+    locked = AudibleBook.from_audible({
+        "asin": "LOCKED", "title": "Borrowed",
+        "customer_rights": {"is_consumable_offline": False},
+    })
+    owned = AudibleBook.from_audible({
+        "asin": "OWNED", "title": "Bought",
+        "customer_rights": {"is_consumable_offline": True},
+    })
+    assert locked.is_downloadable is False and owned.is_downloadable is True
+
+    add_account(db)
+    library_svc.import_library(1, [locked, owned])
+    flags = {b["audible_id"]: b["is_downloadable"] for b in library_svc.list_books()}
+    assert flags == {"LOCKED": False, "OWNED": True}
+    locked_id = db.scalar("SELECT id FROM books WHERE audible_id = 'LOCKED'")
+    assert library_svc.get_book(locked_id)["is_downloadable"] is False
+
+    # Re-scanning after purchasing/renewing flips it back to downloadable.
+    unlocked = AudibleBook.from_audible({
+        "asin": "LOCKED", "title": "Borrowed",
+        "customer_rights": {"is_consumable_offline": True},
+    })
+    library_svc.import_library(1, [unlocked, owned])
+    assert library_svc.get_book(locked_id)["is_downloadable"] is True
+
+
+def test_non_downloadable_books_rejected_single_and_skipped_in_bulk(db, config, library_svc):
+    from unittest.mock import MagicMock
+    import pytest
+    from app.events import EventBus
+    from app.services.downloads import DownloadsService, InvalidOptions
+    from app.services.task_queue import TaskQueueService
+    from app.tasks.signals import TaskSignals
+
+    add_account(db)
+    import_books(db, 1, [make_book("OK", title="Owned"), make_book("NO", title="Locked", is_downloadable=False)])
+    ok_id = db.scalar("SELECT id FROM books WHERE audible_id = 'OK'")
+    no_id = db.scalar("SELECT id FROM books WHERE audible_id = 'NO'")
+
+    downloads = DownloadsService(db, config, TaskQueueService(db, TaskSignals()), EventBus(), MagicMock(), library_svc)
+    with pytest.raises(InvalidOptions, match="not downloadable"):
+        downloads.enqueue(no_id)
+
+    queued = downloads.enqueue_many([no_id, ok_id])
+    assert [q["book_id"] for q in queued] == [ok_id]
+
+
+def test_multi_account_prefers_downloadable_copy(db, config, library_svc):
+    from unittest.mock import MagicMock
+    import pytest
+    from app.events import EventBus
+    from app.services.downloads import DownloadsService, InvalidOptions
+    from app.services.task_queue import TaskQueueService
+    from app.tasks.signals import TaskSignals
+
+    add_account(db, 1, "acct-locked")
+    add_account(db, 2, "acct-owned")
+    import_books(db, 1, [make_book("SHARED", title="Shared Book", is_downloadable=False)])
+    import_books(db, 2, [make_book("SHARED", title="Shared Book", is_downloadable=True)])
+
+    book_id = db.scalar("SELECT id FROM books WHERE audible_id = 'SHARED'")
+    # Combined view and detail prefer the downloadable account (account 2).
+    combined = library_svc.list_books()[0]
+    assert combined["is_downloadable"] is True and combined["account_id"] == 2
+    assert library_svc.get_book(book_id)["is_downloadable"] is True
+    # Filtering to account 1 still shows its locked state.
+    assert library_svc.list_books(account_id=1)[0]["is_downloadable"] is False
+
+    downloads = DownloadsService(db, config, TaskQueueService(db, TaskSignals()), EventBus(), MagicMock(), library_svc)
+    assert library_svc.book_meta(book_id)["account_id"] == 2
+    assert downloads.enqueue(book_id) is not None
+    with pytest.raises(InvalidOptions, match="not downloadable"):
+        downloads.enqueue(book_id, account_id=1)

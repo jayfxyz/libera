@@ -56,6 +56,10 @@
         <button type="button" class="btn-secondary self-start" @click="cancel">Cancel</button>
       </div>
 
+      <div v-else-if="status.state === 'unavailable'" class="flex items-center justify-between gap-2 rounded-xl border border-line-soft bg-paper px-3.5 py-3">
+        <UnavailablePopover />
+      </div>
+
       <div v-else-if="status.state === 'error'" class="flex flex-col gap-2.5 rounded-xl bg-warn-soft p-3.5">
         <p class="text-[13px] leading-normal text-warn-deep">
           <strong>The last download failed.</strong>
@@ -66,8 +70,9 @@
 
       <div v-else class="flex flex-col gap-2.5">
         <span class="inline-flex h-7 items-center gap-1.5 self-start rounded-full bg-ok-soft px-2.5 text-xs font-semibold text-ok-ink">{{ status.label }}</span>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn-secondary" :disabled="busy" @click="download">Download again</button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button v-if="isDownloadable" type="button" class="btn-secondary" :disabled="busy" @click="download">Download again</button>
+          <UnavailablePopover v-else />
           <button v-if="hasPdf" type="button" class="btn-secondary" :disabled="busy" @click="savePdf">
             {{ savingPdf ? 'Saving PDF…' : 'PDF only' }}
           </button>
@@ -76,13 +81,13 @@
       <p v-if="actionError" class="-mt-2 text-xs text-warn-deep">{{ actionError }}</p>
       <p v-else-if="notice" class="-mt-2 text-xs text-ok-ink break-all">{{ notice }}</p>
 
-      <div class="flex flex-col gap-1.5">
+      <div v-if="status.state !== 'unavailable' || book.file_path" class="flex flex-col gap-1.5">
         <!-- Downloads from before paths were recorded only have the computed location. -->
         <span class="text-xs font-semibold text-ink-soft">{{ book.file_path ? 'Saved to' : status.state === 'downloaded' ? 'Expected location' : 'Will save to' }}</span>
         <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ book.file_path || book.planned_path }}</code>
       </div>
 
-      <div class="flex flex-col gap-1 border-t border-line-faint pt-4">
+      <div v-if="isDownloadable" class="flex flex-col gap-1 border-t border-line-faint pt-4">
         <label class="flex flex-col gap-1.5 text-xs font-semibold text-ink-soft">
           Format for this book
           <SelectField v-model="format" :options="formatOptions" />
@@ -121,6 +126,7 @@ import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useSettingsStore } from '@/stores/settings'
 import BookCover from './BookCover.vue'
+import UnavailablePopover from './UnavailablePopover.vue'
 
 const props = defineProps<{ bookId: number }>()
 const emit = defineEmits<{ close: [] }>()
@@ -163,8 +169,9 @@ const job = computed(() => downloads.latestFor(props.bookId))
 const summary = computed(() => library.books.find((b) => b.id === props.bookId))
 // The list's copy is the fresher one after a sync; null means "not known yet".
 const hasPdf = computed(() => (summary.value ?? book.value)?.has_pdf === true)
+const isDownloadable = computed(() => (summary.value ?? book.value)?.is_downloadable !== false)
 const status = computed(() =>
-  bookStatus(summary.value ?? book.value ?? { liberation_status: 'not_liberated', last_format: null }, job.value),
+  bookStatus(summary.value ?? book.value ?? { liberation_status: 'not_liberated', last_format: null, is_downloadable: true }, job.value),
 )
 // Refresh the saved path once a download finishes.
 watch(() => status.value.state, (now, before) => {

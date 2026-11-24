@@ -1,7 +1,7 @@
 import type { BookSummary, Download } from '@/api/client'
 
 /** What a book looks like right now: the library's record plus any live download job. */
-export type BookState = 'downloaded' | 'downloading' | 'queued' | 'error' | 'none'
+export type BookState = 'downloaded' | 'downloading' | 'queued' | 'error' | 'unavailable' | 'none'
 
 export interface BookStatus {
   state: BookState
@@ -19,7 +19,7 @@ export function isActive(job: Download | undefined): job is Download {
 }
 
 export function bookStatus(
-  book: Pick<BookSummary, 'liberation_status' | 'last_format'>,
+  book: Pick<BookSummary, 'liberation_status' | 'last_format'> & { is_downloadable?: boolean },
   job?: Download,
 ): BookStatus {
   if (isActive(job)) {
@@ -39,6 +39,9 @@ export function bookStatus(
   if (book.liberation_status === 'liberated') {
     const fmt = book.last_format ? ` · ${book.last_format.toUpperCase()}` : ''
     return { state: 'downloaded', label: `Downloaded${fmt}`, text: 'text-ok-ink', dot: 'bg-ok', percent: 100 }
+  }
+  if (book.is_downloadable === false) {
+    return { state: 'unavailable', label: 'Not downloadable', text: 'text-ink-soft', dot: 'bg-ink-faint', percent: 0 }
   }
   if (book.liberation_status === 'error') {
     return { state: 'error', label: 'Failed · try again', text: 'text-warn-ink', dot: 'bg-warn', percent: 0 }

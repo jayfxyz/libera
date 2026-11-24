@@ -48,6 +48,7 @@ export interface BookSummary {
   is_finished: boolean
   is_deleted: boolean
   is_hidden: boolean
+  is_downloadable: boolean
   tags: string
   account_id: number // the library entry this row shows
   account_ids: number[] // every account that owns the book (one row per book across accounts)
@@ -75,6 +76,7 @@ export interface BookDetail {
   liberation_status: LiberationStatus
   is_finished: boolean
   is_hidden: boolean
+  is_downloadable: boolean
   tags: string
   user_rating: number | null
   account_id: number

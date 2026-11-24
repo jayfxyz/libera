@@ -59,14 +59,17 @@ def upsert_book(s: Session, b: AudibleBook) -> int:
     return s.execute(text("SELECT id FROM books WHERE audible_id = :asin"), {"asin": b.asin}).scalar_one()
 
 
-def upsert_library_entry(s: Session, book_id: int, account_id: int, date_added: str, is_plus: bool) -> None:
+def upsert_library_entry(s: Session, book_id: int, account_id: int, date_added: str, is_plus: bool,
+                         is_downloadable: bool = True) -> None:
     """Link a book to an account's library (restoring it if it had been removed)."""
     s.execute(text("""
-        INSERT INTO library_books (book_id, account_id, date_added, is_audible_plus, is_deleted, updated_at)
-        VALUES (:book, :account, :added, :plus, 0, :now)
-        ON CONFLICT(book_id, account_id) DO UPDATE SET date_added = excluded.date_added, is_deleted = 0,
-            updated_at = excluded.updated_at
-    """), {"book": book_id, "account": account_id, "added": date_added, "plus": int(is_plus), "now": now()})
+        INSERT INTO library_books (book_id, account_id, date_added, is_audible_plus, is_downloadable, is_deleted, updated_at)
+        VALUES (:book, :account, :added, :plus, :downloadable, 0, :now)
+        ON CONFLICT(book_id, account_id) DO UPDATE SET date_added = excluded.date_added,
+            is_audible_plus = excluded.is_audible_plus, is_downloadable = excluded.is_downloadable,
+            is_deleted = 0, updated_at = excluded.updated_at
+    """), {"book": book_id, "account": account_id, "added": date_added, "plus": int(is_plus),
+           "downloadable": int(is_downloadable), "now": now()})
 
 
 def set_contributors(s: Session, book_id: int, role: str, names: list[str]) -> None:
@@ -201,14 +204,14 @@ def order_by(sort: str | None, order: str | None) -> str:
 
 # account_ids: every account that owns the book, as "3,6" (the service makes it a list).
 _SUMMARY_COLUMNS = """b.id, b.audible_id, b.title, COALESCE(b.cover_url, '') AS cover_url,
-    lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.tags, lb.account_id,
+    lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.is_downloadable, lb.tags, lb.account_id,
     (SELECT group_concat(o.account_id) FROM library_books o WHERE o.book_id = b.id) AS account_ids,
     lb.last_format, b.length_minutes, lb.date_added, b.has_pdf, lb.updated_at"""
 
 # The library entry that stands for a book owned by several accounts: one that isn't
-# removed, then the oldest. get_summary (book.updated events) picks the same one.
+# removed, prefers a downloadable copy, then the oldest. get_summary picks the same one.
 _REPRESENTATIVE_ENTRY = """lb.id = (SELECT e.id FROM library_books e WHERE e.book_id = b.id
-    ORDER BY e.is_deleted, e.id LIMIT 1)"""
+    ORDER BY e.is_deleted, e.is_downloadable DESC, e.id LIMIT 1)"""
 
 
 def list_summaries(s: Session, *, fts_match: str = "", sort: str | None = None, order: str | None = None,
@@ -242,7 +245,7 @@ def get_summary(s: Session, book_id: int) -> dict[str, Any] | None:
     """One book as the library list shows it."""
     return _one(s, f"""
         SELECT {_SUMMARY_COLUMNS} FROM books b JOIN library_books lb ON lb.book_id = b.id
-        WHERE b.id = :id ORDER BY lb.is_deleted, lb.id LIMIT 1""", id=book_id)
+        WHERE b.id = :id ORDER BY lb.is_deleted, lb.is_downloadable DESC, lb.id LIMIT 1""", id=book_id)
 
 
 def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
@@ -252,9 +255,9 @@ def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
                b.length_minutes, COALESCE(b.publisher,'') AS publisher,
                COALESCE(b.language,'') AS language, COALESCE(b.audible_rating,0) AS audible_rating,
                lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
-               lb.is_hidden, lb.last_format, lb.file_path, b.has_pdf, lb.updated_at
+               lb.is_hidden, lb.is_downloadable, lb.last_format, lb.file_path, b.has_pdf, lb.updated_at
         FROM books b JOIN library_books lb ON lb.book_id = b.id
-        WHERE b.id = :id""", id=book_id)
+        WHERE b.id = :id ORDER BY lb.is_deleted, lb.is_downloadable DESC, lb.id LIMIT 1""", id=book_id)
 
 
 def series_of(s: Session, book_id: int) -> list[dict[str, str]]:
@@ -291,13 +294,14 @@ def download_meta(s: Session, book_id: int, account_id: int | None = None) -> di
     """The book's account and the raw values used for file naming."""
     return _one(s, """
         SELECT a.audible_account_id, a.id AS account_id, lb.id AS library_book_id, lb.file_path,
-               b.audible_id, b.title,
+               lb.is_downloadable, b.audible_id, b.title,
                COALESCE(b.language,'') AS language, COALESCE(b.length_minutes,0) AS length_minutes,
                COALESCE(lb.date_added,'') AS date_added, COALESCE(b.date_published,'') AS date_published
         FROM accounts a
         JOIN library_books lb ON lb.account_id = a.id
         JOIN books b ON b.id = lb.book_id
-        WHERE b.id = :book AND (:account IS NULL OR a.id = :account)""", book=book_id, account=account_id)
+        WHERE b.id = :book AND (:account IS NULL OR a.id = :account)
+        ORDER BY lb.is_deleted, lb.is_downloadable DESC, lb.id LIMIT 1""", book=book_id, account=account_id)
 
 
 # --- per-book state -----------------------------------------------------------------

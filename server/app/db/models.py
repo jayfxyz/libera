@@ -81,6 +81,7 @@ class LibraryBook(Base):
     date_added: Mapped[str] = mapped_column(String)
     is_deleted: Mapped[int] = mapped_column(Integer, server_default="0")  # gone from the Audible library
     is_audible_plus: Mapped[int] = mapped_column(Integer, server_default="0")
+    is_downloadable: Mapped[int] = mapped_column(Integer, server_default="1")  # offline download rights on Audible
     # not_liberated | liberated | error (historical names; the UI says downloaded)
     liberation_status: Mapped[str] = mapped_column(Text, server_default="not_liberated")
     tags: Mapped[str] = mapped_column(Text, server_default="")

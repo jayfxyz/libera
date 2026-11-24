@@ -145,6 +145,8 @@ class DownloadsService:
         meta = self._library.book_meta(book_id, account_id)
         if meta is None:
             return None
+        if not meta.get("is_downloadable", True):
+            raise InvalidOptions("Book is not downloadable from Audible")
         with self._db.session() as s:
             download_id = self._add(s, meta, fmt, split_chapters)
         if self.pauses.gave_up(meta["audible_account_id"]):
@@ -154,11 +156,15 @@ class DownloadsService:
 
     def enqueue_many(self, book_ids: list[int], *, format: str = "",  # noqa: A002
                      split_chapters: bool = False) -> list[dict[str, Any]]:
-        """Queue several books in the order given; duplicates and unknown ids are skipped."""
+        """Queue several books in the order given; duplicates, unknown and non-downloadable ids are skipped."""
         self._format(format)  # validate before queueing anything
         queued = []
         for book_id in dict.fromkeys(book_ids):
-            if download_id := self.enqueue(book_id, format=format, split_chapters=split_chapters):
+            try:
+                download_id = self.enqueue(book_id, format=format, split_chapters=split_chapters)
+            except InvalidOptions:
+                continue
+            if download_id:
                 queued.append({"id": download_id, "book_id": book_id})
         return queued
 

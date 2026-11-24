@@ -47,7 +47,7 @@ class LibraryService:
             for b in books:
                 book_id = repo.upsert_book(s, b)
                 repo.upsert_library_entry(s, book_id, account_id, b.date_added or "1970-01-01",
-                                          b.is_plus_catalog_item)
+                                          b.is_plus_catalog_item, b.is_downloadable)
                 repo.set_contributors(s, book_id, "author", b.authors)
                 repo.set_contributors(s, book_id, "narrator", b.narrators)
                 for series in b.series:
@@ -102,6 +102,7 @@ class LibraryService:
                 **r,
                 "is_finished": bool(r["is_finished"]),
                 "is_hidden": bool(r["is_hidden"]),
+                "is_downloadable": bool(r["is_downloadable"]),
                 "has_pdf": _has_pdf(r["has_pdf"]),
                 "updated_at": iso_utc(r["updated_at"]),
                 "audible_rating": round(r["audible_rating"], 2),
@@ -291,6 +292,7 @@ def _summary(r: dict[str, Any], people: dict[str, list[str]], genre_names: list[
         "is_finished": bool(r["is_finished"]),
         "is_deleted": bool(r["is_deleted"]),
         "is_hidden": bool(r["is_hidden"]),
+        "is_downloadable": bool(r["is_downloadable"]),
         "has_pdf": _has_pdf(r["has_pdf"]),
         "updated_at": iso_utc(r["updated_at"]),
         "account_ids": sorted(int(i) for i in r["account_ids"].split(",")) if r["account_ids"] else [],

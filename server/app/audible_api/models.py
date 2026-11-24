@@ -44,6 +44,7 @@ class AudibleBook(BaseModel):
     rating: float | None = None
     genres: list[list[Genre]] = []  # Audible's category ladders, top-level first
     is_plus_catalog_item: bool = False
+    is_downloadable: bool = True  # customer_rights.is_consumable_offline; False for locked Plus/Music borrows
     date_added: str | None = None
     has_pdf: bool | None = None  # a companion PDF exists; None: the scan didn't say
 
@@ -51,6 +52,8 @@ class AudibleBook(BaseModel):
     def from_audible(cls, item: dict[str, Any]) -> AudibleBook:
         """From one item of Audible's 1.0/library response."""
         images = item.get("product_images") or {}
+        rights = item.get("customer_rights")
+        is_downloadable = bool(rights.get("is_consumable_offline", True)) if isinstance(rights, dict) else True
         return cls(
             asin=item.get("asin", ""),
             title=item.get("title") or "",
@@ -69,6 +72,7 @@ class AudibleBook(BaseModel):
             genres=[[Genre(id=str(r.get("id") or ""), name=r.get("name") or "") for r in ladder.get("ladder") or []]
                     for ladder in item.get("category_ladders") or []],
             is_plus_catalog_item=bool(item.get("is_plus_catalog_item")),
+            is_downloadable=is_downloadable,
             date_added=(item.get("library_status") or {}).get("date_added"),
             has_pdf=bool(item.get("pdf_url")),  # only the flag: the URL is fetched fresh when needed
         )
