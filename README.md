@@ -23,26 +23,41 @@ One container: a FastAPI backend that also serves the Vue 3 frontend.
 
 ## Quick start
 
+Create a `docker-compose.yml`:
+
+```yaml
+services:
+  libera:
+    image: ghcr.io/jayfxyz/libera:latest
+    ports:
+      - "8888:8080"
+    volumes:
+      - libera_data:/data
+      - ${AUDIOBOOKS_DIR:-./audiobooks}:/audiobooks
+    restart: unless-stopped
+
+volumes:
+  libera_data:
+```
+
+Start it:
+
 ```sh
-cp .env.example .env      # set AUDIOBOOKS_DIR, PORT
-docker compose up -d --build
+docker compose up -d
 ```
 
 Open `http://localhost:8888`, add your Audible account under **Accounts**, and
 Libera will scan your library.
 
-| Setting (`.env`) | Default | What it does |
+Optional environment variables:
+
+| Variable | Default | What it does |
 |---|---|---|
-| `PORT` | `8888` | Host port for the app |
-| `AUDIOBOOKS_DIR` | `./audiobooks` | Where downloaded books go |
 | `APP_URL` | `http://localhost:8888` | The app's public URL, shown in Settings |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Optional: send OpenTelemetry traces to an OTLP gRPC endpoint |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Send OpenTelemetry traces to an OTLP gRPC endpoint (helpful during development) |
 
 Folder layout presets, default audio format, and parallel download count are
 configured in the app's **Settings** page.
-
-Host-specific Docker tweaks (an extra network, reverse proxy labels, a tracing
-endpoint) can go in a `docker-compose.override.yml`, which is gitignored.
 
 ## Security
 

@@ -3,7 +3,7 @@
 services:
   libera:
     build: .
-    image: libera
+    image: ghcr.io/jayfxyz/libera:latest
     ports:
       - "${PORT:-8888}:8080"
     environment:
