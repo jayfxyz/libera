@@ -13,24 +13,29 @@ RUN npm run build-only
 
 # trixie: SQLite >= 3.43 is required by the search index (contentless_delete).
 FROM python:3.12-slim-trixie AS python-base
-COPY --from=uv /uv /usr/local/bin/uv
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    PATH="/app/.venv/bin:$PATH"
-COPY server/pyproject.toml server/uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+ENV PATH="/app/.venv/bin:$PATH"
 
-FROM python-base AS test
-RUN uv sync --frozen --no-install-project
+FROM python-base AS python-deps
+COPY --from=uv /uv /usr/local/bin/uv
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+COPY server/pyproject.toml server/uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project
+
+FROM python-deps AS test
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project
 COPY server/ .
 ENV PYTHONDONTWRITEBYTECODE=1
 CMD ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
 
 FROM python-base
+COPY --from=python-deps /app/.venv ./.venv
 COPY server/app ./app
 COPY --from=frontend /frontend/dist ./frontend
 
