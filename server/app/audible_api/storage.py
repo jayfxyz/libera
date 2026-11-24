@@ -34,3 +34,7 @@ def save_auth(accounts_dir: str, account_id: str, auth: audible.Authenticator) -
     path.parent.mkdir(parents=True, exist_ok=True)
     auth.to_file(str(path))
     path.chmod(0o600)  # the file holds the account's credentials
+
+
+def delete_auth(accounts_dir: str, account_id: str) -> None:
+    token_path(accounts_dir, account_id).unlink(missing_ok=True)

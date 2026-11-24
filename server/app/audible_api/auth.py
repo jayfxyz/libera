@@ -136,6 +136,13 @@ class LoginFlow:
         if previous is not None:
             _deregister(previous, token_key)
 
+    def remove(self, token_key: str) -> None:
+        """Delete the saved tokens for token_key and deregister its device (best-effort)."""
+        previous = _load_previous(self.accounts_dir, token_key)
+        storage.delete_auth(self.accounts_dir, token_key)
+        if previous is not None:
+            _deregister(previous, token_key)
+
 
 def _load_previous(accounts_dir: str, account_id: str):
     try:

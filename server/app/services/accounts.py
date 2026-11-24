@@ -62,7 +62,11 @@ class AccountsService:
 
     def remove(self, account_id: int) -> None:
         with self._db.session() as s:
+            account = repo.get(s, account_id)
+            token_key = account.audible_account_id if account else None
             repo.delete_with_library(s, account_id)
+        if token_key:
+            self._audible.remove_login(token_key)
 
     async def scan(self, account_id: int) -> int | None:
         """Fetch the account's Audible library and import it. None if there's no such

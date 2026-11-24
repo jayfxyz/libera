@@ -91,6 +91,7 @@ def test_rename_scan_and_delete_account(api, db, audible):
     assert api.post("/api/accounts/99/scan").status_code == 404
 
     assert api.delete("/api/accounts/1").status_code == 204
+    audible.remove_login.assert_called_once_with("amzn1.account.TEST")
     assert api.get("/api/accounts").json() == []
     assert api.get("/api/library").json() == []
 

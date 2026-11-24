@@ -230,6 +230,29 @@ def test_failed_deregistration_does_not_fail_the_save(tmp_path):
     save.assert_called_once()
 
 
+def test_removing_a_login_deletes_the_token_file_and_deregisters(tmp_path):
+    token_file = tmp_path / "amzn1.account.ABC-uk.json"
+    token_file.write_text("{}")
+    previous = MagicMock()
+    with patch("app.audible_api.auth.storage.load_auth", return_value=previous):
+        LoginFlow(str(tmp_path)).remove("amzn1.account.ABC-uk")
+    assert not token_file.exists()
+    previous.deregister_device.assert_called_once_with()
+
+
+def test_removing_a_login_tolerates_missing_file_and_failed_deregister(tmp_path):
+    flow = LoginFlow(str(tmp_path))
+    flow.remove("amzn1.account.MISSING-uk")  # missing file: no error
+
+    token_file = tmp_path / "amzn1.account.ABC-uk.json"
+    token_file.write_text("{}")
+    previous = MagicMock()
+    previous.deregister_device.side_effect = RuntimeError("Amazon said no")
+    with patch("app.audible_api.auth.storage.load_auth", return_value=previous):
+        flow.remove("amzn1.account.ABC-uk")
+    assert not token_file.exists()
+
+
 def test_saved_login_is_private(tmp_path):
     import audible
     from app.audible_api import storage
