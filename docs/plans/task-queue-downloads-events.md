@@ -1,47 +1,36 @@
 # Plan: generic task queue, a downloads table, and an event stream
 
 Four phases, each shippable on its own (the app works and tests pass
-after each). Do 1 to 3 in order; phase 4 is independent of them.
+after each). Phases 1–3 are implemented; phase 4 remains.
 
-1. **Task queue**: a generic `tasks` table, one repository, two services.
-2. **Downloads**: a `downloads` table that owns everything the Downloads
+1. **Task queue** *(implemented)*: a generic `tasks` table, one repository, two services.
+2. **Downloads** *(implemented)*: a `downloads` table that owns everything the Downloads
    page shows; the companion PDF becomes part of every download; each
    download records a manifest of the files it wrote.
-3. **Event stream**: an event bus and one HTTP stream (Server-Sent Events)
+3. **Event stream** *(implemented)*: an event bus and one HTTP stream (Server-Sent Events)
    replace the download-only WebSocket.
-4. **Finding files on disk**: identify downloaded books by their Audible
+4. **Finding files on disk** *(remaining)*: identify downloaded books by their Audible
    id, as Libation does, but kept in a metadata file in each book folder
    instead of in file or folder names.
 
 ## Where we are
 
-- **`jobs` table** (`server/app/db/models.py`, migration `0002_jobs.py`) is
-  both the queue and the Downloads page's data: `type` (always
-  `download`), download-specific `status`
-  (`queued | downloading | decrypting | done | error`), `percent`,
-  `message`, `title`, `book_id`, JSON `payload`.
-- **`DownloadQueue`** (`server/app/jobs/queue.py`) does three things in one
-  class: enqueue, run workers (asyncio tasks in the web process, one
-  `runner` function), and broadcast progress to WebSocket subscribers from
-  memory.
-- **`DownloadJob`** is a dataclass serialised into `jobs.payload`. It
-  carries the options, a snapshot of the naming settings and the book's
-  naming data.
-- **Pipeline** (`server/app/jobs/download.py`): download, decrypt with
-  ffmpeg, embed chapters and cover, optional chapter split, then the
-  companion PDF (best-effort, behind `include_pdf`). A second path,
-  `kind="pdf"`, saves only the PDF.
-- **No retries.** Jobs running at shutdown are re-queued at startup and
-  start over.
-- **Account link is not queryable**: `jobs.book_id` points at `books`; the
-  account is only inside the payload. Download state on the book lives on
-  `library_books` (`liberation_status`, `last_format`, `last_downloaded`,
-  `file_path`).
-- **Frontend**: one WebSocket (`/ws/downloads`,
-  `frontend/src/composables/useWebSocket.ts`) plus `GET /api/downloads` at
-  startup. `App.vue` turns download events into library patches. There is
-  no catch-up after a reconnect, and a slow client can miss the final
-  event (bounded per-client queue).
+- **Phases 1–3 are shipped**:
+  - `tasks` (`0003_tasks.py`, `0007_task_not_before.py`) with `TaskQueueService`,
+    `TaskWorkerService`, exponential retry backoff, and `TaskDeferred` for
+    delayed re-queuing.
+  - `downloads` (`0004_downloads.py`) with two chained tasks (`download_book` →
+    `decrypt_book`), fetched bundle retention for retries, per-account throttle
+    backoff (`AccountPauses`), `POST /api/downloads/retry-failed`, `books.has_pdf`,
+    and synchronous `POST /api/library/{book_id}/pdf`.
+  - `EventBus` (`server/app/events.py`), `GET /api/events` SSE, `updated_at`
+    (`0005_updated_at.py`), and `frontend/src/composables/useEventStream.ts`.
+  - Folder layouts are controlled by 5 `NamingPreset` options
+    (`server/app/config.py`, `server/app/jobs/filename.py`) that already place
+    one book per leaf folder, with audio files named after the sanitized title.
+- **Phase 4 is not yet built**: `rescan()` in `server/app/services/library.py`
+  still matches only by sanitized title and does not write `file_path`; there is
+  no `libera.json`, no locator service, and no manual `liberation_status` edit.
 
 ## Decisions
 
@@ -67,12 +56,12 @@ after each). Do 1 to 3 in order; phase 4 is independent of them.
 
 ---
 
-## Phase 1: task queue
+## Phase 1: task queue (implemented)
 
-Build the queue and prove it with tests. Downloads keep running on
-`DownloadQueue` until phase 2, so this phase changes no behaviour.
+Build the queue and prove it with tests. Downloads kept running on
+`DownloadQueue` until phase 2, so this phase changed no behaviour.
 
-### Schema (migration `0003_tasks.py`, model `Task`)
+### Schema (migrations `0003_tasks.py`, `0007_task_not_before.py`, model `Task`)
 
 ```
 tasks
@@ -85,6 +74,7 @@ tasks
   error         text              last failure message
   created_at    text  not null
   locked_at     text              set on claim, refreshed while running
+  not_before    text              earliest time workers may claim it (added in 0007)
   finished_at   text
 index (status, created_at)
 ```
@@ -146,8 +136,11 @@ use a throwaway task type.
     other exception retries if attempts remain. Cancellation during
     shutdown leaves the row `processing` for `release_stale`. An unknown
     `type` fails the task permanently.
-  - No retry backoff. Add a `not_before` column if a task type ever needs
-    one.
+  - Retry backoff & deferral (added in `0007_task_not_before.py`): failed
+    retries wait via `not_before` (`RETRY_BASE_DELAY` × 4^(attempt-1) with
+    ±20% jitter). Handlers can also raise `TaskDeferred(message, delay)` to
+    put a task back until `not_before` without consuming an attempt (used
+    when Audible throttles an account).
   - Keep the OpenTelemetry behaviour: remember the enqueuing request's
     trace context in memory by task id and attach it when the task runs.
 
@@ -164,7 +157,7 @@ use a throwaway task type.
 
 ---
 
-## Phase 2: downloads
+## Phase 2: downloads (implemented)
 
 ### Schema (migration `0004_downloads.py`)
 
@@ -230,11 +223,16 @@ index (status, created_at), index (library_book_id)
     cover embedded, move into place, extras next to it, optional split,
     manifest, done. `max_attempts = 1`. On success it deletes the bundle;
     on failure it keeps it.
-- **Retry**: `POST /api/downloads/{id}/retry` on a `failed` download. If
-  its encrypted file and keys are still there, enqueue `decrypt_book`
-  only; otherwise `download_book`. Same download row (status back to
-  `queued`, error cleared). A "Retry" button on failed downloads in
+- **Retry**: `POST /api/downloads/{id}/retry` on a `failed` download (and
+  `POST /api/downloads/retry-failed` to retry every book whose latest
+  download failed). If its encrypted file and keys are still there, enqueue
+  `decrypt_book` only; otherwise `download_book`. Same download row (status
+  back to `queued`, error cleared). A "Retry" button on failed downloads in
   `DownloadsView.vue`.
+- **Throttle backoff**: when Audible refuses a license as throttled,
+  `AccountPauses` pauses that account with escalating delays
+  (`15m → 30m → 1h → 2h → 4h`) and defers its tasks via `TaskDeferred`,
+  failing the download if throttling persists past the last pause.
 - **Kept encrypted files** are deleted when the download is cancelled or
   decrypted, and at startup when older than 7 days (a retry after that
   downloads again).
@@ -350,7 +348,7 @@ has the flag, so the option is hidden for all.
 
 ---
 
-## Phase 3: event stream
+## Phase 3: event stream (implemented)
 
 ### Server
 
@@ -410,9 +408,8 @@ has the flag, so the option is hidden for all.
 
 - `rescan` (`server/app/services/library.py`) marks a book downloaded when
   some `.m4b` / `.mp3` file's name equals the sanitised title. It breaks
-  with any filename template other than the bare title, can't tell
-  editions apart, and doesn't record where the file is (in the live
-  database all downloaded books have `file_path` null).
+  if a file is renamed, can't tell editions apart, and doesn't record
+  where the file is (`file_path` stays null for rescanned books).
 - Nothing notices a file that was moved or deleted.
 
 ### How Libation does it
@@ -442,30 +439,21 @@ inside the book's folder. No `{asin}` template tag, no id in audio tags.
 ### One book per folder
 
 The metadata file describes one book, so a folder must hold exactly one
-book. The folder template stops being free text and becomes a choice of
-two:
+book. This is already enforced by the 5 `NamingPreset` folder layouts in
+`server/app/config.py` and `server/app/jobs/filename.py` (`author_title`,
+`author_folder`, `author_folder_year`, `author_series`,
+`author_series_year`), where each book gets its own leaf folder and the
+audio file is named from the sanitised title (`book_file_name`).
 
-- `{author} - {title}` (the default)
-- `{title} - {author}`
+What still needs handling:
 
-What changes:
-
-- **Server**: validate `folder_template` against these two in the
-  settings service and reject anything else; `book_directory`
-  (`server/app/jobs/filename.py`) no longer accepts a blank template.
-- **Migration**: a saved `folder_template` that is neither value is
-  reset to the default. Files already downloaded stay where they are;
-  only new downloads use the new folder.
-- **Frontend** (`SettingsView.vue`): the folder field becomes a select
-  with a preview; the tag picker applies to the file name only.
-- The file name template stays free text.
 - **Same folder, different book**: two titles can still render to the
-  same folder (two editions with the same author and title). If the
-  target folder already has a `libera.json` for a different ASIN, the
-  download appends the release year, e.g.
-  `Jordan Peterson - 12 Rules for Life (2018)`. If the year is unknown
-  or that folder is also taken by another book, append ` (2)` (then
-  ` (3)`, …) instead.
+  same leaf folder (e.g. two editions with the same author and title). If
+  the target folder already has a `libera.json` for a different ASIN, the
+  download appends the release year (when not already in the folder name),
+  e.g. `Jordan Peterson - 12 Rules for Life (2018)`. If the year is
+  unknown or that folder is also taken by another book, append ` (2)`
+  (then ` (3)`, …) instead.
 
 **`libera.json`**, one per book folder, written by every download:
 
@@ -555,8 +543,6 @@ many audio files matched nothing.
 - A download writes `libera.json`; re-downloading replaces it; a
   different book that renders to the same folder name gets the year
   appended, or ` (2)` when the year is unknown or also taken.
-- Settings reject a folder template other than the two allowed; the
-  migration resets a custom one to the default.
 - Lookup: recorded path wins; a renamed or moved folder is found again
   through its `libera.json`; the hit is written back; a renamed audio
   file inside the folder is still found.
@@ -569,12 +555,12 @@ many audio files matched nothing.
 ## Out of scope
 
 - A separate worker process.
-- Resuming a partial download (checkpointing) and retry backoff.
+- Resuming a partial download (checkpointing).
 - Per-topic event subscriptions and event replay.
 
 ## Checks for every phase
 
 - `docker build --target test -t libera-test . && docker run --rm libera-test`
 - `cd frontend && npm run type-check && npm run lint`
-- Upgrade a copy of a real database (`data/db/libation.db`) and confirm
+- Upgrade a copy of a real database (`data/db/libera.db`) and confirm
   the Downloads page still shows its history.
