@@ -4,12 +4,12 @@
 
 FROM ghcr.io/astral-sh/uv:0.7 AS uv
 
-FROM node:22-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend
 WORKDIR /frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ .
-RUN npm run build
+RUN npm run build-only
 
 # trixie: SQLite >= 3.43 is required by the search index (contentless_delete).
 FROM python:3.12-slim-trixie AS python-base
