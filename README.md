@@ -17,7 +17,7 @@ One container: a FastAPI backend that also serves the Vue 3 frontend.
 - **Real chapter titles & cover art:** Embeds Audible's chapter outline and highest-resolution cover into the audio, and writes `cover.jpg`, `.cue`, and `.chapters.json` alongside it.
 - **Optional chapter splitting & companion PDFs:** Split audiobooks into per-chapter files on demand and download companion PDFs automatically (or standalone).
 - **Audiobookshelf-ready folder layouts:** Pick from flat or nested presets (`Author/Series/1 - Title/`, `Author/Year - Title/`, etc.) in Settings.
-- **Multi-account & multi-region:** Connect multiple Audible accounts across regions (`us`, `uk`, `ca`, `de`, `fr`, `au`, `jp`, `in`, `es`, `it`). Books owned by multiple accounts appear as one row.
+- **Multi-account & multi-region:** Connect multiple Audible accounts across regions (`us`, `uk`, `ca`, `de`, `fr`, `au`, `jp`, `in`, `es`, `it`, `br`). Books owned by multiple accounts appear as one row.
 - **Search, organize & export:** Instant SQLite FTS5 search, status filters, sorting, tags, ratings, finished status, light/dark mode, and CSV/JSON export.
 - **Resilient downloads:** Persistent queue with live progress (SSE), automatic backoff when Audible throttles, and retry from the decrypt step without re-downloading.
 
@@ -34,7 +34,7 @@ services:
   libera:
     image: ghcr.io/jayfxyz/libera:latest
     ports:
-      - "8888:8080"
+      - "${PORT:-8888}:8080"
     volumes:
       - libera_data:/data
       - ${AUDIOBOOKS_DIR:-./audiobooks}:/audiobooks
@@ -57,8 +57,8 @@ Optional environment variables:
 
 | Variable | Default | What it does |
 |---|---|---|
+| `PORT` | `8888` | Host port to serve the app on |
 | `AUDIOBOOKS_DIR` | `./audiobooks` | Where downloaded books go |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Send OpenTelemetry traces to an OTLP gRPC endpoint (helpful during development) |
 
 Folder layout presets, default audio format, and parallel download count are
 configured in the app's **Settings** page.
@@ -84,15 +84,24 @@ cd server && uv sync
 DATABASE_PATH=../data/db/libera.db ACCOUNTS_DIR=../data/accounts \
   OUTPUT_DIR=../data/audiobooks uv run uvicorn app.main:app --reload --port 8080
 
-# frontend on :5173, proxying /api to :8080
+# frontend on :5173, proxying /api to :8080 (needs Node >= 20.19 or >= 22.12)
 cd frontend && npm install && npm run dev
 ```
 
-Tests run in the same base image as the app:
+Backend tests run in the same base image as the app:
 
 ```sh
 docker build --target test -t libera-test . && docker run --rm libera-test
 ```
+
+Frontend checks:
+
+```sh
+cd frontend && npm run type-check && npm run lint && npm run test:unit -- --run
+```
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to send OpenTelemetry traces to an OTLP gRPC
+endpoint (wired up in the repo's `docker-compose.yml`).
 
 Layout: `server/app` (API, Audible client, task queue & download pipeline),
 `server/tests`, `frontend/` (Vue 3 + TypeScript + Vite). Design notes live in
