@@ -14,14 +14,15 @@ EDITABLE_KEYS = ("download_workers", "default_format", "naming")
 
 
 class NamingPreset(StrEnum):
-    """Where a book's files go inside the output folder. The audio file is always named after the title.
-    The nested layouts are the ones Audiobookshelf reads authors, series and order from."""
+    """Where a book's files go inside the output folder. The book's folder and audio file are always named
+    "<title> [<asin>]", so books with the same title never collide. The nested layouts are the ones
+    Audiobookshelf reads authors, series and order from."""
 
-    AUTHOR_TITLE = "author_title"  # Author - Title/
-    AUTHOR_FOLDER = "author_folder"  # Author/Title/
-    AUTHOR_FOLDER_YEAR = "author_folder_year"  # Author/2007 - Title/
-    AUTHOR_SERIES = "author_series"  # Author/Series/1 - Title/
-    AUTHOR_SERIES_YEAR = "author_series_year"  # Author/Series/1 - 2007 - Title/
+    AUTHOR_TITLE = "author_title"  # Author - Title [ASIN]/
+    AUTHOR_FOLDER = "author_folder"  # Author/Title [ASIN]/
+    AUTHOR_FOLDER_YEAR = "author_folder_year"  # Author/2007 - Title [ASIN]/
+    AUTHOR_SERIES = "author_series"  # Author/Series/1 - Title [ASIN]/
+    AUTHOR_SERIES_YEAR = "author_series_year"  # Author/Series/1 - 2007 - Title [ASIN]/
 
 
 @dataclass

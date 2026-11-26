@@ -151,17 +151,17 @@ const namingOptions: SelectOption<NamingPreset>[] = [
   { value: 'author_series_year', label: 'Author / Series / Year - Title' },
 ]
 const exampleFolders: Record<NamingPreset, string> = {
-  author_title: 'Patrick Rothfuss - The Name of the Wind',
-  author_folder: 'Patrick Rothfuss/The Name of the Wind',
-  author_folder_year: 'Patrick Rothfuss/2007 - The Name of the Wind',
-  author_series: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - The Name of the Wind',
-  author_series_year: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - 2007 - The Name of the Wind',
+  author_title: 'Patrick Rothfuss - The Name of the Wind [B002UZMLXM]',
+  author_folder: 'Patrick Rothfuss/The Name of the Wind [B002UZMLXM]',
+  author_folder_year: 'Patrick Rothfuss/2007 - The Name of the Wind [B002UZMLXM]',
+  author_series: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - The Name of the Wind [B002UZMLXM]',
+  author_series_year: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - 2007 - The Name of the Wind [B002UZMLXM]',
 }
 
 const examplePath = computed(() => {
   if (!settings.value) return ''
   const s = settings.value
-  return `${s.output_dir}/${exampleFolders[s.naming]}/The Name of the Wind.${s.default_format}`.replace(/\/{2,}/g, '/')
+  return `${s.output_dir}/${exampleFolders[s.naming]}/The Name of the Wind [B002UZMLXM].${s.default_format}`.replace(/\/{2,}/g, '/')
 })
 
 const namingHint = computed(() => {

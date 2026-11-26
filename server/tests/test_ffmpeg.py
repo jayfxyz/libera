@@ -1,3 +1,5 @@
+import os
+
 from app.audible_api.content import DownloadInfo
 from app.jobs.chapters import chapter_path, parse_chapters
 from app.jobs.ffmpeg import chapter_args, decrypt_args
@@ -52,6 +54,16 @@ def test_parse_chapters():
 def test_chapter_path():
     assert chapter_path("/out", "Book", 0, "Intro: Part 1") == "/out/Book - 01 - Intro - Part 1"
     assert chapter_path("/out", "Book", 4, "") == "/out/Book - 05 - Chapter_05"
+
+
+def test_chapter_path_keeps_the_book_name_and_number_whole_when_names_are_long():
+    base = "x" * 188 + " [B002UZMLXM]"  # a book name at its 200-byte limit
+    paths = [chapter_path("/out", base, n, "y" * 300) for n in (0, 1)]
+    assert paths[0] != paths[1]
+    for n, path in enumerate(paths):
+        name = os.path.basename(path)
+        assert name.startswith(f"{base} - {n + 1:02d} - ")
+        assert len(name.encode()) + 10 <= 255
 
 
 def test_cover_is_embedded_as_attached_picture():

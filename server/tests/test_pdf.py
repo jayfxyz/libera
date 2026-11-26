@@ -47,7 +47,7 @@ def book_id(db):
 
 def test_saves_the_pdf_where_a_download_would_go(api, db, config, book_id):
     resp = api.post(f"/api/library/{book_id}/pdf")
-    path = os.path.join(config.output_dir, "Jane Author - The Book", "The Book.pdf")
+    path = os.path.join(config.output_dir, "Jane Author - The Book [B1]", "The Book [B1].pdf")
     assert (resp.status_code, resp.json()) == (200, {"file_path": path})
     with open(path, "rb") as f:
         assert f.read() == PDF

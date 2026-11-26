@@ -161,19 +161,20 @@ async def test_download_writes_book_folder_with_chapters_cover_and_pdf(db, confi
     info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="deadbeef", cover_url=cover_jpg)
     view = await make_downloader(FakeAudible(source_audio, info)).run(book_id, format=fmt)
 
-    book_dir = os.path.join(config.output_dir, "Jane Author - The Book")
+    book_dir = os.path.join(config.output_dir, "Jane Author - The Book [B0001]")
     assert view["status"] == "done", view
-    assert view["message"] == os.path.join(book_dir, f"The Book.{fmt}")
-    assert os.listdir(config.output_dir) == ["Jane Author - The Book"]  # work folder cleaned up
-    roles = {f"The Book.{fmt}": "audio", "The Book.cue": "metadata", "The Book.chapters.json": "metadata",
-             "The Book.pdf": "pdf", "cover.jpg": "cover"}
+    assert view["message"] == os.path.join(book_dir, f"The Book [B0001].{fmt}")
+    assert os.listdir(config.output_dir) == ["Jane Author - The Book [B0001]"]  # work folder cleaned up
+    base = "The Book [B0001]"
+    roles = {f"{base}.{fmt}": "audio", f"{base}.cue": "metadata", f"{base}.chapters.json": "metadata",
+             f"{base}.pdf": "pdf", "cover.jpg": "cover"}
     assert sorted(os.listdir(book_dir)) == sorted(roles)
     # The manifest lists every file with its role and size.
     assert {f["name"]: f["role"] for f in view["files"]} == roles
     assert all(f["size_bytes"] == os.path.getsize(os.path.join(book_dir, f["name"])) for f in view["files"])
-    assert probe_chapters(os.path.join(book_dir, f"The Book.{fmt}")) == [
+    assert probe_chapters(os.path.join(book_dir, f"The Book [B0001].{fmt}")) == [
         ("Opening Credits", 0.0), ("Part One: Chapter 1", 1.0)]
-    assert probe_cover(os.path.join(book_dir, f"The Book.{fmt}")) == [("mjpeg", 64)]
+    assert probe_cover(os.path.join(book_dir, f"The Book [B0001].{fmt}")) == [("mjpeg", 64)]
     with open(os.path.join(book_dir, "cover.jpg"), "rb") as a, open(cover_jpg, "rb") as b:
         assert a.read() == b.read()
     lib = db.query_one("SELECT liberation_status, last_format FROM library_books WHERE book_id = ?", (book_id,))
@@ -188,7 +189,7 @@ async def test_missing_or_bad_cover_does_not_fail_the_download(config, book_id, 
         info = DownloadInfo(source_audio, "LC_64", "aax", activation_bytes="ab", cover_url=cover_url)
         view = await make_downloader(FakeAudible(source_audio, info)).run(book_id)
         assert view["status"] == "done", view
-        audio = os.path.join(config.output_dir, "Jane Author - The Book", "The Book.m4b")
+        audio = os.path.join(config.output_dir, "Jane Author - The Book [B0001]", "The Book [B0001].m4b")
         assert probe_cover(audio) == []
         assert not os.path.exists(os.path.join(os.path.dirname(audio), "cover.jpg"))
 
@@ -197,8 +198,9 @@ async def test_split_chapters(config, book_id, source_audio, make_downloader):
     view = await make_downloader(FakeAudible(source_audio)).run(book_id, split_chapters=True)
     assert view["status"] == "done", view
     chapters = sorted(f["name"] for f in view["files"] if f["role"] == "chapter")
-    assert chapters == ["The Book - 01 - Opening Credits.m4b", "The Book - 02 - Part One - Chapter 1.m4b"]
-    assert set(chapters) <= set(os.listdir(os.path.join(config.output_dir, "Jane Author - The Book")))
+    assert chapters == ["The Book [B0001] - 01 - Opening Credits.m4b",
+                        "The Book [B0001] - 02 - Part One - Chapter 1.m4b"]
+    assert set(chapters) <= set(os.listdir(os.path.join(config.output_dir, "Jane Author - The Book [B0001]")))
 
 
 async def test_license_denial_explains_tiny_download(db, config, book_id, tmp_path, monkeypatch, make_downloader):
@@ -232,7 +234,7 @@ async def test_a_missing_pdf_does_not_fail_the_download(config, book_id, source_
     view = await make_downloader(FakeAudible(source_audio, pdf=None)).run(book_id)
     assert view["status"] == "done", view
     assert "pdf" not in {f["role"] for f in view["files"]}
-    assert not os.path.exists(os.path.join(config.output_dir, "Jane Author - The Book", "The Book.pdf"))
+    assert not os.path.exists(os.path.join(config.output_dir, "Jane Author - The Book [B0001]", "The Book [B0001].pdf"))
 
 
 async def test_no_pdf_is_requested_when_the_book_has_none(db, book_id, source_audio, make_downloader):

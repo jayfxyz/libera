@@ -336,9 +336,12 @@ def mark_error(s: Session, book_id: int) -> None:
         WHERE book_id = :id AND liberation_status != 'liberated'"""), {"id": book_id, "now": now()})
 
 
-def not_downloaded_titles(s: Session) -> list[dict[str, Any]]:
+def not_downloaded_books(s: Session) -> list[dict[str, Any]]:
+    """The books without a downloaded file, with how many books in all share their title."""
     return _rows(s, """
-        SELECT b.id, b.title FROM books b JOIN library_books lb ON lb.book_id = b.id
+        SELECT b.id, b.audible_id, b.title,
+               (SELECT COUNT(*) FROM books same WHERE same.title = b.title) AS same_title
+        FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE lb.liberation_status != 'liberated'""")
 
 

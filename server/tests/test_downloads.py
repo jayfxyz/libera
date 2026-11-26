@@ -101,17 +101,17 @@ async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline,
         events = await read_all(subscription)
 
     assert [t.download_id for t in pipeline.fetched] == [t.download_id for t in pipeline.decrypted] == [download_id]
-    book_dir = os.path.join(config.output_dir, "Jane Author - Book 1")
+    book_dir = os.path.join(config.output_dir, "Jane Author - Book 1 [B1]")
     t = pipeline.decrypted[0]
-    assert (t.path, t.base_name, t.format, t.audible_account_id) == (book_dir, "Book 1", "m4b", "amzn1.account.TEST")
+    assert (t.path, t.base_name, t.format, t.audible_account_id) == (book_dir, "Book 1 [B1]", "m4b", "amzn1.account.TEST")
     view = stack.svc.list()[0]
     assert (view["status"], view["message"], view["files"]) == (
-        "done", os.path.join(book_dir, "Book 1.m4b"), [{"role": "audio", "name": "Book 1.m4b", "size_bytes": 1}])
+        "done", os.path.join(book_dir, "Book 1 [B1].m4b"), [{"role": "audio", "name": "Book 1 [B1].m4b", "size_bytes": 1}])
     assert view["created_at"].endswith("Z") and view["finished_at"].endswith("Z")
     lib = db.query_one("SELECT liberation_status, last_format, file_path FROM library_books WHERE book_id = ?",
                        (books["B1"],))
     assert dict(lib) == {"liberation_status": "liberated", "last_format": "m4b",
-                         "file_path": os.path.join(book_dir, "Book 1.m4b")}
+                         "file_path": os.path.join(book_dir, "Book 1 [B1].m4b")}
     assert [(r["type"], r["status"]) for r in db.query("SELECT type, status FROM tasks ORDER BY created_at")] == [
         ("download_book", "completed"), ("decrypt_book", "completed")]
     assert read_fetched_bundle(stack.svc.work_dir, download_id) is None  # gone once done
@@ -176,7 +176,7 @@ async def test_where_it_goes_is_decided_when_queued(db, books, config, pipeline,
     await wait_for(lambda: status(db, download_id) == "done")
     t = pipeline.decrypted[0]
     assert (t.path, t.base_name, t.format, t.split_chapters) == (
-        os.path.join(config.output_dir, "Jane Author - Book 1"), "Book 1", "mp3", True)
+        os.path.join(config.output_dir, "Jane Author - Book 1 [B1]"), "Book 1 [B1]", "mp3", True)
 
 
 async def test_two_books_with_the_same_name_get_separate_folders(db, books, config, make_stack):
@@ -186,7 +186,7 @@ async def test_two_books_with_the_same_name_get_separate_folders(db, books, conf
     first, second = (stack.svc.enqueue(book_id) for book_id in ids)
     paths = {r["id"]: r["path"] for r in db.query("SELECT id, path FROM downloads")}
     folder = os.path.join(config.output_dir, "Jane Author - Twin")
-    assert (paths[first], paths[second]) == (folder, f"{folder} (2)")
+    assert (paths[first], paths[second]) == (f"{folder} [T1]", f"{folder} [T2]")
 
 
 async def test_queueing_a_book_twice_returns_the_active_download(db, books, make_stack):

@@ -16,12 +16,12 @@ from ..audible_api.models import AudibleBook
 from ..config import Config
 from ..db import Database, iso_utc
 from ..events import EventBus
+from ..jobs.filename import FilenameData, book_directory, book_file_name
+from ..naming import legacy_file_name, sanitize_filename
 from ..repositories import books as repo
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
 
-_UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_COLON = re.compile(r"\s*:\s*")
-MAX_NAME_BYTES = 200  # filesystems allow 255 bytes per name; leave room for " - 01 - chapter", ".part"
+_ASIN_SUFFIX = re.compile(r" \[([^\[\]]+)\]$")  # the " [B002UZMLXM]" a file or folder name ends with
 
 EXPORT_FIELDS = [
     "audible_id", "title", "authors", "narrators", "series", "length_minutes", "publisher",
@@ -158,12 +158,12 @@ class LibraryService:
         return meta
 
     def planned_path(self, book_id: int) -> str:
-        """Where a download of this book would be saved with the current settings."""
-        from ..jobs.filename import FilenameData, book_directory, book_file_name
-
+        """Where this book's file is, or where a download of it would be saved with the current settings."""
         meta = self.book_meta(book_id)
         if meta is None:
             return ""
+        if meta["file_path"]:
+            return meta["file_path"]
         c = self._config
         names = FilenameData(**naming_data(meta))
         folder = book_directory(c.output_dir, c.naming, names)
@@ -188,9 +188,12 @@ class LibraryService:
         on_disk = audio_files_on_disk(self._config.output_dir)
         if not on_disk:
             return 0
+        formats_by_asin = asin_formats_on_disk(on_disk)
         with self._db.session() as s:
-            matches = [(r["id"], fmt) for r in repo.not_downloaded_titles(s)
-                       if (fmt := file_format_on_disk(r["title"], on_disk))]
+            matches = [(r["id"], fmt) for r in repo.not_downloaded_books(s)
+                       if (fmt := formats_by_asin.get(r["audible_id"])
+                           or file_format_on_disk(title=r["title"], title_is_unique=r["same_title"] == 1,
+                                                  on_disk=on_disk))]
             for book_id, fmt in matches:
                 repo.mark_downloaded(s, book_id, fmt)
         for book_id, _ in matches:
@@ -227,26 +230,21 @@ class LibraryService:
 
 # --- pure helpers (no database) ---------------------------------------------------------------
 
-def file_format_on_disk(title: str, on_disk: dict[str, str]) -> str | None:
-    """The format of the book's audio file in on_disk, named as downloads name it now or did before
-    November 2026 (":" became "_", e.g. "Found_ Book")."""
-    for name in (sanitize_filename(title), _UNSAFE.sub("_", title).strip()[:200]):
+def asin_formats_on_disk(on_disk: dict[str, str]) -> dict[str, str]:
+    """ASIN → format, for the files in on_disk named "<title> [<asin>]"."""
+    return {match.group(1): fmt for stem, fmt in on_disk.items() if (match := _ASIN_SUFFIX.search(stem))}
+
+
+def file_format_on_disk(title: str, title_is_unique: bool, on_disk: dict[str, str]) -> str | None:
+    """The format of the book's audio file in on_disk, named after the title alone (or, before November
+    2026, with ":" as "_", e.g. "Found_ Book"). It counts only when no other book has that title:
+    it could be any of them."""
+    if not title_is_unique:
+        return None
+    for name in (sanitize_filename(title), legacy_file_name(title)):
         if name in on_disk:
             return on_disk[name]
     return None
-
-
-def clean_name(s: str) -> str:
-    """Metadata made safe inside a file or folder name: "Dune: Part One" → "Dune - Part One", no "/" etc."""
-    return _UNSAFE.sub("_", _COLON.sub(" - ", s))
-
-
-def sanitize_filename(s: str) -> str:
-    """A whole file or folder name: cleaned, without leading or trailing dots and spaces (no "..", no hidden
-    folders, nothing Windows or SMB shares reject), and at most MAX_NAME_BYTES of UTF-8."""
-    s = clean_name(s).strip(" .")
-    s = s.encode()[:MAX_NAME_BYTES].decode(errors="ignore").rstrip(" .")
-    return s or "audiobook"
 
 
 def fts_query(text: str) -> str:
@@ -268,6 +266,7 @@ def naming_data(meta: dict) -> dict[str, str]:
         "series_name": meta["series_name"],
         "series_index": meta["series_index"],
         "year": year if len(year) == 4 else "",
+        "asin": meta["audible_id"],
     }
 
 

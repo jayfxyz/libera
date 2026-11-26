@@ -160,6 +160,22 @@ def test_rescan_marks_found_books_downloaded(db, config, library_svc, tmp_path):
     assert status == {"A": ("liberated", "m4b"), "B": ("not_liberated", None), "C": ("liberated", "mp3")}
 
 
+def test_rescan_matches_duplicate_titles_by_asin(db, config, library_svc, tmp_path):
+    add_account(db)
+    import_books(db, 1, [make_book("B000000001", title="Same"), make_book("B000000002", title="Same"),
+                         make_book("B000000003", title="Same"), make_book("B000000004", title="Solo")])
+    folder = tmp_path / "Same [B000000002]"
+    folder.mkdir()
+    (folder / "Same [B000000002].m4b").write_bytes(b"")  # one of the three: matched by its ASIN
+    (tmp_path / "Same.mp3").write_bytes(b"")  # older file: could be any of the three, so none
+    (tmp_path / "Solo.mp3").write_bytes(b"")  # older file of a title nobody else has
+    config.output_dir = str(tmp_path)
+    assert library_svc.rescan() == 2
+    status = {r["audible_id"]: r["last_format"] for r in db.query(
+        "SELECT b.audible_id, lb.last_format FROM books b JOIN library_books lb ON lb.book_id = b.id")}
+    assert status == {"B000000001": None, "B000000002": "m4b", "B000000003": None, "B000000004": "mp3"}
+
+
 def test_has_pdf_comes_from_the_sync_and_survives_a_scan_without_it(db, library_svc):
     add_account(db)
     import_books(db, 1, [make_book("A", has_pdf=True), make_book("B", has_pdf=False), make_book("C")])
@@ -246,3 +262,9 @@ def test_multi_account_prefers_downloadable_copy(db, config, library_svc):
     assert downloads.enqueue(book_id) is not None
     with pytest.raises(InvalidOptions, match="not downloadable"):
         downloads.enqueue(book_id, account_id=1)
+
+
+def test_asin_formats_on_disk_reads_only_a_trailing_tag():
+    on_disk = {"Same [B000000002]": "m4b", "Plain": "mp3", "Odd [x] title": "mp3", "Empty []": "m4b",
+               "Old [B000000009] - 01 - Chapter": "m4b"}
+    assert library.asin_formats_on_disk(on_disk) == {"B000000002": "m4b"}

@@ -1,4 +1,7 @@
-"""Where a book's files go: a folder (or nested folders) chosen by a NamingPreset, and the audio file's name."""
+"""Where a book's files go: a folder (or nested folders) chosen by a NamingPreset, and the audio file's name.
+
+The folder holding a book's files and the audio file are always named "<title> [<asin>]" (the Libation and
+Audiobookshelf convention), so two books with the same title never share a name."""
 
 from __future__ import annotations
 
@@ -7,7 +10,7 @@ import re
 from dataclasses import dataclass
 
 from ..config import NamingPreset
-from ..services.library import clean_name, sanitize_filename
+from ..naming import clean_name, sanitize_filename
 
 _EMPTY = "\x00"
 # An empty tag, together with a separator right before or after it.
@@ -31,22 +34,32 @@ class FilenameData:
     series_name: str = ""
     series_index: str = ""
     year: str = ""
+    asin: str = ""
+
+
+def asin_suffix(data: FilenameData) -> str:
+    """" [B0123456789]", or "" for a book without an ASIN."""
+    asin = clean_name(data.asin)
+    return f" [{asin}]" if asin else ""
 
 
 def book_file_name(data: FilenameData) -> str:
-    """The audio file's name without its extension: the title."""
-    return sanitize_filename(data.title)
+    """The audio file's name without its extension: the title and the ASIN."""
+    suffix = asin_suffix(data)
+    return sanitize_filename(data.title, reserve=len(suffix.encode())) + suffix
 
 
 def book_directory(output_dir: str, naming: NamingPreset, data: FilenameData) -> str:
-    """The folder a book's files go in, inside output_dir."""
-    folders = [fill(template=template, data=data) for template in _FOLDERS[naming]]
-    return os.path.join(output_dir, *(folder for folder in folders if folder))
+    """The folder a book's files go in, inside output_dir. The innermost folder ends with the ASIN."""
+    folders = [fill(template=template, data=data) for template in _FOLDERS[naming][:-1]]
+    suffix = asin_suffix(data)
+    last = fill(template=_FOLDERS[naming][-1], data=data, reserve=len(suffix.encode()))
+    return os.path.join(output_dir, *(folder for folder in folders if folder), (last + suffix).strip())
 
 
-def fill(template: str, data: FilenameData) -> str:
+def fill(template: str, data: FilenameData, reserve: int = 0) -> str:
     """One folder name: the template's tags filled in, an empty tag dropped with its separator.
-    Returns "" when every tag is empty."""
+    Returns "" when every tag is empty. reserve is how many bytes the caller still adds to the name."""
     tags = {
         "{title}": data.title,
         "{author}": data.author,
@@ -58,4 +71,4 @@ def fill(template: str, data: FilenameData) -> str:
     for tag, value in tags.items():
         result = result.replace(tag, clean_name(value) or _EMPTY)
     result = _EMPTY_WITH_SEPARATOR.sub("", result).strip()
-    return sanitize_filename(result) if result else ""
+    return sanitize_filename(result, reserve=reserve) if result else ""

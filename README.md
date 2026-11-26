@@ -61,7 +61,10 @@ Optional environment variables:
 | `AUDIOBOOKS_DIR` | `./audiobooks` | Where downloaded books go |
 
 Folder layout presets, default audio format, and parallel download count are
-configured in the app's **Settings** page.
+configured in the app's **Settings** page. Every layout ends the book's folder and
+audio file name with its Audible ID (`Title [B002UZMLXM]`, as Libation does), so books
+with the same title never share a name. Audiobookshelf reads the ID from the folder name.
+Changing the layout affects future downloads only; files already on disk are left where they are.
 
 ## Security
 

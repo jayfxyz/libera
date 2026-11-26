@@ -31,3 +31,6 @@ __pycache__/
 
 # Local compose overrides (e.g. joining a host-specific network)
 docker-compose.override.yml
+
+# Per-developer editor settings (launch.json stays shared)
+.vscode/settings.json

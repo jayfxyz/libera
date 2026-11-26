@@ -7,11 +7,14 @@ import logging
 import os
 from dataclasses import dataclass
 
-from ..services.library import sanitize_filename
+from ..naming import MAX_NAME_BYTES, sanitize_filename
 from .ffmpeg import chapter_args
 from .process import run
 
 log = logging.getLogger(__name__)
+
+FILE_NAME_LIMIT_BYTES = 255  # what filesystems allow for one name
+EXTENSION_ROOM_BYTES = 10  # ".m4b" and the ".part" a file is written under
 
 
 @dataclass
@@ -37,10 +40,14 @@ def parse_chapters(ffprobe_json: str | bytes) -> list[ProbedChapter]:
 
 
 def chapter_path(directory: str, book_base: str, n: int, title: str) -> str:
-    chapter_title = sanitize_filename(title)
+    """Where chapter n goes, without its extension: "<book_base> - 02 - <chapter title>".
+    The book name (with its ASIN) and the number are kept whole; only the chapter title is cut to fit."""
+    prefix = f"{book_base} - {n + 1:02d} - "
+    room = FILE_NAME_LIMIT_BYTES - EXTENSION_ROOM_BYTES - len(prefix.encode())
+    chapter_title = sanitize_filename(title, reserve=max(0, MAX_NAME_BYTES - room))
     if not title.strip() or chapter_title == "audiobook":
         chapter_title = f"Chapter_{n + 1:02d}"
-    return os.path.join(directory, sanitize_filename(f"{book_base} - {n + 1:02d} - {chapter_title}"))
+    return os.path.join(directory, prefix + chapter_title)
 
 
 async def split_into_chapters(audio_file: str, directory: str, book_base: str, ext: str) -> list[str]:
