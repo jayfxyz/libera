@@ -23,18 +23,6 @@ def add(s: Session, *, id: str, library_book_id: int, format: str, split_chapter
                    created_at=now(), updated_at=now()))
 
 
-def folder_taken(s: Session, path: str, library_book_id: int) -> bool:
-    """Whether another book has a queued, running or finished download in this folder.
-    The same book through another account doesn't count: it may reuse its folder."""
-    this_book = select(LibraryBook.book_id).where(LibraryBook.id == library_book_id).scalar_subquery()
-    return bool(s.scalar(select(exists().where(
-        Download.path == path,
-        Download.status.in_((*ACTIVE, DownloadStatus.DONE)),
-        Download.library_book_id == LibraryBook.id,
-        LibraryBook.book_id != this_book,
-    ))))
-
-
 def get(s: Session, download_id: str) -> Download | None:
     return s.get(Download, download_id)
 

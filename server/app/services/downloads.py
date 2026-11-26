@@ -323,8 +323,7 @@ class DownloadsService:
         settings = self._config.snapshot()  # where it goes is decided now
         names = FilenameData(**naming_data(meta))
         download_id = uuid.uuid4().hex
-        folder = free_folder(s, folder=book_directory(settings.output_dir, settings.naming, names),
-                             library_book_id=meta["library_book_id"])
+        folder = book_directory(settings.output_dir, settings.naming, names)
         task_id = self._tasks.enqueue(DownloadBook(payload=DownloadPayload(download_id=download_id)), session=s)
         repo.add(s, id=download_id, library_book_id=meta["library_book_id"], format=fmt,
                  split_chapters=split_chapters, task_id=task_id, path=folder, base_name=book_file_name(names))
@@ -401,13 +400,3 @@ class DownloadsService:
 
 def _audio_path(d: Download) -> str:
     return os.path.join(d.path, f"{d.base_name}.{d.format}")
-
-
-def free_folder(s, *, folder: str, library_book_id: int) -> str:
-    """The folder, or "folder (2)", "folder (3)"… when another book already downloads there:
-    two editions with the same name never overwrite each other."""
-    candidate, n = folder, 1
-    while repo.folder_taken(s, candidate, library_book_id):
-        n += 1
-        candidate = f"{folder} ({n})"
-    return candidate
