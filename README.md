@@ -105,7 +105,7 @@ endpoint (wired up in the repo's `docker-compose.yml`).
 
 Layout: `server/app` (API, Audible client, task queue & download pipeline),
 `server/tests`, `frontend/` (Vue 3 + TypeScript + Vite). Design notes live in
-`docs/plans/`.
+`docs/`.
 
 ## Credits
 
