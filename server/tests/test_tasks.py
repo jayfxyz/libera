@@ -8,8 +8,9 @@ from pydantic import BaseModel
 
 from app.repositories import tasks as repo
 from app.services.task_queue import TaskQueueService
-from app.services.task_worker import TaskWorkerService
+from app.services.task_worker import TaskWorker
 from app.tasks.base import BaseTask, TaskDeferred, TaskFailed
+from app.tasks.registry import TaskRegistry
 from app.tasks.signals import TaskSignals
 
 
@@ -26,22 +27,47 @@ class Retrying(BaseTask[Payload]):  # three attempts
     max_attempts = 3
 
 
+class Dedicated(BaseTask[Payload]):  # a task type with its own worker pool
+    name = "dedicated"
+
+
+class Rig:
+    """A queue and a registry, and the workers built on them."""
+
+    def __init__(self, db, **worker_kw):
+        self.signals = TaskSignals()
+        self.queue = TaskQueueService(db, self.signals)
+        self.registry = TaskRegistry()
+        self.workers: list[TaskWorker] = []
+        self._worker_kw = worker_kw
+
+    def worker(self, task_cls, handler, *, concurrency=1) -> TaskWorker:
+        """Register `handler` for the task type and build (not start) a worker for it."""
+        self.registry.add(task_cls, handler)
+        return self.add_worker(task_cls.name, concurrency=concurrency)
+
+    def add_worker(self, task_type, *, concurrency=1) -> TaskWorker:
+        worker = TaskWorker(queue=self.queue, registry=self.registry, signals=self.signals,
+                            task_type=task_type, concurrency=concurrency, **self._worker_kw)
+        self.workers.append(worker)
+        return worker
+
+
 @pytest.fixture
 async def make(db):
-    """Build a (queue, worker) pair; workers are stopped when the test ends."""
+    """Build a Rig; its workers are stopped when the test ends."""
     built = []
 
-    def _make(workers=1, **kw):
-        signals = TaskSignals()
+    def _make(**kw):
         kw.setdefault("cancel_poll", 0.02)
         kw.setdefault("retry_base_delay", 0)  # retry at once; backoff has its own tests
-        worker = TaskWorkerService(db, signals, workers, **kw)
-        built.append(worker)
-        return TaskQueueService(db, signals), worker
+        built.append(Rig(db, **kw))
+        return built[-1]
 
     yield _make
-    for w in built:
-        await w.stop()
+    for rig in built:
+        for w in rig.workers:
+            await w.stop()
 
 
 async def wait_for(predicate, timeout=3.0):
@@ -62,13 +88,14 @@ def row(db, task_id):
 # --- ordering and claiming ---------------------------------------------------
 
 async def test_tasks_run_in_the_order_they_were_queued(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     order = []
 
     async def handler(p, ctx):
         order.append(p.n)
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     for n in (3, 1, 2):  # queued in one burst, before any worker runs
         queue.enqueue(Once(payload=Payload(n=n)))
     worker.start()
@@ -97,14 +124,15 @@ def test_two_workers_never_claim_the_same_task(db):
 
 
 async def test_two_workers_run_each_task_once(db, make):
-    queue, worker = make(workers=2)
+    rig = make()
+    queue = rig.queue
     ran = []
 
     async def handler(p, ctx):
         ran.append(p.n)
         await asyncio.sleep(0.01)
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler, concurrency=2)
     for n in range(8):
         queue.enqueue(Once(payload=Payload(n=n)))
     worker.start()
@@ -113,17 +141,52 @@ async def test_two_workers_run_each_task_once(db, make):
     assert sorted(ran) == list(range(8))
 
 
+async def test_dedicated_pool_limits_concurrency_and_wakes_independently(db, make):
+    rig = make(idle_poll=30)
+    queue = rig.queue
+    in_flight, max_in_flight, ran = 0, 0, []
+    once_blocked = asyncio.Event()
+    once_started = asyncio.Event()
+
+    async def slow_once(p, ctx):
+        once_started.set()
+        await once_blocked.wait()
+
+    async def serial(p, ctx):
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        await asyncio.sleep(0.03)
+        ran.append(p.n)
+        in_flight -= 1
+
+    rig.worker(Once, slow_once, concurrency=3).start()
+    rig.worker(Dedicated, serial, concurrency=1).start()
+    await asyncio.sleep(0.05)  # all workers idle
+
+    # Saturate the Once pool: Dedicated tasks must still start immediately, one at a time.
+    for n in range(3):
+        queue.enqueue(Once(payload=Payload(n=n)))
+    await asyncio.wait_for(once_started.wait(), 2)
+    for n in range(4):
+        queue.enqueue(Dedicated(payload=Payload(n=n)))
+    await wait_for(lambda: len(ran) == 4, timeout=2)
+    assert max_in_flight == 1 and ran == [0, 1, 2, 3]
+    once_blocked.set()
+
+
 # --- failures and retries ----------------------------------------------------
 
 async def test_failing_task_is_retried_until_max_attempts_then_fails(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     attempts = []
 
     async def handler(p, ctx):
         attempts.append(ctx.attempt)
         raise RuntimeError("boom")
 
-    worker.register(Retrying, handler)
+    worker = rig.worker(Retrying, handler)
     task_id = queue.enqueue(Retrying(payload=Payload()))
     worker.start()
     await wait_for(lambda: status(db, task_id) == "failed")
@@ -133,14 +196,15 @@ async def test_failing_task_is_retried_until_max_attempts_then_fails(db, make):
 
 
 async def test_permanent_failure_is_not_retried(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     calls = []
 
     async def handler(p, ctx):
         calls.append(ctx.attempt)
         raise TaskFailed("no good")
 
-    worker.register(Retrying, handler)  # three attempts allowed, none used after TaskFailed
+    worker = rig.worker(Retrying, handler)  # three attempts allowed, none used after TaskFailed
     task_id = queue.enqueue(Retrying(payload=Payload()))
     worker.start()
     await wait_for(lambda: status(db, task_id) == "failed")
@@ -149,13 +213,14 @@ async def test_permanent_failure_is_not_retried(db, make):
 
 
 async def test_task_failed_with_retry_runs_again(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
 
     async def handler(p, ctx):
         if ctx.attempt == 1:
             raise TaskFailed("try again", retry=True)
 
-    worker.register(Retrying, handler)
+    worker = rig.worker(Retrying, handler)
     task_id = queue.enqueue(Retrying(payload=Payload()))
     worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
@@ -163,15 +228,16 @@ async def test_task_failed_with_retry_runs_again(db, make):
 
 
 async def test_retries_wait_longer_each_time(db, make):
-    queue, worker = make(retry_base_delay=10)
-    assert 8 <= worker.retry_delay(1) <= 12 and 32 <= worker.retry_delay(2) <= 48  # 4x each time, +-20%
+    rig = make(retry_base_delay=10)
+    queue = rig.queue
     calls = []
 
     async def handler(p, ctx):
         calls.append(ctx.attempt)
         raise RuntimeError("network down")
 
-    worker.register(Retrying, handler)
+    worker = rig.worker(Retrying, handler)
+    assert 8 <= worker.retry_delay(1) <= 12 and 32 <= worker.retry_delay(2) <= 48  # 4x each time, +-20%
     task_id = queue.enqueue(Retrying(payload=Payload()))
     worker.start()
     await wait_for(lambda: calls == [1] and status(db, task_id) == "pending")
@@ -192,7 +258,8 @@ async def test_a_task_is_not_claimed_before_its_not_before(db):
 
 
 async def test_a_deferred_task_runs_later_without_using_up_an_attempt(db, make):
-    queue, worker = make(idle_poll=0.05)
+    rig = make(idle_poll=0.05)
+    queue = rig.queue
     runs = []
 
     async def handler(p, ctx):
@@ -200,7 +267,7 @@ async def test_a_deferred_task_runs_later_without_using_up_an_attempt(db, make):
         if len(runs) < 3:
             raise TaskDeferred("not yet", 0.2)
 
-    worker.register(Once, handler)  # one attempt allowed: deferring mustn't spend it
+    worker = rig.worker(Once, handler)  # one attempt allowed: deferring mustn't spend it
     task_id = queue.enqueue(Once(payload=Payload()))
     worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
@@ -209,13 +276,14 @@ async def test_a_deferred_task_runs_later_without_using_up_an_attempt(db, make):
 
 
 async def test_handler_exception_does_not_kill_the_worker(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
 
     async def handler(p, ctx):
         if p.n == 1:
             raise RuntimeError("boom")
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     first = queue.enqueue(Once(payload=Payload(n=1)))
     second = queue.enqueue(Once(payload=Payload(n=2)))
     worker.start()
@@ -224,17 +292,18 @@ async def test_handler_exception_does_not_kill_the_worker(db, make):
 
 
 async def test_unknown_type_and_invalid_payload_fail_permanently(db, make):
-    _, worker = make()
+    rig = make()
 
     async def handler(p, ctx):
         pass
 
-    worker.register(Retrying, handler)
+    retrying = rig.worker(Retrying, handler)
+    mystery = rig.add_worker("mystery")  # a type the registry has no handler for
     with db.session() as s:
         repo.add(s, id="u", type="mystery", payload="{}", max_attempts=3)
         repo.add(s, id="v", type="retrying", payload='{"n": "x"}', max_attempts=3)
-    worker.start()
-    await wait_for(lambda: status(db, "u") == "failed" and status(db, "v") == "failed")
+    assert await mystery.process() and await retrying.process()
+    assert status(db, "u") == "failed" and status(db, "v") == "failed"
     assert "Unknown task type" in row(db, "u")["error"] and row(db, "u")["attempts"] == 1
     assert "Invalid payload" in row(db, "v")["error"] and row(db, "v")["attempts"] == 1
 
@@ -242,13 +311,14 @@ async def test_unknown_type_and_invalid_payload_fail_permanently(db, make):
 # --- cancelling --------------------------------------------------------------
 
 async def test_cancelled_pending_task_never_runs(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     calls = []
 
     async def handler(p, ctx):
         calls.append(1)
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     task_id = queue.enqueue(Once(payload=Payload()))
     assert queue.cancel(task_id) is True
     worker.start()
@@ -259,7 +329,8 @@ async def test_cancelled_pending_task_never_runs(db, make):
 
 @pytest.mark.parametrize("through_the_queue", [True, False])
 async def test_cancelling_a_running_task_stops_its_handler(db, make, through_the_queue):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     started, stopped, calls = asyncio.Event(), asyncio.Event(), []
 
     async def handler(p, ctx):
@@ -271,7 +342,7 @@ async def test_cancelling_a_running_task_stops_its_handler(db, make, through_the
             stopped.set()
             raise
 
-    worker.register(Retrying, handler)  # three attempts: a cancel must not be retried
+    worker = rig.worker(Retrying, handler)  # three attempts: a cancel must not be retried
     task_id = queue.enqueue(Retrying(payload=Payload()))
     worker.start()
     await asyncio.wait_for(started.wait(), 3)
@@ -288,7 +359,8 @@ async def test_cancelling_a_running_task_stops_its_handler(db, make, through_the
 # --- restarts ----------------------------------------------------------------
 
 async def test_interrupted_task_is_released_at_startup_without_losing_an_attempt(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     task_id = queue.enqueue(Once(payload=Payload()))  # one attempt allowed
     with db.session() as s:
         assert repo.claim_next(s).id == task_id  # claimed, then the app died
@@ -298,14 +370,16 @@ async def test_interrupted_task_is_released_at_startup_without_losing_an_attempt
     async def handler(p, ctx):
         seen.append((ctx.attempt, ctx.max_attempts))
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
+    queue.recover()  # as at app startup
     worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
     assert seen == [(1, 1)]  # it ran, as attempt 1
 
 
 async def test_stop_cancels_in_flight_work_and_the_task_resumes_next_start(db, make):
-    queue, worker = make(workers=2)
+    rig = make()
+    queue = rig.queue
     started, stopped = asyncio.Event(), asyncio.Event()
 
     async def slow(p, ctx):
@@ -316,21 +390,23 @@ async def test_stop_cancels_in_flight_work_and_the_task_resumes_next_start(db, m
             stopped.set()
             raise
 
-    worker.register(Once, slow)
+    worker = rig.worker(Once, slow, concurrency=2)
     task_id = queue.enqueue(Once(payload=Payload()))
     worker.start()
     await asyncio.wait_for(started.wait(), 3)
+    await asyncio.sleep(0.1)  # the other loop's claim (a thread, which stop() can't cancel) is over: nothing left to claim
     await asyncio.wait_for(worker.stop(), 2)
     assert stopped.is_set()
     assert status(db, task_id) == "processing"  # left for the next startup
 
-    _, again = make()
+    again = make()
 
     async def fast(p, ctx):
         pass
 
-    again.register(Once, fast)
-    again.start()
+    worker = again.worker(Once, fast)
+    again.queue.recover()  # as at app startup
+    worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
 
 
@@ -341,21 +417,21 @@ async def test_old_finished_tasks_are_pruned_at_startup(db, make):
     for _ in range(4):
         with db.session() as s:
             repo.complete(s, repo.claim_next(s).id)
-    _, worker = make(history_limit=2)
-    worker.start()
+    make().queue.recover(history_limit=2)
     assert {r["id"] for r in db.query("SELECT id FROM tasks")} == {"t2", "t3"}  # the newest two
 
 
 # --- waking, heartbeat, tracing ------------------------------------------------
 
 async def test_enqueue_wakes_an_idle_worker(db, make):
-    queue, worker = make(idle_poll=30)  # without a wake-up it would sleep for 30 s
+    rig = make(idle_poll=30)  # without a wake-up it would sleep for 30 s
+    queue = rig.queue
     done = []
 
     async def handler(p, ctx):
         done.append(1)
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     worker.start()
     await asyncio.sleep(0.1)  # the worker is idle now
     queue.enqueue(Once(payload=Payload()))
@@ -363,13 +439,14 @@ async def test_enqueue_wakes_an_idle_worker(db, make):
 
 
 async def test_enqueue_in_a_callers_transaction_wakes_workers_after_the_commit(db, make):
-    queue, worker = make(idle_poll=30)
+    rig = make(idle_poll=30)
+    queue = rig.queue
     done = []
 
     async def handler(p, ctx):
         done.append(1)
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     worker.start()
     await asyncio.sleep(0.1)
     with db.session() as s:
@@ -389,13 +466,14 @@ def test_enqueue_in_a_callers_transaction_is_rolled_back_with_it(db):
 
 
 async def test_locked_at_is_refreshed_while_a_handler_runs(db, make):
-    queue, worker = make(heartbeat_interval=0.05)
+    rig = make(heartbeat_interval=0.05)
+    queue = rig.queue
     release = asyncio.Event()
 
     async def handler(p, ctx):
         await release.wait()
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     task_id = queue.enqueue(Once(payload=Payload()))
     worker.start()
     await wait_for(lambda: status(db, task_id) == "processing")
@@ -405,13 +483,14 @@ async def test_locked_at_is_refreshed_while_a_handler_runs(db, make):
 
 
 async def test_handler_runs_in_the_trace_context_of_the_enqueuer(db, make):
-    queue, worker = make()
+    rig = make()
+    queue = rig.queue
     seen = []
 
     async def handler(p, ctx):
         seen.append(otel_context.get_value("test-key"))
 
-    worker.register(Once, handler)
+    worker = rig.worker(Once, handler)
     token = otel_context.attach(otel_context.set_value("test-key", "from-the-request"))
     try:
         queue.enqueue(Once(payload=Payload()))
@@ -424,16 +503,27 @@ async def test_handler_runs_in_the_trace_context_of_the_enqueuer(db, make):
 
 # --- wiring --------------------------------------------------------------------
 
-def test_app_runs_tasks_registered_on_its_worker(client):
+def test_app_runs_the_download_tasks_on_workers_of_their_own(client):
+    ctx = client.app.state.ctx
+    assert sorted(w.task_type for w in ctx.task_workers) == ["decrypt_book", "download_book"]
+
+
+def test_app_runs_tasks_of_a_registered_type_on_a_worker(client):
     ctx = client.app.state.ctx
     ran = []
 
     async def handler(p, c):
         ran.append(p.n)
 
-    ctx.task_worker.register(Once, handler)
-    ctx.task_queue.enqueue(Once(payload=Payload(n=7)))  # from this thread; the app's loop runs the handler
-    end = time.monotonic() + 3
-    while not ran and time.monotonic() < end:
-        time.sleep(0.01)
-    assert ran == [7]
+    ctx.task_registry.add(Once, handler)
+    worker = TaskWorker(queue=ctx.task_queue, registry=ctx.task_registry, signals=TaskSignals(),
+                        task_type=Once.name, idle_poll=0.05)
+    client.portal.call(worker.start)  # on the app's event loop
+    try:
+        ctx.task_queue.enqueue(Once(payload=Payload(n=7)))
+        end = time.monotonic() + 3
+        while not ran and time.monotonic() < end:
+            time.sleep(0.01)
+        assert ran == [7]
+    finally:
+        client.portal.call(worker.stop)

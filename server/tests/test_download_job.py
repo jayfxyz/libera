@@ -17,8 +17,9 @@ from app.services.library import LibraryService
 from app.events import EventBus
 from app.services.downloads import DownloadsService
 from app.services.task_queue import TaskQueueService
-from app.services.task_worker import TaskWorkerService
-from app.tasks.downloads import DownloadHandlers, Pipeline
+from app.services.task_worker import TaskWorker
+from app.tasks.downloads import DecryptBook, DownloadBook, DownloadHandlers, Pipeline
+from app.tasks.registry import TaskRegistry
 from app.tasks.signals import TaskSignals
 from tests.conftest import add_account, make_book, import_books
 
@@ -91,12 +92,19 @@ class Downloader:
     def __init__(self, db, config, audible):
         self.db = db
         signals = TaskSignals()
-        self.worker = TaskWorkerService(db, signals, workers=1, retry_base_delay=0)
+        queue = TaskQueueService(db, signals)
         bus = EventBus()
-        self.svc = DownloadsService(db, config, TaskQueueService(db, signals), bus, audible,
-                                    LibraryService(db, config, bus))
-        DownloadHandlers(self.svc, Pipeline(audible)).register(self.worker)
-        self.worker.start()
+        self.svc = DownloadsService(db, config, queue, bus, audible, LibraryService(db, config, bus))
+        handlers = DownloadHandlers(self.svc, Pipeline(audible))
+        registry = TaskRegistry()
+        registry.add(DownloadBook, handlers.download_book)
+        registry.add(DecryptBook, handlers.decrypt_book)
+        self.workers = [TaskWorker(queue=queue, registry=registry, signals=signals, task_type=task_type,
+                                   retry_base_delay=0)
+                        for task_type in (DownloadBook.name, DecryptBook.name)]
+        queue.recover()
+        for worker in self.workers:
+            worker.start()
         self.svc.start()
 
     async def run(self, book_id: int, **opts) -> dict:
@@ -122,7 +130,8 @@ async def make_downloader(db, config):
 
     yield make
     for d in made:
-        await d.worker.stop()
+        for worker in d.workers:
+            await worker.stop()
 
 
 @pytest.fixture

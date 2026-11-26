@@ -17,7 +17,8 @@ if TYPE_CHECKING:
     from .services.library import LibraryService
     from .services.settings import SettingsService
     from .services.task_queue import TaskQueueService
-    from .services.task_worker import TaskWorkerService
+    from .services.task_worker import TaskWorker
+    from .tasks.registry import TaskRegistry
 
 
 @dataclass
@@ -31,4 +32,5 @@ class AppContext:
     downloads: "DownloadsService"
     events: EventBus
     task_queue: "TaskQueueService"
-    task_worker: "TaskWorkerService"
+    task_registry: "TaskRegistry"
+    task_workers: "list[TaskWorker]"

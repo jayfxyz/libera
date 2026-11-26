@@ -1,5 +1,6 @@
-"""Running tasks: asyncio workers in the web process that claim rows from the
-tasks table. They read only the table; TaskSignals is an optional accelerator.
+"""Running tasks: asyncio workers in the web process that claim tasks of one
+type from the queue and run their handlers (looked up in the registry). They
+read only the queue; TaskSignals is an optional accelerator.
 
 - A handler is `async def handler(payload, ctx: TaskContext) -> None`.
 - TaskFailed(message, retry=False) fails the task permanently; any other
@@ -7,36 +8,32 @@ tasks table. They read only the table; TaskSignals is an optional accelerator.
   (retry_base_delay, then 4x that, ..., with some jitter).
 - TaskDeferred(message, delay) puts the task back for `delay` seconds
   without using up an attempt.
-- A task interrupted by shutdown stays `processing` and is released at the
-  next startup without losing an attempt.
-- While a handler runs, locked_at is refreshed every HEARTBEAT_INTERVAL and
-  the row is checked every CANCEL_POLL: a row cancelled by another process
+- A task interrupted by shutdown stays `processing` and is released by
+  TaskQueueService.recover() at the next startup without losing an attempt.
+- While a handler runs, the task's lock is refreshed every HEARTBEAT_INTERVAL
+  and the task is checked every CANCEL_POLL: one cancelled by another process
   stops the handler.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 import time
-from typing import Any, Awaitable, Callable, NamedTuple
+from typing import NamedTuple
 
 from opentelemetry import context as otel_context
 from pydantic import BaseModel
 
-from ..db import Database
 from ..db.models import Task
-from ..repositories import tasks as repo
-from ..tasks.base import BaseTask, TaskContext, TaskDeferred, TaskFailed
+from ..tasks.base import TaskContext, TaskDeferred, TaskFailed
+from ..tasks.registry import Handler, TaskRegistry
 from ..tasks.signals import TaskSignals
+from .task_queue import TaskQueueService
 
 log = logging.getLogger(__name__)
 
-Handler = Callable[[Any, TaskContext], Awaitable[None]]
-
-HISTORY_LIMIT = 500  # finished tasks kept
 IDLE_POLL = 30.0  # seconds; workers also wake as soon as something is enqueued
 HEARTBEAT_INTERVAL = 30.0
 CANCEL_POLL = 1.0
@@ -51,54 +48,47 @@ class Outcome(NamedTuple):
     defer: float | None = None  # seconds: put back without using up an attempt
 
 
-class TaskWorkerService:
-    def __init__(self, db: Database, signals: TaskSignals, workers: int = 3, *,
+class TaskWorker:
+    """`concurrency` loops that each claim and run tasks of `task_type`, one at a time."""
+
+    def __init__(self, *, queue: TaskQueueService, registry: TaskRegistry, signals: TaskSignals,
+                 task_type: str, concurrency: int = 1,
                  idle_poll: float = IDLE_POLL, heartbeat_interval: float = HEARTBEAT_INTERVAL,
-                 cancel_poll: float = CANCEL_POLL, history_limit: int = HISTORY_LIMIT,
-                 retry_base_delay: float = RETRY_BASE_DELAY):
-        self._db = db
+                 cancel_poll: float = CANCEL_POLL, retry_base_delay: float = RETRY_BASE_DELAY):
+        self._queue = queue
+        self._registry = registry
         self._signals = signals
-        self._count = workers
+        self.task_type = task_type
+        self._concurrency = concurrency
         self._idle_poll = idle_poll
         self._heartbeat_interval = heartbeat_interval
         self._cancel_poll = cancel_poll
-        self._history_limit = history_limit
         self._retry_base_delay = retry_base_delay
-        self._handlers: dict[str, tuple[type[BaseTask], Handler]] = {}
-        self._workers: list[asyncio.Task] = []
-
-    def register(self, task_cls: type[BaseTask], handler: Handler) -> None:
-        self._handlers[task_cls.name] = (task_cls, handler)
+        self._loops: list[asyncio.Task] = []
 
     # --- lifecycle -----------------------------------------------------------
 
     def start(self) -> None:
         self._signals.attach(asyncio.get_running_loop())
-        with self._db.session() as s:
-            # Single process: anything still `processing` was interrupted.
-            released = repo.release_stale(s, repo.now())
-            pruned = repo.prune_finished(s, self._history_limit)
-        if released:
-            log.info("re-queued %d task(s) interrupted by the last shutdown", released)
-        if pruned:
-            log.info("pruned %d old finished task(s)", pruned)
-        self._workers = [asyncio.create_task(self._worker(), name=f"task-worker-{i}")
-                         for i in range(self._count)]
+        wake = self._signals.wake_for(self.task_type)
+        for i in range(self._concurrency):
+            self._loops.append(asyncio.create_task(
+                self._loop(wake), name=f"task-worker-{self.task_type}-{i}"))
 
     async def stop(self) -> None:
-        for t in self._workers:
-            t.cancel()  # cancelling a worker also cancels the handler it is awaiting
-        await asyncio.gather(*self._workers, return_exceptions=True)
-        self._workers.clear()
+        for t in self._loops:
+            t.cancel()  # cancelling a loop also cancels the handler it is awaiting
+        await asyncio.gather(*self._loops, return_exceptions=True)
+        self._loops.clear()
 
     # --- the worker loop -----------------------------------------------------
 
-    async def _worker(self) -> None:
+    async def _loop(self, wake: asyncio.Event) -> None:
         """Claim and run tasks one after another; sleep when there are none."""
         while True:
             # Clear before looking: a task enqueued after the look sets it again,
             # so the wait below can't miss it.
-            self._signals.wake.clear()
+            wake.clear()
             try:
                 if await self.process():
                     continue  # busy: go straight back for the next task
@@ -107,45 +97,30 @@ class TaskWorkerService:
                 await asyncio.sleep(1)
                 continue
             try:  # idle: sleep until enqueue() wakes us, or the poll interval passes
-                await asyncio.wait_for(self._signals.wake.wait(), self._idle_poll)
+                await asyncio.wait_for(wake.wait(), self._idle_poll)
             except asyncio.TimeoutError:
                 pass
 
     async def process(self) -> bool:
         """Claim and run one task. False if none was pending."""
-        task = await asyncio.to_thread(self._claim)
+        task = await asyncio.to_thread(self._queue.claim, task_type=self.task_type)
         if task is None:
             return False
         await self._run(task)
         return True
-
-    def _claim(self) -> Task | None:
-        with self._db.session() as s:
-            return repo.claim_next(s)  # any type: an unregistered one is failed in _prepare
 
     # --- running one task ----------------------------------------------------
 
     async def _run(self, task: Task) -> None:
         """Run a claimed task and record how it ended."""
         try:
-            handler, payload = self._prepare(task)
+            handler, payload = self._registry.prepare(task_type=task.type, payload=task.payload)
         except TaskFailed as e:  # can't even start: permanent
             await asyncio.to_thread(self._finish, task, Outcome(str(e)))
             return
         outcome = await self._execute(task, handler, payload)
         if outcome is not None:  # None: cancelled, the row already says so
             await asyncio.to_thread(self._finish, task, outcome)
-
-    def _prepare(self, task: Task) -> tuple[Handler, BaseModel]:
-        """The handler for the task's type and its validated payload."""
-        entry = self._handlers.get(task.type)
-        if entry is None:
-            raise TaskFailed(f"Unknown task type: {task.type}")
-        task_cls, handler = entry
-        try:
-            return handler, task_cls(payload=json.loads(task.payload)).payload
-        except ValueError as e:  # bad JSON, or a payload the task's model rejects
-            raise TaskFailed(f"Invalid payload: {e}") from e
 
     async def _execute(self, task: Task, handler: Handler, payload: BaseModel) -> Outcome | None:
         """Run the handler as its own asyncio task, next to a monitor task.
@@ -183,24 +158,26 @@ class TaskWorkerService:
                 otel_context.detach(token)
 
     def _finish(self, task: Task, outcome: Outcome) -> None:
-        """Write the outcome: completed, deferred, or failed (back to pending,
-        after a pause, if it will retry)."""
-        with self._db.session() as s:
-            if outcome.defer is not None:
-                repo.defer(s, task.id, outcome.error or "", repo.later(outcome.defer))
-                status = "deferred"
-            elif outcome.error is None:
-                repo.complete(s, task.id)
-                status = "completed"
-            else:
-                status = repo.fail(s, task.id, outcome.error, outcome.retry,
-                                   not_before=repo.later(self.retry_delay(task.attempts)))
+        """Record the outcome, and log it."""
+        status = self._record(task, outcome)
         if status == "deferred":
             log.info("task %s deferred for %.0fs: %s", task.id, outcome.defer, outcome.error)
         elif status == "pending":
             log.warning("task %s failed, will retry: %s", task.id, outcome.error)
         else:
             self._signals.forget(task.id)  # no retry coming
+
+    def _record(self, task: Task, outcome: Outcome) -> str | None:
+        """Write the outcome: completed, deferred, or failed (back to pending,
+        after a pause, if it will retry). Returns the task's new status."""
+        if outcome.defer is not None:
+            self._queue.defer(task.id, reason=outcome.error or "", delay=outcome.defer)
+            return "deferred"
+        if outcome.error is None:
+            self._queue.complete(task.id)
+            return "completed"
+        return self._queue.fail(task.id, error=outcome.error, retry=outcome.retry,
+                                retry_delay=self.retry_delay(task.attempts))
 
     def retry_delay(self, attempt: int) -> float:
         """Seconds to wait after failed attempt number `attempt` (1-based): the
@@ -210,7 +187,7 @@ class TaskWorkerService:
     # --- while a handler runs ------------------------------------------------
 
     async def _watch(self, task_id: str, work: asyncio.Task) -> None:
-        """Refresh locked_at, and stop the handler if the row was cancelled."""
+        """Refresh the task's lock, and stop the handler if the task was cancelled."""
         last_beat = time.monotonic()
         while True:
             await asyncio.sleep(self._cancel_poll)
@@ -227,8 +204,6 @@ class TaskWorkerService:
                 return
 
     def _still_processing(self, task_id: str, beat: bool) -> bool:
-        with self._db.session() as s:
-            if beat:
-                return repo.heartbeat(s, task_id)
-            row = repo.get(s, task_id)
-            return row is not None and row.status == "processing"
+        if beat:
+            return self._queue.heartbeat(task_id)
+        return self._queue.is_processing(task_id)

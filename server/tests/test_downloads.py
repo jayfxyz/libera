@@ -15,8 +15,9 @@ from app.services.library import LibraryService
 from app.events import EventBus
 from app.services.downloads import INTERRUPTED, DownloadsService, InvalidOptions
 from app.services.task_queue import TaskQueueService
-from app.services.task_worker import TaskWorkerService
-from app.tasks.downloads import DownloadHandlers
+from app.services.task_worker import TaskWorker
+from app.tasks.downloads import DecryptBook, DownloadBook, DownloadHandlers
+from app.tasks.registry import TaskRegistry
 from app.tasks.signals import TaskSignals
 from tests.conftest import add_account, make_book, import_books
 
@@ -32,24 +33,31 @@ def books(db):
 async def make_stack(db, config, pipeline):
     """The services wired as the app does (one worker). start=False leaves
     them unstarted. Every worker is stopped when the test ends."""
-    workers = []
+    built = []
 
-    def build(start=True):
+    def build(start=True, workers=1):
         signals = TaskSignals()
-        worker = TaskWorkerService(db, signals, workers=1, cancel_poll=0.02, retry_base_delay=0, idle_poll=0.05)
+        queue = TaskQueueService(db, signals)
         bus = EventBus()
         bus.attach(asyncio.get_running_loop())
-        svc = DownloadsService(db, config, TaskQueueService(db, signals), bus, audible=None,
-                               library=LibraryService(db, config, bus))
-        DownloadHandlers(svc, pipeline).register(worker)
-        workers.append(worker)
-        stack = SimpleNamespace(svc=svc, worker=worker, bus=bus, start=lambda: (worker.start(), svc.start()))
+        svc = DownloadsService(db, config, queue, bus, audible=None, library=LibraryService(db, config, bus))
+        handlers = DownloadHandlers(svc, pipeline)
+        registry = TaskRegistry()
+        registry.add(DownloadBook, handlers.download_book)
+        registry.add(DecryptBook, handlers.decrypt_book)
+        stack_workers = [
+            TaskWorker(queue=queue, registry=registry, signals=signals, task_type=task_type, concurrency=count,
+                       cancel_poll=0.02, retry_base_delay=0, idle_poll=0.05)
+            for task_type, count in ((DownloadBook.name, workers), (DecryptBook.name, 1))]
+        built.extend(stack_workers)
+        stack = SimpleNamespace(svc=svc, queue=queue, workers=stack_workers, bus=bus,
+                                start=lambda: (queue.recover(), [w.start() for w in stack_workers], svc.start()))
         if start:
             stack.start()
         return stack
 
     yield build
-    for w in workers:
+    for w in built:
         await w.stop()
 
 
@@ -354,7 +362,8 @@ async def test_an_interrupted_download_runs_again_after_a_restart(db, books, pip
     first = make_stack()
     download_id = first.svc.enqueue(books["B1"])
     await asyncio.wait_for(started.wait(), 3)
-    await first.worker.stop()  # the app shuts down mid-download
+    for worker in first.workers:
+        await worker.stop()  # the app shuts down mid-download
     assert status(db, download_id) == "downloading"
 
     pipeline.on_fetch = None

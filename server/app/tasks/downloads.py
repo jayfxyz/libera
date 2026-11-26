@@ -18,7 +18,6 @@ from .base import BaseTask, TaskContext, TaskDeferred, TaskFailed
 if TYPE_CHECKING:
     from ..audible_api.client import AudibleClient
     from ..services.downloads import DownloadsService
-    from ..services.task_worker import TaskWorkerService
 
 log = logging.getLogger(__name__)
 
@@ -61,15 +60,11 @@ class Pipeline:
 
 
 class DownloadHandlers:
-    """The two task handlers. Thin: the pipeline does the work, DownloadsService records it."""
+    """The two task handlers (registered in main.py). Thin: the pipeline does the work, DownloadsService records it."""
 
     def __init__(self, downloads: DownloadsService, pipeline: Pipeline):
         self.downloads = downloads
         self.pipeline = pipeline
-
-    def register(self, worker: TaskWorkerService) -> None:
-        worker.register(DownloadBook, self.download_book)
-        worker.register(DecryptBook, self.decrypt_book)
 
     async def download_book(self, payload: DownloadPayload, ctx: TaskContext) -> None:
         t = await self._target(payload)

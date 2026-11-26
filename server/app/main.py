@@ -26,9 +26,10 @@ from .services.downloads import DownloadsService
 from .services.library import LibraryService
 from .services.settings import SettingsService
 from .services.task_queue import TaskQueueService
-from .services.task_worker import TaskWorkerService
+from .services.task_worker import TaskWorker
 from .static import FrontendFiles
-from .tasks.downloads import DownloadHandlers, Pipeline
+from .tasks.downloads import DecryptBook, DownloadBook, DownloadHandlers, Pipeline
+from .tasks.registry import TaskRegistry
 from .tasks.signals import TaskSignals
 from .telemetry import init_tracing
 
@@ -55,22 +56,35 @@ def create_app(config: Config | None = None, db: Database | None = None,
         events.attach(asyncio.get_running_loop())
         library = LibraryService(database, config, events)
         accounts = AccountsService(database, client, library)
+
+        # Queue & workers
         signals = TaskSignals()
         task_queue = TaskQueueService(database, signals)
-        task_worker = TaskWorkerService(database, signals, workers=config.download_workers)
         downloads = DownloadsService(database, config, task_queue, events, client, library)
-        DownloadHandlers(downloads, pipeline or Pipeline(client)).register(task_worker)
-        task_worker.start()  # releases tasks interrupted by the last shutdown
+        handlers = DownloadHandlers(downloads, pipeline or Pipeline(client))
+        task_registry = TaskRegistry()
+        task_registry.add(DownloadBook, handlers.download_book)
+        task_registry.add(DecryptBook, handlers.decrypt_book)
+        task_workers = [
+            TaskWorker(queue=task_queue, registry=task_registry, signals=signals,
+                       task_type=DownloadBook.name, concurrency=config.download_workers),
+            TaskWorker(queue=task_queue, registry=task_registry, signals=signals,
+                       task_type=DecryptBook.name, concurrency=1),
+        ]
+        task_queue.recover()  # releases tasks interrupted by the last shutdown
+        for worker in task_workers:
+            worker.start()
         downloads.start()  # then fails downloads left with no live task
+
         app.state.ctx = AppContext(config=config, db=database, audible=client, accounts=accounts, library=library,
-                                   settings=settings, downloads=downloads, events=events,
-                                   task_queue=task_queue, task_worker=task_worker)
+                                   settings=settings, downloads=downloads, events=events, task_queue=task_queue,
+                                   task_registry=task_registry, task_workers=task_workers)
         log.info("ready: db=%s output=%s workers=%d", config.database_path, config.output_dir,
                  config.download_workers)
         try:
             yield
         finally:
-            await task_worker.stop()
+            await asyncio.gather(*(worker.stop() for worker in task_workers))
             if db is None:
                 database.close()
 
