@@ -236,7 +236,9 @@ class DownloadsService:
         if info is None or info["download"].status not in repo.ACTIVE:
             return None
         d = info["download"]
-        self._static[download_id] = self._view(d, info["book_id"], info["title"])
+        view = self._view(d, info["book_id"], info["title"])
+        view.pop("message", None)  # a stored message ("Waiting to decrypt") is about the state it was read in
+        self._static[download_id] = view
         return Target(download_id=download_id, audible_account_id=info["audible_account_id"],
                       audible_id=info["audible_id"], title=info["title"], format=str(d.format),
                       split_chapters=d.split_chapters, path=d.path, base_name=d.base_name, has_pdf=info["has_pdf"])

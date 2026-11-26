@@ -156,6 +156,18 @@ async def test_only_one_decrypt_runs_at_a_time_while_the_others_wait_to_decrypt(
     assert max_in_flight == 1
 
 
+async def test_a_decrypting_download_no_longer_says_it_is_waiting_to_decrypt(db, books, make_stack):
+    stack = make_stack(start=False)
+    download_id = stack.svc.enqueue(books["B1"])
+    db.execute("UPDATE downloads SET status = 'decrypt_queued', percent = 100 WHERE id = ?", (download_id,))
+    assert stack.svc.list()[0]["message"] == "Waiting to decrypt"
+    with stack.bus.subscribe() as subscription:
+        stack.svc.target(download_id)  # the decrypt step starts: it reads the download...
+        stack.svc.report_progress(download_id, "decrypting", 100)  # ...and reports its first progress
+        (event,) = [e for e in await read_all(subscription) if e.type == "download.updated"]
+    assert event.data["status"] == "decrypting" and "message" not in event.data
+
+
 async def test_where_it_goes_is_decided_when_queued(db, books, config, pipeline, make_stack):
     stack = make_stack(start=False)
     download_id = stack.svc.enqueue(books["B1"], format="mp3", split_chapters=True)
