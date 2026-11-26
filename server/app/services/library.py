@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from ..audible_api.models import AudibleBook
 from ..config import Config
@@ -188,14 +188,14 @@ class LibraryService:
         on_disk = audio_files_on_disk(self._config.output_dir)
         if not on_disk:
             return 0
-        formats_by_asin = asin_formats_on_disk(on_disk)
+        by_asin = asin_files_on_disk(on_disk)
         with self._db.session() as s:
-            matches = [(r["id"], fmt) for r in repo.not_downloaded_books(s)
-                       if (fmt := formats_by_asin.get(r["audible_id"])
-                           or file_format_on_disk(title=r["title"], title_is_unique=r["same_title"] == 1,
-                                                  on_disk=on_disk))]
-            for book_id, fmt in matches:
-                repo.mark_downloaded(s, book_id, fmt)
+            matches = [(r["id"], file) for r in repo.not_downloaded_books(s)
+                       if (file := by_asin.get(r["audible_id"])
+                           or title_file_on_disk(title=r["title"], title_is_unique=r["same_title"] == 1,
+                                                 on_disk=on_disk))]
+            for book_id, file in matches:
+                repo.mark_downloaded(s, book_id, file.format, file.path)
         for book_id, _ in matches:
             self.publish_book(book_id)
         return len(matches)
@@ -230,15 +230,21 @@ class LibraryService:
 
 # --- pure helpers (no database) ---------------------------------------------------------------
 
-def asin_formats_on_disk(on_disk: dict[str, str]) -> dict[str, str]:
-    """ASIN → format, for the files in on_disk named "<title> [<asin>]"."""
-    return {match.group(1): fmt for stem, fmt in on_disk.items() if (match := _ASIN_SUFFIX.search(stem))}
+class DiskFile(NamedTuple):
+    """An audio file found in the output folder."""
+
+    format: str
+    path: str
 
 
-def file_format_on_disk(title: str, title_is_unique: bool, on_disk: dict[str, str]) -> str | None:
-    """The format of the book's audio file in on_disk, named after the title alone (or, before November
-    2026, with ":" as "_", e.g. "Found_ Book"). It counts only when no other book has that title:
-    it could be any of them."""
+def asin_files_on_disk(on_disk: dict[str, DiskFile]) -> dict[str, DiskFile]:
+    """ASIN → file, for the files in on_disk named "<title> [<asin>]"."""
+    return {match.group(1): file for stem, file in on_disk.items() if (match := _ASIN_SUFFIX.search(stem))}
+
+
+def title_file_on_disk(title: str, title_is_unique: bool, on_disk: dict[str, DiskFile]) -> DiskFile | None:
+    """The book's audio file in on_disk, named after the title alone (or, before November 2026, with ":"
+    as "_", e.g. "Found_ Book"). It counts only when no other book has that title: it could be any of them."""
     if not title_is_unique:
         return None
     for name in (sanitize_filename(title), legacy_file_name(title)):
@@ -270,17 +276,17 @@ def naming_data(meta: dict) -> dict[str, str]:
     }
 
 
-def audio_files_on_disk(root: str) -> dict[str, str]:
-    """Basename (no extension) → format, for every .m4b/.mp3 under root,
+def audio_files_on_disk(root: str) -> dict[str, DiskFile]:
+    """Basename (no extension) → file, for every .m4b/.mp3 under root,
     including inside per-book folders. Hidden directories are skipped."""
-    found: dict[str, str] = {}
-    for _dirpath, dirnames, filenames in os.walk(root):
+    found: dict[str, DiskFile] = {}
+    for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for name in filenames:
             p = Path(name)
             ext = p.suffix.lower()
             if ext in (".m4b", ".mp3"):
-                found[p.stem] = ext[1:]
+                found[p.stem] = DiskFile(format=ext[1:], path=os.path.join(dirpath, name))
     return found
 
 

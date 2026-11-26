@@ -141,7 +141,11 @@ def test_audio_files_on_disk_finds_files_in_book_folders(tmp_path):
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(b"")
-    assert library.audio_files_on_disk(str(tmp_path)) == {"Loose Book": "mp3", "The Name of the Wind": "m4b"}
+    assert library.audio_files_on_disk(str(tmp_path)) == {
+        "Loose Book": library.DiskFile("mp3", str(tmp_path / "Loose Book.mp3")),
+        "The Name of the Wind": library.DiskFile(
+            "m4b", str(tmp_path / "P R - The Name of the Wind" / "The Name of the Wind.m4b")),
+    }
 
 
 def test_rescan_marks_found_books_downloaded(db, config, library_svc, tmp_path):
@@ -158,6 +162,10 @@ def test_rescan_marks_found_books_downloaded(db, config, library_svc, tmp_path):
         "SELECT b.audible_id, lb.liberation_status, lb.last_format FROM books b "
         "JOIN library_books lb ON lb.book_id = b.id")}
     assert status == {"A": ("liberated", "m4b"), "B": ("not_liberated", None), "C": ("liberated", "mp3")}
+    paths = {r["audible_id"]: r["file_path"] for r in db.query(
+        "SELECT b.audible_id, lb.file_path FROM books b JOIN library_books lb ON lb.book_id = b.id")}
+    assert paths == {"A": str(tmp_path / "Someone - Found_ Book" / "Found_ Book.m4b"), "B": None,
+                     "C": str(tmp_path / "Someone" / "Nested - Book" / "Nested - Book.mp3")}
 
 
 def test_rescan_matches_duplicate_titles_by_asin(db, config, library_svc, tmp_path):
@@ -174,6 +182,8 @@ def test_rescan_matches_duplicate_titles_by_asin(db, config, library_svc, tmp_pa
     status = {r["audible_id"]: r["last_format"] for r in db.query(
         "SELECT b.audible_id, lb.last_format FROM books b JOIN library_books lb ON lb.book_id = b.id")}
     assert status == {"B000000001": None, "B000000002": "m4b", "B000000003": None, "B000000004": "mp3"}
+    assert library_svc.planned_path(db.scalar("SELECT id FROM books WHERE audible_id = 'B000000002'")) == str(
+        folder / "Same [B000000002].m4b")
 
 
 def test_has_pdf_comes_from_the_sync_and_survives_a_scan_without_it(db, library_svc):
@@ -265,6 +275,7 @@ def test_multi_account_prefers_downloadable_copy(db, config, library_svc):
 
 
 def test_asin_formats_on_disk_reads_only_a_trailing_tag():
-    on_disk = {"Same [B000000002]": "m4b", "Plain": "mp3", "Odd [x] title": "mp3", "Empty []": "m4b",
-               "Old [B000000009] - 01 - Chapter": "m4b"}
-    assert library.asin_formats_on_disk(on_disk) == {"B000000002": "m4b"}
+    on_disk = {stem: library.DiskFile("m4b", f"/a/{stem}.m4b") for stem in (
+        "Same [B000000002]", "Plain", "Odd [x] title", "Empty []", "Old [B000000009] - 01 - Chapter")}
+    assert library.asin_files_on_disk(on_disk) == {
+        "B000000002": library.DiskFile("m4b", "/a/Same [B000000002].m4b")}
