@@ -92,9 +92,18 @@
           Format for this book
           <SelectField v-model="format" :options="formatOptions" />
         </label>
-        <label class="flex min-h-11 cursor-pointer items-center gap-2.5 text-sm">
-          <input v-model="splitChapters" type="checkbox" class="checkbox" />Split by chapter
-        </label>
+        <!-- Collapsed: splitting is rarely wanted. -->
+        <details class="group">
+          <summary class="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold text-ink-soft transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+            <ChevronRightIcon class="size-3.5 transition-transform group-open:rotate-90" aria-hidden="true" />Advanced
+          </summary>
+          <div class="flex min-h-11 flex-wrap items-center gap-x-1.5 pl-5 text-sm">
+            <label class="flex cursor-pointer items-center gap-2.5">
+              <input v-model="splitChapters" type="checkbox" class="checkbox" />Split by chapter
+            </label>
+            <SplitChaptersPopover />
+          </div>
+        </details>
         <p class="text-xs text-ink-soft">The companion PDF is saved too, when the book has one.</p>
       </div>
 
@@ -117,7 +126,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { EyeIcon, EyeOffIcon, XIcon } from '@lucide/vue'
+import { ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from '@lucide/vue'
 import type { BookDetail } from '@/api/client'
 import { api } from '@/api/client'
 import { SelectField, type SelectOption } from '@/components/ui/select'
@@ -126,6 +135,7 @@ import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useSettingsStore } from '@/stores/settings'
 import BookCover from './BookCover.vue'
+import SplitChaptersPopover from './SplitChaptersPopover.vue'
 import UnavailablePopover from './UnavailablePopover.vue'
 
 const props = defineProps<{ bookId: number }>()
