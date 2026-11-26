@@ -91,7 +91,7 @@ export interface BookDetail {
   updated_at: string | null // ISO UTC; which copy is newer when a snapshot and an event cross
 }
 
-export type JobStatus = 'queued' | 'downloading' | 'decrypting' | 'done' | 'failed' | 'cancelled'
+export type JobStatus = 'queued' | 'downloading' | 'decrypt_queued' | 'decrypting' | 'done' | 'failed' | 'cancelled'
 
 /** A file a finished download wrote, within the book's folder. */
 export interface DownloadFile {

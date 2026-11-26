@@ -65,7 +65,7 @@ def test_0004_downgrades_cleanly(tmp_path):
     db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
     db.execute("UPDATE tasks SET status = 'completed'")
     db.migrate()  # and up again
-    assert db.scalar("SELECT version_num FROM alembic_version") == "0008"
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0009"
     db.close()
 
 
@@ -126,3 +126,17 @@ def test_an_existing_libera_db_wins_over_a_legacy_one(tmp_path):
     assert db.scalar("SELECT version_num FROM alembic_version")  # still the real database
     db.close()
     assert (tmp_path / "libation.db").read_bytes() == b"old"  # left alone
+
+
+def test_0009_marks_fetched_downloads_waiting_to_decrypt(tmp_path):
+    db = at_revision(tmp_path, "0008")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (10, 'B1', 'One', 'uk')")
+    db.execute("INSERT INTO library_books (id, book_id, account_id, date_added) VALUES (100, 10, 1, '2024-01-01')")
+    for download_id, status, percent in (("fetched", "queued", 100), ("new", "queued", 0), ("busy", "decrypting", 100)):
+        db.execute("INSERT INTO downloads (id, library_book_id, format, path, base_name, status, percent) "
+                   "VALUES (?, 100, 'm4b', '/p', 'One', ?, ?)", (download_id, status, percent))
+    db.migrate()
+    assert {r["id"]: r["status"] for r in db.query("SELECT id, status FROM downloads")} == {
+        "fetched": "decrypt_queued", "new": "queued", "busy": "decrypting"}
+    db.close()

@@ -88,6 +88,7 @@ class FakePipeline:
 
     async def decrypt(self, t, work_dir, report_progress):
         self.decrypted.append(t)
+        report_progress("decrypting", 100)
         if self.on_decrypt:
             await self.on_decrypt(t, report_progress)
         return [FileEntry("audio", f"{t.base_name}.{t.format}", 1)]

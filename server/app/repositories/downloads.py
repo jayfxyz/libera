@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session, aliased
 from ..db.models import Account, Book, Download, DownloadStatus, LibraryBook, Task, TaskStatus
 from .tasks import now
 
-ACTIVE = (DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING, DownloadStatus.DECRYPTING)
+ACTIVE = (DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING, DownloadStatus.DECRYPT_QUEUED,
+          DownloadStatus.DECRYPTING)
+NOT_STARTED = (DownloadStatus.QUEUED, DownloadStatus.DECRYPT_QUEUED)  # no worker is on it right now
 FINISHED = (DownloadStatus.DONE, DownloadStatus.FAILED, DownloadStatus.CANCELLED)
 
 
@@ -76,7 +78,7 @@ def set_task(s: Session, download_id: str, task_id: str) -> None:
 def set_progress(s: Session, download_id: str, status: DownloadStatus, percent: float) -> bool:
     """Only while the download is active, so a late tick can't revive a cancelled one."""
     values: dict[str, Any] = {"status": status, "percent": percent, "updated_at": now()}
-    if status != DownloadStatus.QUEUED:
+    if status not in NOT_STARTED:
         values["started_at"] = func.coalesce(Download.started_at, now())
     result = s.execute(update(Download).where(Download.id == download_id, Download.status.in_(ACTIVE))
                        .values(**values))

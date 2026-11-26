@@ -12,7 +12,7 @@ export interface BookStatus {
   percent: number
 }
 
-const ACTIVE = new Set(['queued', 'downloading', 'decrypting'])
+const ACTIVE = new Set(['queued', 'downloading', 'decrypt_queued', 'decrypting'])
 
 export function isActive(job: Download | undefined): job is Download {
   return !!job && ACTIVE.has(job.status)
@@ -23,8 +23,9 @@ export function bookStatus(
   job?: Download,
 ): BookStatus {
   if (isActive(job)) {
-    if (job.status === 'queued') {
-      return { state: 'queued', label: 'Queued', text: 'text-ink-soft', dot: 'bg-ink-faint', percent: 0 }
+    if (job.status === 'queued' || job.status === 'decrypt_queued') {
+      const label = job.status === 'queued' ? 'Queued' : 'Waiting to decrypt'
+      return { state: 'queued', label, text: 'text-ink-soft', dot: 'bg-ink-faint', percent: 0 }
     }
     const phase = job.status === 'decrypting' ? 'Decrypting' : 'Downloading'
     const percent = Math.round(job.percent)

@@ -83,7 +83,7 @@ onMounted(() => {
 
 const jobs = computed(() => Array.from(downloads.byId.values()))
 const active = computed(() => {
-  const order = { downloading: 0, decrypting: 0, queued: 1 } as Record<string, number>
+  const order = { downloading: 0, decrypting: 0, decrypt_queued: 1, queued: 1 } as Record<string, number>
   return jobs.value.filter((j) => isActive(j)).sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2))
 })
 // Newest first; history survives restarts (the server keeps the last 500).
@@ -108,6 +108,7 @@ function coverFor(id: number) {
 function label(job: Download) {
   switch (job.status) {
     case 'queued': return 'Queued'
+    case 'decrypt_queued': return 'Waiting to decrypt'
     case 'downloading': return `Downloading · ${Math.round(job.percent)}%`
     case 'decrypting': return job.message || 'Decrypting'
     case 'done': return `Downloaded${job.format ? ` · ${job.format.toUpperCase()}` : ''}`
@@ -145,7 +146,7 @@ function tone(job: Download) {
   if (job.status === 'done') return { text: 'text-ok-ink', dot: 'bg-ok' }
   if (job.status === 'cancelled') return { text: 'text-ink-soft', dot: 'bg-line' }
   if (job.status === 'failed') return { text: 'text-warn-ink', dot: 'bg-warn' }
-  if (job.status === 'queued') return { text: 'text-ink-soft', dot: 'bg-ink-faint' }
+  if (job.status === 'queued' || job.status === 'decrypt_queued') return { text: 'text-ink-soft', dot: 'bg-ink-faint' }
   return { text: 'text-busy', dot: 'bg-busy' }
 }
 </script>

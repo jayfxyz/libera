@@ -121,6 +121,41 @@ async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline,
     assert events[0].data == view  # the same shape as REST
 
 
+async def test_only_one_decrypt_runs_at_a_time_while_the_others_wait_to_decrypt(
+        db, books, pipeline, make_stack):
+    import_books(db, 1, [make_book("B3", title="Book 3", authors=["Jane Author"])])
+    b3 = db.scalar("SELECT id FROM books WHERE audible_id = 'B3'")
+    in_flight, max_in_flight = 0, 0
+    first_decrypt_started, release_decrypt = asyncio.Event(), asyncio.Event()
+
+    async def slow_decrypt(t, report):
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        first_decrypt_started.set()
+        await release_decrypt.wait()
+        in_flight -= 1
+
+    pipeline.on_decrypt = slow_decrypt
+    stack = make_stack(workers=3)
+    ids = [stack.svc.enqueue(book_id) for book_id in (books["B1"], books["B2"], b3)]
+
+    await asyncio.wait_for(first_decrypt_started.wait(), 3)
+    await wait_for(lambda: len(pipeline.fetched) == 3)
+    # Give chain_decrypt a moment to commit for the other two books.
+    await wait_for(lambda: sum(1 for v in stack.svc.list() if v["status"] == "decrypt_queued") == 2)
+
+    views = stack.svc.list()
+    decrypting = [v for v in views if v["status"] == "decrypting"]
+    waiting = [v for v in views if v["status"] == "decrypt_queued"]
+    assert len(decrypting) == 1
+    assert len(waiting) == 2 and all(v["message"] == "Waiting to decrypt" for v in waiting)
+
+    release_decrypt.set()
+    await wait_for(lambda: all(status(db, i) == "done" for i in ids) and tasks_settled(db))
+    assert max_in_flight == 1
+
+
 async def test_where_it_goes_is_decided_when_queued(db, books, config, pipeline, make_stack):
     stack = make_stack(start=False)
     download_id = stack.svc.enqueue(books["B1"], format="mp3", split_chapters=True)

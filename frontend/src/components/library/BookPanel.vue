@@ -52,7 +52,7 @@
       </div>
 
       <div v-else-if="status.state === 'queued'" class="flex flex-col gap-2.5">
-        <span class="inline-flex h-7 items-center self-start rounded-full border border-dashed border-ink-faint px-2.5 text-xs font-semibold text-ink-soft">Queued</span>
+        <span class="inline-flex h-7 items-center self-start rounded-full border border-dashed border-ink-faint px-2.5 text-xs font-semibold text-ink-soft">{{ status.label }}</span>
         <button type="button" class="btn-secondary self-start" @click="cancel">Cancel</button>
       </div>
 

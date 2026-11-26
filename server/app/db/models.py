@@ -192,6 +192,7 @@ class DownloadFormat(StrEnum):
 class DownloadStatus(StrEnum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
+    DECRYPT_QUEUED = "decrypt_queued"  # fetched; waiting for a decrypt worker
     DECRYPTING = "decrypting"
     DONE = "done"
     FAILED = "failed"

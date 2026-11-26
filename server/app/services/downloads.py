@@ -271,12 +271,12 @@ class DownloadsService:
             self._events.publish("download.updated", download_id, {**self._static.get(download_id, {}), **live})
 
     def chain_decrypt(self, download_id: str) -> bool:
-        """The fetch is done: queue decrypt_book and move to decrypting, in one
-        transaction. False if the download was cancelled meanwhile."""
+        """The fetch is done: queue decrypt_book and wait for the decrypt worker,
+        in one transaction. False if the download was cancelled meanwhile."""
         try:
             with self._db.session() as s:
                 task_id = self._tasks.enqueue(DecryptBook(payload=DownloadPayload(download_id=download_id)), session=s)
-                if not repo.set_progress(s, download_id, DownloadStatus.DECRYPTING, 100):
+                if not repo.set_progress(s, download_id, DownloadStatus.DECRYPT_QUEUED, 100):
                     raise _Rollback
                 repo.set_task(s, download_id, task_id)
         except _Rollback:
@@ -390,6 +390,8 @@ class DownloadsService:
             view["message"] = d.error
         elif d.status == DownloadStatus.DONE:
             view["message"] = _audio_path(d)
+        elif d.status == DownloadStatus.DECRYPT_QUEUED:
+            view["message"] = "Waiting to decrypt"
         if live := self._live.get(d.id):  # fresher than the database while it runs
             view.update(live)
         return view
