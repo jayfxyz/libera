@@ -102,7 +102,7 @@ class Downloader:
         self.workers = [TaskWorker(queue=queue, registry=registry, signals=signals, task_type=task_type,
                                    retry_base_delay=0)
                         for task_type in (DownloadBook.name, DecryptBook.name)]
-        queue.recover()
+        queue.recover(known_types=registry.types)
         for worker in self.workers:
             worker.start()
         self.svc.start()

@@ -371,7 +371,7 @@ async def test_interrupted_task_is_released_at_startup_without_losing_an_attempt
         seen.append((ctx.attempt, ctx.max_attempts))
 
     worker = rig.worker(Once, handler)
-    queue.recover()  # as at app startup
+    queue.recover(known_types=rig.registry.types)  # as at app startup
     worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
     assert seen == [(1, 1)]  # it ran, as attempt 1
@@ -405,9 +405,24 @@ async def test_stop_cancels_in_flight_work_and_the_task_resumes_next_start(db, m
         pass
 
     worker = again.worker(Once, fast)
-    again.queue.recover()  # as at app startup
+    again.queue.recover(known_types=again.registry.types)  # as at app startup
     worker.start()
     await wait_for(lambda: status(db, task_id) == "completed")
+
+
+async def test_pending_tasks_of_a_type_with_no_handler_are_failed_at_startup(db, make):
+    rig = make()
+
+    async def handler(p, ctx):
+        pass
+
+    rig.worker(Once, handler)
+    with db.session() as s:
+        repo.add(s, id="known", type="once", payload="{}")
+        repo.add(s, id="stray", type="mystery", payload="{}")
+    rig.queue.recover(known_types=rig.registry.types)
+    assert status(db, "stray") == "failed" and "Unknown task type: mystery" in row(db, "stray")["error"]
+    assert status(db, "known") == "pending"
 
 
 async def test_old_finished_tasks_are_pruned_at_startup(db, make):
@@ -417,7 +432,8 @@ async def test_old_finished_tasks_are_pruned_at_startup(db, make):
     for _ in range(4):
         with db.session() as s:
             repo.complete(s, repo.claim_next(s).id)
-    make().queue.recover(history_limit=2)
+    rig = make()
+    rig.queue.recover(known_types=rig.registry.types, history_limit=2)
     assert {r["id"] for r in db.query("SELECT id FROM tasks")} == {"t2", "t3"}  # the newest two
 
 

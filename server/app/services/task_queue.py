@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Collection
 
 from opentelemetry import context as otel_context
 from sqlalchemy import event
@@ -62,15 +63,19 @@ class TaskQueueService:
     # --- the worker side -----------------------------------------------------
     # Each call is one short transaction and blocks: workers call them in a thread.
 
-    def recover(self, *, history_limit: int = HISTORY_LIMIT) -> None:
+    def recover(self, *, known_types: Collection[str], history_limit: int = HISTORY_LIMIT) -> None:
         """At startup, before any worker: put back tasks the last shutdown
-        interrupted (single process: anything still `processing` was) and drop
-        old finished ones."""
+        interrupted (single process: anything still `processing` was), fail
+        pending tasks of a type with no handler (no worker would ever claim
+        them), and drop old finished ones."""
         with self._db.session() as s:
             released = repo.release_stale(s, repo.now())
+            unknown = repo.fail_unknown_types(s, known_types)
             pruned = repo.prune_finished(s, history_limit)
         if released:
             log.info("re-queued %d task(s) interrupted by the last shutdown", released)
+        if unknown:
+            log.warning("failed %d pending task(s) of a type with no handler", unknown)
         if pruned:
             log.info("pruned %d old finished task(s)", pruned)
 

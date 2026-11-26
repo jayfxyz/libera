@@ -51,7 +51,7 @@ async def make_stack(db, config, pipeline):
             for task_type, count in ((DownloadBook.name, workers), (DecryptBook.name, 1))]
         built.extend(stack_workers)
         stack = SimpleNamespace(svc=svc, queue=queue, workers=stack_workers, bus=bus,
-                                start=lambda: (queue.recover(), [w.start() for w in stack_workers], svc.start()))
+                                start=lambda: (queue.recover(known_types=registry.types), [w.start() for w in stack_workers], svc.start()))
         if start:
             stack.start()
         return stack

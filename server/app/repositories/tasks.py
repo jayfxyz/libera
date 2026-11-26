@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Sequence
+from typing import Collection, Sequence
 
-from sqlalchemy import bindparam, delete, select, text, update
+from sqlalchemy import bindparam, delete, literal, select, text, update
 from sqlalchemy.orm import Session
 
 from ..db.models import Task
@@ -104,6 +104,15 @@ def release_stale(s: Session, older_than: str) -> int:
         UPDATE tasks SET status = 'pending', attempts = MAX(attempts - 1, 0), locked_at = NULL
         WHERE status = 'processing' AND (locked_at IS NULL OR locked_at < :cutoff)"""),
         {"cutoff": older_than})
+    return result.rowcount
+
+
+def fail_unknown_types(s: Session, known_types: Collection[str]) -> int:
+    """Pending tasks of a type outside `known_types` (no handler, so no worker)
+    are failed, rather than waiting forever."""
+    result = s.execute(update(Task).where(Task.status == "pending", Task.type.not_in(known_types))
+                       .values(status="failed", error=literal("Unknown task type: ") + Task.type,
+                               locked_at=None, finished_at=now()))
     return result.rowcount
 
 

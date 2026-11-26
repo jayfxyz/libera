@@ -71,7 +71,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
             TaskWorker(queue=task_queue, registry=task_registry, signals=signals,
                        task_type=DecryptBook.name, concurrency=1),
         ]
-        task_queue.recover()  # releases tasks interrupted by the last shutdown
+        task_queue.recover(known_types=task_registry.types)  # tasks the last shutdown interrupted, or no one can run
         for worker in task_workers:
             worker.start()
         downloads.start()  # then fails downloads left with no live task

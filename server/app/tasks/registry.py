@@ -17,6 +17,10 @@ class TaskRegistry:
     def __init__(self) -> None:
         self._entries: dict[str, tuple[type[BaseTask], Handler]] = {}
 
+    @property
+    def types(self) -> set[str]:
+        return set(self._entries)
+
     def add(self, task_cls: type[BaseTask], handler: Handler) -> None:
         self._entries[task_cls.name] = (task_cls, handler)
 
