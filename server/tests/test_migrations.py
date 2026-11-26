@@ -65,7 +65,7 @@ def test_0004_downgrades_cleanly(tmp_path):
     db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
     db.execute("UPDATE tasks SET status = 'completed'")
     db.migrate()  # and up again
-    assert db.scalar("SELECT version_num FROM alembic_version") == "0009"
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0010"
     db.close()
 
 
@@ -139,4 +139,37 @@ def test_0009_marks_fetched_downloads_waiting_to_decrypt(tmp_path):
     db.migrate()
     assert {r["id"]: r["status"] for r in db.query("SELECT id, status FROM downloads")} == {
         "fetched": "decrypt_queued", "new": "queued", "busy": "decrypting"}
+    db.close()
+
+
+def test_0010_renames_the_stored_download_status_values(tmp_path):
+    db = at_revision(tmp_path, "0009")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    for book_id in (10, 11, 12):
+        db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (?, ?, 'T', 'uk')",
+                   (book_id, f"B{book_id}"))
+    for library_id, book_id, status in ((100, 10, "liberated"), (101, 11, "not_liberated"), (102, 12, "error")):
+        db.execute("INSERT INTO library_books (id, book_id, account_id, date_added, liberation_status) "
+                   "VALUES (?, ?, 1, '2024-01-01', ?)", (library_id, book_id, status))
+    db.execute("DELETE FROM library_books WHERE id = 102")  # its id must not come back
+    db.migrate()
+    assert {r["id"]: r["download_status"] for r in db.query("SELECT id, download_status FROM library_books")} == {
+        100: "downloaded", 101: "not_downloaded"}
+    db.execute("INSERT INTO library_books (book_id, account_id, date_added) VALUES (12, 1, '2024-01-01')")
+    assert dict(db.query_one("SELECT id, download_status FROM library_books WHERE book_id = 12")) == {
+        "id": 103, "download_status": "not_downloaded"}  # the new default; ids keep counting past the removed row
+    db.close()
+
+
+def test_0010_downgrades_cleanly(tmp_path):
+    db = at_revision(tmp_path, "head")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (10, 'B10', 'T', 'uk')")
+    db.execute("INSERT INTO library_books (id, book_id, account_id, date_added, download_status) "
+               "VALUES (100, 10, 1, '2024-01-01', 'downloaded')")
+    with db.engine.begin() as conn:
+        command.downgrade(_config(conn), "0009")
+    assert db.scalar("SELECT liberation_status FROM library_books WHERE id = 100") == "liberated"
+    db.migrate()
+    assert db.scalar("SELECT download_status FROM library_books WHERE id = 100") == "downloaded"
     db.close()

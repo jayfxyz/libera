@@ -37,14 +37,14 @@ export interface Account {
 export type LibrarySort = 'title' | 'author' | 'added' | 'released' | 'length' | 'series' | 'rating' | 'downloaded'
 export type SortOrder = 'asc' | 'desc'
 
-export type LiberationStatus = 'not_liberated' | 'liberated' | 'error' | 'partial_download'
+export type BookDownloadStatus = 'not_downloaded' | 'downloaded' | 'error' | 'partial_download'
 
 export interface BookSummary {
   id: number
   audible_id: string
   title: string
   cover_url: string
-  liberation_status: LiberationStatus
+  download_status: BookDownloadStatus
   is_finished: boolean
   is_deleted: boolean
   is_hidden: boolean
@@ -73,7 +73,7 @@ export interface BookDetail {
   publisher: string
   language: string
   audible_rating: number
-  liberation_status: LiberationStatus
+  download_status: BookDownloadStatus
   is_finished: boolean
   is_hidden: boolean
   is_downloadable: boolean

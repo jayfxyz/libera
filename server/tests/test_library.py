@@ -158,10 +158,10 @@ def test_rescan_marks_found_books_downloaded(db, config, library_svc, tmp_path):
     (tmp_path / "Someone" / "Nested - Book" / "Nested - Book.mp3").write_bytes(b"")
     config.output_dir = str(tmp_path)
     assert library_svc.rescan() == 2
-    status = {r["audible_id"]: (r["liberation_status"], r["last_format"]) for r in db.query(
-        "SELECT b.audible_id, lb.liberation_status, lb.last_format FROM books b "
+    status = {r["audible_id"]: (r["download_status"], r["last_format"]) for r in db.query(
+        "SELECT b.audible_id, lb.download_status, lb.last_format FROM books b "
         "JOIN library_books lb ON lb.book_id = b.id")}
-    assert status == {"A": ("liberated", "m4b"), "B": ("not_liberated", None), "C": ("liberated", "mp3")}
+    assert status == {"A": ("downloaded", "m4b"), "B": ("not_downloaded", None), "C": ("downloaded", "mp3")}
     paths = {r["audible_id"]: r["file_path"] for r in db.query(
         "SELECT b.audible_id, lb.file_path FROM books b JOIN library_books lb ON lb.book_id = b.id")}
     assert paths == {"A": str(tmp_path / "Someone - Found_ Book" / "Found_ Book.m4b"), "B": None,

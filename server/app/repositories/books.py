@@ -204,7 +204,8 @@ def order_by(sort: str | None, order: str | None) -> str:
 
 # account_ids: every account that owns the book, as "3,6" (the service makes it a list).
 _SUMMARY_COLUMNS = """b.id, b.audible_id, b.title, COALESCE(b.cover_url, '') AS cover_url,
-    lb.liberation_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.is_downloadable, lb.tags, lb.account_id,
+    lb.download_status, lb.is_finished, lb.is_deleted, lb.is_hidden, lb.is_downloadable,
+    lb.tags, lb.account_id,
     (SELECT group_concat(o.account_id) FROM library_books o WHERE o.book_id = b.id) AS account_ids,
     lb.last_format, b.length_minutes, lb.date_added, b.has_pdf, lb.updated_at"""
 
@@ -254,7 +255,7 @@ def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
                COALESCE(b.description,'') AS description, COALESCE(b.cover_url,'') AS cover_url,
                b.length_minutes, COALESCE(b.publisher,'') AS publisher,
                COALESCE(b.language,'') AS language, COALESCE(b.audible_rating,0) AS audible_rating,
-               lb.liberation_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
+               lb.download_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
                lb.is_hidden, lb.is_downloadable, lb.last_format, lb.file_path, b.has_pdf, lb.updated_at
         FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE b.id = :id ORDER BY lb.is_deleted, lb.is_downloadable DESC, lb.id LIMIT 1""", id=book_id)
@@ -325,15 +326,15 @@ def set_hidden(s: Session, book_ids: list[int], hidden: bool) -> None:
 
 def mark_downloaded(s: Session, book_id: int, fmt: str, file_path: str | None = None) -> None:
     s.execute(text("""
-        UPDATE library_books SET liberation_status = 'liberated', last_downloaded = CURRENT_TIMESTAMP,
+        UPDATE library_books SET download_status = 'downloaded', last_downloaded = CURRENT_TIMESTAMP,
             last_format = :fmt, file_path = COALESCE(:path, file_path), updated_at = :now
         WHERE book_id = :id"""), {"fmt": fmt, "path": file_path, "id": book_id, "now": now()})
 
 
 def mark_error(s: Session, book_id: int) -> None:
     s.execute(text("""
-        UPDATE library_books SET liberation_status = 'error', updated_at = :now
-        WHERE book_id = :id AND liberation_status != 'liberated'"""), {"id": book_id, "now": now()})
+        UPDATE library_books SET download_status = 'error', updated_at = :now
+        WHERE book_id = :id AND download_status != 'downloaded'"""), {"id": book_id, "now": now()})
 
 
 def not_downloaded_books(s: Session) -> list[dict[str, Any]]:
@@ -342,7 +343,7 @@ def not_downloaded_books(s: Session) -> list[dict[str, Any]]:
         SELECT b.id, b.audible_id, b.title,
                (SELECT COUNT(*) FROM books same WHERE same.title = b.title) AS same_title
         FROM books b JOIN library_books lb ON lb.book_id = b.id
-        WHERE lb.liberation_status != 'liberated'""")
+        WHERE lb.download_status != 'downloaded'""")
 
 
 def export_rows(s: Session) -> list[dict[str, Any]]:
@@ -350,7 +351,7 @@ def export_rows(s: Session) -> list[dict[str, Any]]:
     return _rows(s, """
         SELECT b.id, b.audible_id, b.title, COALESCE(b.length_minutes,0) AS length_minutes,
                COALESCE(b.publisher,'') AS publisher, COALESCE(b.language,'') AS language,
-               COALESCE(b.audible_rating,0) AS audible_rating, lb.liberation_status, lb.is_finished,
+               COALESCE(b.audible_rating,0) AS audible_rating, lb.download_status, lb.is_finished,
                lb.tags, lb.user_rating, lb.date_added
         FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE lb.is_deleted = 0 ORDER BY b.title""")

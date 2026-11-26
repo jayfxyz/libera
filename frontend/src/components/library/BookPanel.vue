@@ -171,7 +171,7 @@ const summary = computed(() => library.books.find((b) => b.id === props.bookId))
 const hasPdf = computed(() => (summary.value ?? book.value)?.has_pdf === true)
 const isDownloadable = computed(() => (summary.value ?? book.value)?.is_downloadable !== false)
 const status = computed(() =>
-  bookStatus(summary.value ?? book.value ?? { liberation_status: 'not_liberated', last_format: null, is_downloadable: true }, job.value),
+  bookStatus(summary.value ?? book.value ?? { download_status: 'not_downloaded', last_format: null, is_downloadable: true }, job.value),
 )
 // Refresh the saved path once a download finishes.
 watch(() => status.value.state, (now, before) => {

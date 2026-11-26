@@ -19,7 +19,7 @@ export function isActive(job: Download | undefined): job is Download {
 }
 
 export function bookStatus(
-  book: Pick<BookSummary, 'liberation_status' | 'last_format'> & { is_downloadable?: boolean },
+  book: Pick<BookSummary, 'download_status' | 'last_format'> & { is_downloadable?: boolean },
   job?: Download,
 ): BookStatus {
   if (isActive(job)) {
@@ -37,14 +37,14 @@ export function bookStatus(
       percent,
     }
   }
-  if (book.liberation_status === 'liberated') {
+  if (book.download_status === 'downloaded') {
     const fmt = book.last_format ? ` · ${book.last_format.toUpperCase()}` : ''
     return { state: 'downloaded', label: `Downloaded${fmt}`, text: 'text-ok-ink', dot: 'bg-ok', percent: 100 }
   }
   if (book.is_downloadable === false) {
     return { state: 'unavailable', label: 'Not downloadable', text: 'text-ink-soft', dot: 'bg-ink-faint', percent: 0 }
   }
-  if (book.liberation_status === 'error') {
+  if (book.download_status === 'error') {
     return { state: 'error', label: 'Failed · try again', text: 'text-warn-ink', dot: 'bg-warn', percent: 0 }
   }
   return { state: 'none', label: 'Not downloaded', text: 'text-ink-soft', dot: 'bg-line', percent: 0 }

@@ -177,8 +177,8 @@ async def test_download_writes_book_folder_with_chapters_cover_and_pdf(db, confi
     assert probe_cover(os.path.join(book_dir, f"The Book [B0001].{fmt}")) == [("mjpeg", 64)]
     with open(os.path.join(book_dir, "cover.jpg"), "rb") as a, open(cover_jpg, "rb") as b:
         assert a.read() == b.read()
-    lib = db.query_one("SELECT liberation_status, last_format FROM library_books WHERE book_id = ?", (book_id,))
-    assert (lib["liberation_status"], lib["last_format"]) == ("liberated", fmt)
+    lib = db.query_one("SELECT download_status, last_format FROM library_books WHERE book_id = ?", (book_id,))
+    assert (lib["download_status"], lib["last_format"]) == ("downloaded", fmt)
 
 
 async def test_missing_or_bad_cover_does_not_fail_the_download(config, book_id, tmp_path, source_audio,
@@ -214,7 +214,7 @@ async def test_license_denial_explains_tiny_download(db, config, book_id, tmp_pa
 
     assert view["status"] == "failed"
     assert view["message"] == "Audible is throttling. (fallback AAX download also failed: No Library Record Found for user.)"
-    assert db.scalar("SELECT liberation_status FROM library_books WHERE book_id = ?", (book_id,)) == "error"
+    assert db.scalar("SELECT download_status FROM library_books WHERE book_id = ?", (book_id,)) == "error"
     assert os.listdir(config.output_dir) == []  # nothing left behind
     assert audible.calls["license"] == 1  # a refusal is not retried
 

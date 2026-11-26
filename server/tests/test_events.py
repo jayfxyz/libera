@@ -137,7 +137,7 @@ def test_the_stream_delivers_download_and_book_updates(server, db):
     assert download["id"] == download_id and download["data"]["id"] == download_id
     assert download["data"] == httpx.get(f"{server}/api/downloads").json()[0]  # the same shape as REST
     book = next(e for e in events if e["type"] == "book.updated")
-    assert (book["id"], book["data"]["id"], book["data"]["liberation_status"]) == (str(book_id), book_id, "liberated")
+    assert (book["id"], book["data"]["id"], book["data"]["download_status"]) == (str(book_id), book_id, "downloaded")
     assert book["data"]["updated_at"]
 
 

@@ -55,7 +55,7 @@ def export_library(library_svc: LibrarySvc, format: str = Query("json")):
         w.writerow([
             r["audible_id"], r["title"], r["authors"], r["narrators"], r["series"],
             r["length_minutes"], r["publisher"], r["language"], f'{r["audible_rating"]:.2f}',
-            r["liberation_status"], str(r["is_finished"]).lower(), r["tags"],
+            r["download_status"], str(r["is_finished"]).lower(), r["tags"],
             "" if r["user_rating"] is None else r["user_rating"], r["date_added"],
         ])
     return Response(

@@ -25,7 +25,7 @@ _ASIN_SUFFIX = re.compile(r" \[([^\[\]]+)\]$")  # the " [B002UZMLXM]" a file or 
 
 EXPORT_FIELDS = [
     "audible_id", "title", "authors", "narrators", "series", "length_minutes", "publisher",
-    "language", "audible_rating", "liberation_status", "is_finished", "tags", "user_rating", "date_added",
+    "language", "audible_rating", "download_status", "is_finished", "tags", "user_rating", "date_added",
 ]
 
 
@@ -218,7 +218,7 @@ class LibraryService:
                 "publisher": r["publisher"],
                 "language": r["language"],
                 "audible_rating": round(r["audible_rating"], 2),
-                "liberation_status": r["liberation_status"],
+                "download_status": r["download_status"],
                 "is_finished": bool(r["is_finished"]),
                 "tags": r["tags"],
                 "user_rating": None if r["user_rating"] is None else int(r["user_rating"]),

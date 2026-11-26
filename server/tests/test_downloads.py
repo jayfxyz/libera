@@ -108,16 +108,16 @@ async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline,
     assert (view["status"], view["message"], view["files"]) == (
         "done", os.path.join(book_dir, "Book 1 [B1].m4b"), [{"role": "audio", "name": "Book 1 [B1].m4b", "size_bytes": 1}])
     assert view["created_at"].endswith("Z") and view["finished_at"].endswith("Z")
-    lib = db.query_one("SELECT liberation_status, last_format, file_path FROM library_books WHERE book_id = ?",
+    lib = db.query_one("SELECT download_status, last_format, file_path FROM library_books WHERE book_id = ?",
                        (books["B1"],))
-    assert dict(lib) == {"liberation_status": "liberated", "last_format": "m4b",
+    assert dict(lib) == {"download_status": "downloaded", "last_format": "m4b",
                          "file_path": os.path.join(book_dir, "Book 1 [B1].m4b")}
     assert [(r["type"], r["status"]) for r in db.query("SELECT type, status FROM tasks ORDER BY created_at")] == [
         ("download_book", "completed"), ("decrypt_book", "completed")]
     assert read_fetched_bundle(stack.svc.work_dir, download_id) is None  # gone once done
     # Read only at the end: each resource's latest state, the earlier ones coalesced away.
-    assert [(e.type, e.id, e.data.get("status") or e.data.get("liberation_status")) for e in events] == [
-        ("download.updated", download_id, "done"), ("book.updated", str(books["B1"]), "liberated")]
+    assert [(e.type, e.id, e.data.get("status") or e.data.get("download_status")) for e in events] == [
+        ("download.updated", download_id, "done"), ("book.updated", str(books["B1"]), "downloaded")]
     assert events[0].data == view  # the same shape as REST
 
 
@@ -225,7 +225,7 @@ async def test_cancel_a_running_and_a_queued_download(db, books, pipeline, make_
     await asyncio.sleep(0.1)
     assert (status(db, running), status(db, waiting)) == ("cancelled", "cancelled")
     assert [t.download_id for t in pipeline.fetched] == [running] and pipeline.decrypted == []
-    assert db.scalar("SELECT COUNT(*) FROM library_books WHERE liberation_status != 'not_liberated'") == 0
+    assert db.scalar("SELECT COUNT(*) FROM library_books WHERE download_status != 'not_downloaded'") == 0
     assert not stack.svc.cancel(running) and not stack.svc.cancel("nope")
 
 
@@ -249,7 +249,7 @@ async def test_network_errors_are_retried_then_the_download_fails(db, books, pip
     await wait_for(lambda: status(db, download_id) == "failed")
     assert len(pipeline.fetched) == 3  # DownloadBook.max_attempts
     assert row(db, download_id)["error"] == "download: connection reset"
-    assert db.scalar("SELECT liberation_status FROM library_books WHERE book_id = ?", (books["B1"],)) == "error"
+    assert db.scalar("SELECT download_status FROM library_books WHERE book_id = ?", (books["B1"],)) == "error"
 
 
 async def test_a_refused_license_is_not_retried(db, books, pipeline, make_stack):
