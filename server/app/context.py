@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .audible_api.client import AudibleClient
     from .services.accounts import AccountsService
     from .services.downloads import DownloadsService
+    from .services.layout_move import LibraryMoveService
     from .services.library import LibraryService
     from .services.settings import SettingsService
     from .services.task_queue import TaskQueueService
@@ -28,6 +29,7 @@ class AppContext:
     audible: "AudibleClient"
     accounts: "AccountsService"
     library: "LibraryService"
+    layout_move: "LibraryMoveService"
     settings: "SettingsService"
     downloads: "DownloadsService"
     events: EventBus

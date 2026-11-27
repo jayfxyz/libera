@@ -41,20 +41,41 @@
         </div>
       </div>
 
-      <label class="flex items-start gap-2.5 border-t border-line pt-4 text-sm opacity-60">
-        <input type="checkbox" disabled class="mt-0.5 size-4 accent-brand" />
-        <span>
-          <span class="font-semibold">Update previously downloaded books to this layout</span>
-          <span class="block text-xs text-ink-soft">Coming soon. For now, only new downloads use the layout, and your existing files stay where they are.</span>
-        </span>
-      </label>
+      <template v-if="result">
+        <div class="flex flex-col gap-2 border-t border-line pt-4 text-sm" role="status">
+          <p class="font-semibold">Moved {{ result.moved }} {{ result.moved === 1 ? 'book' : 'books' }}.</p>
+          <p v-if="result.skipped_total" class="text-ink-soft">
+            {{ result.skipped_total }} {{ result.skipped_total === 1 ? 'book was' : 'books were' }} left where
+            {{ result.skipped_total === 1 ? 'it is' : 'they are' }}: {{ result.skipped.map((b) => `${b.title} (${b.reason.toLowerCase()})`).join('; ') }}.
+          </p>
+        </div>
+        <DialogFooter>
+          <button type="button" class="btn-primary" @click="settings.closeLayoutDialog()">Done</button>
+        </DialogFooter>
+      </template>
+      <template v-else>
+        <div class="flex flex-col gap-3 border-t border-line pt-4">
+          <label class="flex items-start gap-2.5 text-sm">
+            <input v-model="moveBooks" type="checkbox" class="mt-0.5 size-4 accent-brand" :disabled="saving" />
+            <span>
+              <span class="font-semibold">Update previously downloaded books to this layout</span>
+              <span class="block text-xs text-ink-soft">
+                {{ moveBooks ? 'Libera moves each book folder and remembers the new location.' : 'Off: only new downloads use the layout, and your existing files stay where they are.' }}
+              </span>
+            </span>
+          </label>
+          <div v-if="moveBooks" class="pl-6.5">
+            <LayoutMovePreview :preview="preview" :loading="previewLoading" :error="previewError" />
+          </div>
+        </div>
 
-      <DialogFooter class="items-center">
-        <span class="text-xs text-ink-soft sm:mr-auto">You can change this later in Settings.</span>
-        <button type="button" class="btn-secondary" :disabled="saving" @click="settings.answerLayoutDialog()">Not now</button>
-        <button type="button" class="btn-primary" :disabled="saving" @click="save">{{ saving ? 'Saving…' : 'Save layout' }}</button>
-      </DialogFooter>
-      <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
+        <DialogFooter class="items-center">
+          <span class="text-xs text-ink-soft sm:mr-auto">You can change this later in Settings.</span>
+          <button type="button" class="btn-secondary" :disabled="saving" @click="settings.answerLayoutDialog()">Not now</button>
+          <button type="button" class="btn-primary" :disabled="saving || (moveBooks && previewLoading)" @click="save">{{ saveLabel }}</button>
+        </DialogFooter>
+        <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
+      </template>
     </DialogContent>
   </Dialog>
 </template>
@@ -62,7 +83,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ChevronRightIcon } from '@lucide/vue'
-import type { NamingPreset } from '@/api/client'
+import { api, type MovePreview, type MoveResult, type NamingPreset } from '@/api/client'
+import LayoutMovePreview from '@/components/shared/LayoutMovePreview.vue'
 import LayoutOption from '@/components/shared/LayoutOption.vue'
 import LayoutTree from '@/components/shared/LayoutTree.vue'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -89,26 +111,68 @@ const CAPTIONS: Record<NamingPreset, string> = {
 }
 const caption = computed(() => CAPTIONS[layoutById(selected.value).id])
 
+// The optional second step: move books that are already downloaded.
+const moveBooks = ref(false)
+const preview = ref<MovePreview | null>(null)
+const previewLoading = ref(false)
+const previewError = ref('')
+const result = ref<MoveResult | null>(null)
+let previewRequest = 0 // only the latest answer is shown, however slowly the others arrive
+
+const saveLabel = computed(() => {
+  if (saving.value) return moveBooks.value ? 'Moving…' : 'Saving…'
+  if (moveBooks.value && preview.value?.to_move) return `Save and move ${preview.value.to_move} ${preview.value.to_move === 1 ? 'book' : 'books'}`
+  return 'Save layout'
+})
+
+async function loadPreview() {
+  const request = ++previewRequest
+  previewLoading.value = true
+  previewError.value = ''
+  try {
+    const answer = await api.library.movePreview(selected.value)
+    if (request === previewRequest) preview.value = answer
+  } catch (e) {
+    if (request === previewRequest) previewError.value = `Couldn't check your library: ${e instanceof Error ? e.message : e}`
+  } finally {
+    if (request === previewRequest) previewLoading.value = false
+  }
+}
+
+watch([moveBooks, selected], () => {
+  if (moveBooks.value) loadPreview()
+})
+
 // Someone upgrading starts on the recommended layout; reopening from Settings starts on their own.
 watch(
   () => settings.layoutDialogOpen,
   (open) => {
     if (!open) return
     selected.value = settings.layoutDialogPending ? RECOMMENDED_LAYOUT : settings.naming
+    moveBooks.value = false
+    preview.value = null
+    result.value = null
     error.value = ''
   },
   { immediate: true },
 )
 
 function onOpenChange(open: boolean) {
-  if (!open) settings.answerLayoutDialog()
+  if (open) return
+  if (result.value) settings.closeLayoutDialog()
+  else settings.answerLayoutDialog()
 }
 
 async function save() {
   saving.value = true
   error.value = ''
   try {
-    await settings.answerLayoutDialog(selected.value)
+    if (moveBooks.value) {
+      await settings.saveLayout(selected.value)
+      result.value = await api.library.moveBooks(selected.value)
+    } else {
+      await settings.answerLayoutDialog(selected.value)
+    }
   } catch (e) {
     error.value = `Couldn't save: ${e instanceof Error ? e.message : e}`
   } finally {

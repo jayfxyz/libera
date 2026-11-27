@@ -6,10 +6,12 @@ import json
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from ..deps import DownloadSvc, LibrarySvc
+from ..config import NamingPreset
+from ..deps import DownloadSvc, LayoutMoveSvc, LibrarySvc
 from ..services.downloads import NoPdf, PdfFailed
+from ..services.layout_move import MoveInProgress
 from ..services.library import EXPORT_FIELDS, MAX_PAGE_SIZE, PAGE_SIZE, InvalidSort
-from .schemas import BookPatch, BulkUpdate
+from .schemas import BookPatch, BulkUpdate, MoveRequest
 
 router = APIRouter()
 
@@ -35,6 +37,21 @@ def list_library(
 def bulk_update(req: BulkUpdate, library_svc: LibrarySvc):
     library_svc.set_hidden(req.book_ids, req.is_hidden)
     return Response(status_code=204)
+
+
+@router.get("/library/move-preview")
+def preview_move(layout_move_svc: LayoutMoveSvc, naming: NamingPreset):
+    """What moving the downloaded books to this layout would do. Nothing is moved."""
+    return layout_move_svc.preview(naming)
+
+
+@router.post("/library/move")
+def move_books(req: MoveRequest, layout_move_svc: LayoutMoveSvc):
+    """Move the downloaded books that can safely move to this layout."""
+    try:
+        return layout_move_svc.move(req.naming)
+    except MoveInProgress as e:
+        raise HTTPException(409, str(e))
 
 
 @router.get("/library/export")

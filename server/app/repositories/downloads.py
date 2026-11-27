@@ -34,6 +34,17 @@ def active_for(s: Session, library_book_id: int) -> Download | None:
                      .order_by(Download.created_at).limit(1)).first()
 
 
+def is_downloading(s: Session, book_id: int) -> bool:
+    """Whether any library copy of the book has a queued or running download."""
+    return s.scalars(select(Download.id).join(LibraryBook, LibraryBook.id == Download.library_book_id)
+                     .where(LibraryBook.book_id == book_id, Download.status.in_(ACTIVE)).limit(1)).first() is not None
+
+
+def move_folder(s: Session, old_path: str, new_path: str) -> None:
+    """Downloads that wrote into old_path now live in new_path."""
+    s.execute(update(Download).where(Download.path == old_path).values(path=new_path))
+
+
 def latest_done(s: Session, library_book_id: int) -> Download | None:
     """The book's most recent finished download."""
     return s.scalars(select(Download).where(Download.library_book_id == library_book_id,

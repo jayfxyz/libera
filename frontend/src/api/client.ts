@@ -131,6 +131,23 @@ export interface Settings {
 /** Where a book's files go in the output folder; the audio file is always named after the title. */
 export type NamingPreset = 'title' | 'author_folder' | 'author_folder_year' | 'author_series' | 'author_series_year'
 
+/** Moving downloaded books to another layout. */
+export interface MoveSkipped {
+  book_id: number
+  title: string
+  reason: string
+}
+export interface MovePreview {
+  to_move: number
+  in_place: number
+  skipped_total: number
+  skipped: MoveSkipped[] // the first few
+  examples: { from: string; to: string }[] // paths inside the output folder
+}
+export interface MoveResult extends Omit<MovePreview, 'to_move'> {
+  moved: number
+}
+
 // --- Accounts ---
 
 export const api = {
@@ -147,6 +164,8 @@ export const api = {
   },
 
   library: {
+    movePreview: (naming: NamingPreset) => request<MovePreview>('GET', `/library/move-preview?naming=${naming}`),
+    moveBooks: (naming: NamingPreset) => request<MoveResult>('POST', '/library/move', { naming }),
     list: (params?: {
       q?: string
       page?: number

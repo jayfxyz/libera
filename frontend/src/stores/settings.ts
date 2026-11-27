@@ -21,12 +21,24 @@ export const useSettingsStore = defineStore('settings', () => {
     layoutDialogOpen.value = true
   }
 
-  /** Closing the dialog answers it, with a new layout or without one ("Not now"). */
-  async function answerLayoutDialog(newNaming?: NamingPreset) {
+  /** Saves the layout (if any) and marks the dialog answered, leaving it open. */
+  async function saveLayout(newNaming?: NamingPreset) {
     await api.settings.update({ ...(newNaming ? { naming: newNaming } : {}), layout_dialog_seen: true })
-    layoutDialogOpen.value = false
     await load()
   }
 
-  return { defaultFormat, naming, layoutDialogPending, layoutDialogOpen, load, openLayoutDialog, answerLayoutDialog }
+  function closeLayoutDialog() {
+    layoutDialogOpen.value = false
+  }
+
+  /** Closing the dialog answers it, with a new layout or without one ("Not now"). */
+  async function answerLayoutDialog(newNaming?: NamingPreset) {
+    await saveLayout(newNaming)
+    closeLayoutDialog()
+  }
+
+  return {
+    defaultFormat, naming, layoutDialogPending, layoutDialogOpen,
+    load, openLayoutDialog, saveLayout, closeLayoutDialog, answerLayoutDialog,
+  }
 })

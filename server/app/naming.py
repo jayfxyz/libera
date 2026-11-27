@@ -6,6 +6,7 @@ import re
 import unicodedata
 
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+ASIN_SUFFIX = re.compile(r" \[([^\[\]]+)\]$")  # the " [B002UZMLXM]" a file or folder name ends with
 _COLON = re.compile(r"\s*:\s*")
 _RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?=\.|$)", re.IGNORECASE)  # Windows device names
 MAX_NAME_BYTES = 200  # filesystems allow 255 bytes per name; leave room for " - 01 - chapter", ".part"

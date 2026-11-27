@@ -35,6 +35,14 @@ layouts are the best fit for Audiobookshelf, but only it reads series from the p
 Folders use the first author only, so a co-authored book is filed under
 its first author. Anything missing, such as a series, is left out of the name. Changing the layout affects future downloads only.
 
+## Moving books you already downloaded
+
+When you change layout, Libera offers to move your existing books too. It shows what would move first, and only
+moves a book when it can be sure the folder belongs to that one book: the folder and the audio file must both end
+in the book's own `[ID]`. Books from older versions, files loose in the output folder, and anything stored outside
+the output folder stay where they are, and the dialog lists them. A book's whole folder moves together (cover, PDF,
+chapter files), nothing is overwritten, and folders left empty are removed.
+
 ## Tags matter most
 
 Every server reads the tags inside the audio file: title, author, narrator, series, cover, chapters. Most of them

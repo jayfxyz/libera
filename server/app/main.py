@@ -23,6 +23,7 @@ from .db import Database
 from .events import EventBus
 from .services.accounts import AccountsService
 from .services.downloads import DownloadsService
+from .services.layout_move import LibraryMoveService
 from .services.library import LibraryService
 from .services.settings import SettingsService
 from .services.task_queue import TaskQueueService
@@ -55,6 +56,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
         events = EventBus()
         events.attach(asyncio.get_running_loop())
         library = LibraryService(database, config, events)
+        layout_move = LibraryMoveService(database, config, library)
         accounts = AccountsService(database, client, library)
 
         # Queue & workers
@@ -77,6 +79,7 @@ def create_app(config: Config | None = None, db: Database | None = None,
         downloads.start()  # then fails downloads left with no live task
 
         app.state.ctx = AppContext(config=config, db=database, audible=client, accounts=accounts, library=library,
+                                   layout_move=layout_move,
                                    settings=settings, downloads=downloads, events=events, task_queue=task_queue,
                                    task_registry=task_registry, task_workers=task_workers)
         log.info("ready: db=%s output=%s workers=%d", config.database_path, config.output_dir,

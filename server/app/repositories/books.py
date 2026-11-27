@@ -346,6 +346,20 @@ def not_downloaded_books(s: Session) -> list[dict[str, Any]]:
         WHERE lb.download_status != 'downloaded'""")
 
 
+def downloaded_files(s: Session) -> list[dict[str, Any]]:
+    """Every downloaded book with the path of its audio file, as recorded."""
+    return _rows(s, """
+        SELECT b.id AS book_id, b.audible_id, b.title, MAX(lb.file_path) AS file_path
+        FROM books b JOIN library_books lb ON lb.book_id = b.id
+        WHERE lb.download_status = 'downloaded' AND lb.file_path IS NOT NULL
+        GROUP BY b.id ORDER BY b.id""")
+
+
+def set_file_path(s: Session, book_id: int, file_path: str) -> None:
+    s.execute(text("UPDATE library_books SET file_path = :path, updated_at = :now WHERE book_id = :id"),
+              {"path": file_path, "id": book_id, "now": now()})
+
+
 def has_downloaded_books(s: Session) -> bool:
     return bool(_rows(s, "SELECT 1 FROM library_books WHERE download_status = 'downloaded' LIMIT 1"))
 

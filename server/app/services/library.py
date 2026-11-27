@@ -17,11 +17,10 @@ from ..config import Config
 from ..db import Database, iso_utc
 from ..events import EventBus
 from ..jobs.filename import FilenameData, book_directory, book_file_name
-from ..naming import legacy_file_name, sanitize_filename
+from ..naming import ASIN_SUFFIX, legacy_file_name, sanitize_filename
 from ..repositories import books as repo
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
 
-_ASIN_SUFFIX = re.compile(r" \[([^\[\]]+)\]$")  # the " [B002UZMLXM]" a file or folder name ends with
 
 EXPORT_FIELDS = [
     "audible_id", "title", "authors", "narrators", "series", "length_minutes", "publisher",
@@ -239,7 +238,7 @@ class DiskFile(NamedTuple):
 
 def asin_files_on_disk(on_disk: dict[str, DiskFile]) -> dict[str, DiskFile]:
     """ASIN → file, for the files in on_disk named "<title> [<asin>]"."""
-    return {match.group(1): file for stem, file in on_disk.items() if (match := _ASIN_SUFFIX.search(stem))}
+    return {match.group(1): file for stem, file in on_disk.items() if (match := ASIN_SUFFIX.search(stem))}
 
 
 def title_file_on_disk(title: str, title_is_unique: bool, on_disk: dict[str, DiskFile]) -> DiskFile | None:

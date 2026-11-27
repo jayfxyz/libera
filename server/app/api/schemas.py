@@ -56,6 +56,13 @@ class BulkEnqueueRequest(DownloadOptions):
     book_ids: list[int]
 
 
+# --- moving downloaded books ----------------------------------------------------------
+
+
+class MoveRequest(BaseModel):
+    naming: NamingPreset
+
+
 # --- settings -------------------------------------------------------------------------
 
 

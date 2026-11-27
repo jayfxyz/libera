@@ -12,6 +12,7 @@ from fastapi import Depends, Request
 from .events import EventBus
 from .services.accounts import AccountsService
 from .services.downloads import DownloadsService
+from .services.layout_move import LibraryMoveService
 from .services.library import LibraryService
 from .services.settings import SettingsService
 
@@ -32,6 +33,10 @@ def get_library_svc(request: Request) -> LibraryService:
     return request.app.state.ctx.library
 
 
+def get_layout_move_svc(request: Request) -> LibraryMoveService:
+    return request.app.state.ctx.layout_move
+
+
 def get_settings_svc(request: Request) -> SettingsService:
     return request.app.state.ctx.settings
 
@@ -40,4 +45,5 @@ AccountSvc = Annotated[AccountsService, Depends(get_account_svc)]
 DownloadSvc = Annotated[DownloadsService, Depends(get_download_svc)]
 EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 LibrarySvc = Annotated[LibraryService, Depends(get_library_svc)]
+LayoutMoveSvc = Annotated[LibraryMoveService, Depends(get_layout_move_svc)]
 SettingsSvc = Annotated[SettingsService, Depends(get_settings_svc)]
