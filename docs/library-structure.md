@@ -13,7 +13,8 @@ without any renaming. This page explains the rules and why we chose them.
    default. Split by chapter only if you need to support a legacy player. The chapter files are numbered
    `- 01 -`, `- 02 -`, so they sort correctly.
 4. **Safe names everywhere.** Libera replaces `< > " / \ | ? *`, turns `:` into ` - `, strips leading and trailing
-   dots and spaces, and keeps every name under 200 bytes, so files work on Windows, macOS, Linux, and SMB shares.
+   dots and spaces, avoids Windows device names such as `CON`, composes accents (Unicode NFC), and keeps every
+   name under 200 bytes, so files work on Windows, macOS, Linux, and SMB shares.
 
 ## Folder layouts
 
@@ -39,11 +40,6 @@ its first author. Anything missing, such as a series, is left out of the name. C
 Every server reads the tags inside the audio file: title, author, narrator, series, cover, chapters. Most of them
 rank tags above the file path. Names are only a fallback, so if a book shows the wrong author or series, fix its
 tags. Libera embeds the chapters and cover when it decrypts a book.
-
-## Not yet
-
-- Windows reserved names (`CON`, `NUL`, …) are not avoided.
-- Names are not normalised to Unicode NFC, which can matter on macOS shares.
 
 ## Sources
 

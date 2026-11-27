@@ -78,3 +78,12 @@ def test_sanitize_filename():
 def test_series_index_is_padded_so_books_sort_in_order():
     assert [pad_series_index(i) for i in ("1", "10", "2.5", "100", "0.5", "", "Book 1", "1a")] == [
         "01", "10", "02.5", "100", "00.5", "", "Book 1", "1a"]
+
+
+def test_windows_device_names_get_an_underscore():
+    assert [sanitize_filename(n) for n in ("CON", "nul", "Com1", "LPT9", "CON.v2", "Console", "Con Air", "COM10")] == [
+        "CON_", "nul_", "Com1_", "LPT9_", "CON_.v2", "Console", "Con Air", "COM10"]
+
+
+def test_accents_are_composed_so_names_match_across_systems():
+    assert sanitize_filename("Café") == "Café"

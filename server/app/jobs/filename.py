@@ -53,7 +53,7 @@ def book_directory(output_dir: str, naming: NamingPreset, data: FilenameData) ->
     """The folder a book's files go in, inside output_dir. The innermost folder ends with the ASIN."""
     folders = [fill(template=template, data=data) for template in _FOLDERS[naming][:-1]]
     suffix = asin_suffix(data)
-    last = fill(template=_FOLDERS[naming][-1], data=data, reserve=len(suffix.encode()))
+    last = fill(template=_FOLDERS[naming][-1], data=data, reserve=len(suffix.encode())) or "audiobook"
     return os.path.join(output_dir, *(folder for folder in folders if folder), (last + suffix).strip())
 
 

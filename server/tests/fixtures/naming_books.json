@@ -1,0 +1,245 @@
+[
+ {
+  "note": "Plain series book 1",
+  "title": "The Fellowship of the Ring",
+  "author": "J.R.R. Tolkien",
+  "series_name": "The Lord of the Rings",
+  "series_index": "1",
+  "year": "1954",
+  "asin": "B007978NPG"
+ },
+ {
+  "note": "Series book 2 of the same series",
+  "title": "The Two Towers",
+  "author": "J.R.R. Tolkien",
+  "series_name": "The Lord of the Rings",
+  "series_index": "2",
+  "year": "1954",
+  "asin": "B007978NQK"
+ },
+ {
+  "note": "Decimal series number (a novella between books)",
+  "title": "The Wise Man's Fear Interlude",
+  "author": "Patrick Rothfuss",
+  "series_name": "Kingkiller Chronicle",
+  "series_index": "2.5",
+  "year": "2011",
+  "asin": "B00NOVELLA1"
+ },
+ {
+  "note": "Series number 10 must sort after 2, not before",
+  "title": "The Tenth Book",
+  "author": "Patrick Rothfuss",
+  "series_name": "Kingkiller Chronicle",
+  "series_index": "10",
+  "year": "2020",
+  "asin": "B00TENTH001"
+ },
+ {
+  "note": "Standalone: no series folder",
+  "title": "Piranesi",
+  "author": "Susanna Clarke",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B08FYH2QK2"
+ },
+ {
+  "note": "Colon in a title becomes ' - '",
+  "title": "Dune: Part One",
+  "author": "Frank Herbert",
+  "series_name": "",
+  "series_index": "",
+  "year": "2021",
+  "asin": "B09COLON001"
+ },
+ {
+  "note": "Colon at the end of a title",
+  "title": "Hackers:",
+  "author": "Steven Levy",
+  "series_name": "",
+  "series_index": "",
+  "year": "2010",
+  "asin": "B00COLONEND"
+ },
+ {
+  "note": "Slash in both title and author must not nest folders",
+  "title": "AC/DC: The Story",
+  "author": "AC/DC",
+  "series_name": "",
+  "series_index": "",
+  "year": "2012",
+  "asin": "B00SLASH001"
+ },
+ {
+  "note": "Question mark and quotes are replaced",
+  "title": "Who Moved My \"Cheese\"?",
+  "author": "Spencer Johnson",
+  "series_name": "",
+  "series_index": "",
+  "year": "1998",
+  "asin": "B00QUOTES01"
+ },
+ {
+  "note": "Trailing dots are stripped (Windows rejects them)",
+  "title": "Wait for it...",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00DOTS0001"
+ },
+ {
+  "note": "Leading dot would make a hidden folder",
+  "title": ".hidden",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00HIDDEN01"
+ },
+ {
+  "note": "Title ending in a period and a space",
+  "title": "Vol. 1. ",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00TRAILSP1"
+ },
+ {
+  "note": "Windows reserved names as title and author",
+  "title": "CON",
+  "author": "NUL",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00RESERVED"
+ },
+ {
+  "note": "A 300 character title is cut, keeping the ID",
+  "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00LONGASCI"
+ },
+ {
+  "note": "A long non-ASCII title is cut on a character boundary, not mid-byte",
+  "title": "長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長長",
+  "author": "村上春樹",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00LONGCJK1"
+ },
+ {
+  "note": "Decomposed accents (NFD) are normalised to NFC",
+  "title": "Café Society",
+  "author": "Zoë Heller",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00NFD00001"
+ },
+ {
+  "note": "Cyrillic title",
+  "title": "Война и мир",
+  "author": "Лев Толстой",
+  "series_name": "",
+  "series_index": "",
+  "year": "1869",
+  "asin": "B00CYRILLIC"
+ },
+ {
+  "note": "No author: the author folder is left out",
+  "title": "Anonymous Tales",
+  "author": "",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00NOAUTHOR"
+ },
+ {
+  "note": "No title at all",
+  "title": "",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00NOTITLE1"
+ },
+ {
+  "note": "No ID: only possible for hand-made names",
+  "title": "Book Without An ID",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": ""
+ },
+ {
+  "note": "Same title, different author (1 of 2)",
+  "title": "The Stand",
+  "author": "Stephen King",
+  "series_name": "",
+  "series_index": "",
+  "year": "1978",
+  "asin": "B00STAND001"
+ },
+ {
+  "note": "Same title, different author (2 of 2)",
+  "title": "The Stand",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00STAND002"
+ },
+ {
+  "note": "Same title and author, two editions",
+  "title": "The Hobbit",
+  "author": "J.R.R. Tolkien",
+  "series_name": "",
+  "series_index": "",
+  "year": "1937",
+  "asin": "B00HOBBIT01"
+ },
+ {
+  "note": "Same title and author, second edition",
+  "title": "The Hobbit",
+  "author": "J.R.R. Tolkien",
+  "series_name": "",
+  "series_index": "",
+  "year": "1937",
+  "asin": "B00HOBBIT02"
+ },
+ {
+  "note": "Brackets in a title, including one that looks like an ID",
+  "title": "Book [B000000000] [Unabridged]",
+  "author": "Jane Author",
+  "series_name": "",
+  "series_index": "",
+  "year": "2020",
+  "asin": "B00BRACKETS"
+ },
+ {
+  "note": "Slash in a series name must not nest folders",
+  "title": "Rendezvous with Rama",
+  "author": "Arthur C. Clarke",
+  "series_name": "Rama/Ringworld",
+  "series_index": "1",
+  "year": "1973",
+  "asin": "B00SLASHSER"
+ },
+ {
+  "note": "No year",
+  "title": "Undated",
+  "author": "Jane Author",
+  "series_name": "Saga",
+  "series_index": "3",
+  "year": "",
+  "asin": "B00NOYEAR01"
+ }
+]

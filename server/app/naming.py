@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _COLON = re.compile(r"\s*:\s*")
+_RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?=\.|$)", re.IGNORECASE)  # Windows device names
 MAX_NAME_BYTES = 200  # filesystems allow 255 bytes per name; leave room for " - 01 - chapter", ".part"
 
 
 def clean_name(s: str) -> str:
-    """Metadata made safe inside a file or folder name: "Dune: Part One" → "Dune - Part One", no "/" etc."""
-    return _UNSAFE.sub("_", _COLON.sub(" - ", s))
+    """Metadata made safe inside a file or folder name: "Dune: Part One" → "Dune - Part One", no "/" etc.
+    Accents are composed (NFC) so a name reads the same on Linux, Windows and macOS shares."""
+    return _UNSAFE.sub("_", _COLON.sub(" - ", unicodedata.normalize("NFC", s)))
 
 
 def sanitize_filename(s: str, reserve: int = 0) -> str:
@@ -19,7 +22,7 @@ def sanitize_filename(s: str, reserve: int = 0) -> str:
     folders, nothing Windows or SMB shares reject), and at most MAX_NAME_BYTES - reserve of UTF-8."""
     s = clean_name(s).strip(" .")
     s = s.encode()[:MAX_NAME_BYTES - reserve].decode(errors="ignore").rstrip(" .")
-    return s or "audiobook"
+    return _RESERVED.sub(r"\1_", s) or "audiobook"
 
 
 def legacy_file_name(title: str) -> str:
