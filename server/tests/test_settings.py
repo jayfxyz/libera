@@ -36,7 +36,7 @@ def test_config_from_env_and_overrides():
     assert c.output_dir == "/audiobooks"
     assert c.download_workers == 2
     assert c.default_format == "m4b"  # invalid value ignored
-    assert c.naming == NamingPreset.AUTHOR_TITLE
+    assert c.naming == NamingPreset.AUTHOR_FOLDER
 
     c.apply_overrides({"default_format": "mp3", "download_workers": "0", "naming": "author_series"})
     assert c.default_format == "mp3"
@@ -54,7 +54,7 @@ def test_config_from_env_and_overrides():
 def test_settings_api(client, db):
     got = client.get("/api/settings").json()
     assert got["default_format"] == "m4b"
-    assert got["naming"] == "author_title"
+    assert got["naming"] == "author_folder"
 
     # The UI sends the whole object back, including read-only output_dir.
     resp = client.patch("/api/settings", json={**got, "default_format": "mp3", "naming": "author_series",
@@ -100,3 +100,9 @@ def test_iso_utc():
     assert iso_utc("2026-11-08 23:00:51") == "2026-11-08T23:00:51Z"
     assert iso_utc("2021-12-27T21:39:12.000Z") == "2021-12-27T21:39:12.000Z"
     assert iso_utc(None) is None
+
+
+def test_the_old_flat_layout_name_still_loads():
+    c = Config()
+    c.apply("naming", "author_title")
+    assert c.naming == NamingPreset.TITLE

@@ -128,7 +128,7 @@ export interface Settings {
 }
 
 /** Where a book's files go in the output folder; the audio file is always named after the title. */
-export type NamingPreset = 'author_title' | 'author_folder' | 'author_folder_year' | 'author_series' | 'author_series_year'
+export type NamingPreset = 'title' | 'author_folder' | 'author_folder_year' | 'author_series' | 'author_series_year'
 
 // --- Accounts ---
 

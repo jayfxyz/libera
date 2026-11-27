@@ -1,7 +1,7 @@
 import os
 
 from app.config import NamingPreset
-from app.jobs.filename import FilenameData, book_directory, book_file_name
+from app.jobs.filename import FilenameData, book_directory, book_file_name, pad_series_index
 from app.naming import MAX_NAME_BYTES, sanitize_filename
 
 WIND = FilenameData(title="The Name of the Wind", author="Patrick Rothfuss", series_name="Kingkiller Chronicle",
@@ -11,28 +11,28 @@ STANDALONE = FilenameData(title="Piranesi", author="Susanna Clarke", year="2020"
 
 def test_each_preset():
     expected = {
-        NamingPreset.AUTHOR_TITLE: "/a/Patrick Rothfuss - The Name of the Wind [B002UZMLXM]",
+        NamingPreset.TITLE: "/a/The Name of the Wind [B002UZMLXM]",
         NamingPreset.AUTHOR_FOLDER: "/a/Patrick Rothfuss/The Name of the Wind [B002UZMLXM]",
         NamingPreset.AUTHOR_FOLDER_YEAR: "/a/Patrick Rothfuss/2007 - The Name of the Wind [B002UZMLXM]",
-        NamingPreset.AUTHOR_SERIES: "/a/Patrick Rothfuss/Kingkiller Chronicle/1 - The Name of the Wind [B002UZMLXM]",
-        NamingPreset.AUTHOR_SERIES_YEAR: "/a/Patrick Rothfuss/Kingkiller Chronicle/1 - 2007 - The Name of the Wind [B002UZMLXM]",
+        NamingPreset.AUTHOR_SERIES: "/a/Patrick Rothfuss/Kingkiller Chronicle/01 - The Name of the Wind [B002UZMLXM]",
+        NamingPreset.AUTHOR_SERIES_YEAR: "/a/Patrick Rothfuss/Kingkiller Chronicle/01 - 2007 - The Name of the Wind [B002UZMLXM]",
     }
     assert {preset: book_directory("/a", preset, WIND) for preset in NamingPreset} == expected
 
 
-def test_no_series_goes_in_author_title():
+def test_no_series_goes_in_author_folder():
     assert book_directory("/a", NamingPreset.AUTHOR_SERIES, STANDALONE) == "/a/Susanna Clarke/Piranesi [B08FYH2QK2]"
     assert book_directory("/a", NamingPreset.AUTHOR_SERIES_YEAR, STANDALONE) == "/a/Susanna Clarke/2020 - Piranesi [B08FYH2QK2]"
 
 
 def test_missing_parts_leave_no_dangling_separator():
     no_year = FilenameData(title="Book", author="Jane", series_name="Saga", series_index="2", asin="B1")
-    assert book_directory("/a", NamingPreset.AUTHOR_SERIES_YEAR, no_year) == "/a/Jane/Saga/2 - Book [B1]"
+    assert book_directory("/a", NamingPreset.AUTHOR_SERIES_YEAR, no_year) == "/a/Jane/Saga/02 - Book [B1]"
     assert book_directory("/a", NamingPreset.AUTHOR_FOLDER_YEAR, no_year) == "/a/Jane/Book [B1]"
     no_index = FilenameData(title="Book", author="Jane", series_name="Saga", asin="B1")
     assert book_directory("/a", NamingPreset.AUTHOR_SERIES, no_index) == "/a/Jane/Saga/Book [B1]"
     no_author = FilenameData(title="Book", asin="B1")
-    assert book_directory("/a", NamingPreset.AUTHOR_TITLE, no_author) == "/a/Book [B1]"
+    assert book_directory("/a", NamingPreset.TITLE, no_author) == "/a/Book [B1]"
     assert book_directory("/a", NamingPreset.AUTHOR_FOLDER, no_author) == "/a/Book [B1]"
 
 
@@ -50,7 +50,7 @@ def test_books_with_the_same_title_get_different_names():
 def test_a_long_title_is_cut_before_the_asin():
     data = FilenameData(title="x" * 300, author="Jane", asin="B002UZMLXM")
     name = book_file_name(data)
-    folder = os.path.basename(book_directory("/a", NamingPreset.AUTHOR_TITLE, data))
+    folder = os.path.basename(book_directory("/a", NamingPreset.TITLE, data))
     assert name.endswith(" [B002UZMLXM]") and folder.endswith(" [B002UZMLXM]")
     assert len(name.encode()) <= MAX_NAME_BYTES and len(folder.encode()) <= MAX_NAME_BYTES
 
@@ -73,3 +73,8 @@ def test_sanitize_filename():
     assert sanitize_filename("Smith Jr.  ") == "Smith Jr"  # Windows and SMB reject trailing dots and spaces
     long = sanitize_filename("é" * 300)  # 2 bytes each
     assert len(long.encode()) <= 200 and long == "é" * 100
+
+
+def test_series_index_is_padded_so_books_sort_in_order():
+    assert [pad_series_index(i) for i in ("1", "10", "2.5", "100", "0.5", "", "Book 1", "1a")] == [
+        "01", "10", "02.5", "100", "00.5", "", "Book 1", "1a"]

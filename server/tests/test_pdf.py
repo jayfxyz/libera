@@ -47,7 +47,7 @@ def book_id(db):
 
 def test_saves_the_pdf_where_a_download_would_go(api, db, config, book_id):
     resp = api.post(f"/api/library/{book_id}/pdf")
-    path = os.path.join(config.output_dir, "Jane Author - The Book [B1]", "The Book [B1].pdf")
+    path = os.path.join(config.output_dir, "Jane Author", "The Book [B1]", "The Book [B1].pdf")
     assert (resp.status_code, resp.json()) == (200, {"file_path": path})
     with open(path, "rb") as f:
         assert f.read() == PDF
@@ -78,7 +78,7 @@ def test_an_unknown_book_is_a_404(api):
 
 
 def test_updates_the_manifest_of_a_finished_download(api, db, config, book_id, library_svc):
-    folder = os.path.join(config.output_dir, "Jane Author - The Book")
+    folder = os.path.join(config.output_dir, "Jane Author", "The Book")
     audio = {"role": "audio", "name": "The Book.m4b", "size_bytes": 10}
     with db.session() as s:
         downloads_repo.add(s, id="d1", library_book_id=db.scalar("SELECT id FROM library_books"), format="m4b",

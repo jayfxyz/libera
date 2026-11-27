@@ -123,7 +123,7 @@ def test_enqueue_names_the_download_from_book_and_settings(api, db, config, pipe
     job = wait_finished(api, resp.json()["id"])
     assert job.pop("created_at").endswith("Z") and job.pop("finished_at").endswith("Z")
     assert job.pop("updated_at").endswith("Z")
-    book_dir = os.path.join(config.output_dir, "Jane Author", "Saga", "1 - 2007 - The Book [B0001]")
+    book_dir = os.path.join(config.output_dir, "Jane Author", "Saga", "01 - 2007 - The Book [B0001]")
     base = "The Book [B0001]"
     assert job == {"id": resp.json()["id"], "book_id": book_id, "title": "The Book", "format": "m4b",
                    "status": "done", "percent": 100, "message": os.path.join(book_dir, f"{base}.m4b"),

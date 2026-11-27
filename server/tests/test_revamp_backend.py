@@ -98,7 +98,7 @@ def test_hide_one_and_many(api, db):
 def test_book_detail_has_planned_path_and_genres(api, db, config, library_svc):
     a, _ = seed(db)
     detail = api.get(f"/api/library/{a}").json()
-    assert detail["planned_path"] == os.path.join(config.output_dir, "Jane Author - One [A]", "One [A].m4b")
+    assert detail["planned_path"] == os.path.join(config.output_dir, "Jane Author", "One [A]", "One [A].m4b")
     assert (detail["genres"], detail["file_path"], detail["is_hidden"]) == ([], None, False)
     library_svc.mark_downloaded(a, "m4b", "/audiobooks/x/One.m4b")
     detail = api.get(f"/api/library/{a}").json()

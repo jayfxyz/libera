@@ -18,11 +18,14 @@ class NamingPreset(StrEnum):
     "<title> [<asin>]", so books with the same title never collide. The nested layouts are the ones
     Audiobookshelf reads authors, series and order from."""
 
-    AUTHOR_TITLE = "author_title"  # Author - Title [ASIN]/
+    TITLE = "title"  # Title [ASIN]/ (the author comes from the tags)
     AUTHOR_FOLDER = "author_folder"  # Author/Title [ASIN]/
     AUTHOR_FOLDER_YEAR = "author_folder_year"  # Author/2007 - Title [ASIN]/
     AUTHOR_SERIES = "author_series"  # Author/Series/1 - Title [ASIN]/
     AUTHOR_SERIES_YEAR = "author_series_year"  # Author/Series/1 - 2007 - Title [ASIN]/
+
+
+LEGACY_PRESETS = {"author_title": "title"}  # the flat layout used to be "Author - Title"
 
 
 @dataclass
@@ -33,7 +36,7 @@ class Config:
     output_dir: str = "./data/audiobooks"
     download_workers: int = 3
     default_format: str = "m4b"
-    naming: NamingPreset = NamingPreset.AUTHOR_TITLE
+    naming: NamingPreset = NamingPreset.AUTHOR_FOLDER
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "Config":
@@ -61,6 +64,7 @@ class Config:
             if value in FORMATS:
                 self.default_format = value
         elif key == "naming":
+            value = LEGACY_PRESETS.get(value, value)
             if value in NamingPreset:
                 self.naming = NamingPreset(value)
 

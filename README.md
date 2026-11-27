@@ -16,7 +16,7 @@ One container: a FastAPI backend that also serves the Vue 3 frontend.
 - **Lossless M4B or MP3:** Decrypts AAXC (with AAX fallback) via `ffmpeg` — stream-copied M4B by default, or re-encoded MP3, with per-book overrides.
 - **Real chapter titles & cover art:** Embeds Audible's chapter outline and highest-resolution cover into the audio, and writes `cover.jpg`, `.cue`, and `.chapters.json` alongside it.
 - **Optional chapter splitting & companion PDFs:** Split audiobooks into per-chapter files on demand and download companion PDFs automatically (or standalone).
-- **Audiobookshelf-ready folder layouts:** Pick from flat or nested presets (`Author/Series/1 - Title/`, `Author/Year - Title/`, etc.) in Settings.
+- **Audiobookshelf-ready folder layouts:** Pick from flat or nested presets (`Author/Series/01 - Title/`, `Author/Year - Title/`, etc.) in Settings.
 - **Multi-account & multi-region:** Connect multiple Audible accounts across regions (`us`, `uk`, `ca`, `de`, `fr`, `au`, `jp`, `in`, `es`, `it`, `br`). Books owned by multiple accounts appear as one row.
 - **Search, organize & export:** Instant SQLite FTS5 search, status filters, sorting, tags, ratings, finished status, light/dark mode, and CSV/JSON export.
 - **Resilient downloads:** Persistent queue with live progress (SSE), automatic backoff when Audible throttles, and retry from the decrypt step without re-downloading.

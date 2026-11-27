@@ -144,18 +144,18 @@ const loadError = ref('')
 
 // Each layout and where "The Name of the Wind" goes with it.
 const namingOptions: SelectOption<NamingPreset>[] = [
-  { value: 'author_title', label: 'Author - Title (flat)' },
-  { value: 'author_folder', label: 'Author / Title' },
+  { value: 'title', label: 'Title (flat)' },
+  { value: 'author_folder', label: 'Author / Title (recommended)' },
   { value: 'author_folder_year', label: 'Author / Year - Title' },
   { value: 'author_series', label: 'Author / Series / Title' },
   { value: 'author_series_year', label: 'Author / Series / Year - Title' },
 ]
 const exampleFolders: Record<NamingPreset, string> = {
-  author_title: 'Patrick Rothfuss - The Name of the Wind [B002UZMLXM]',
+  title: 'The Name of the Wind [B002UZMLXM]',
   author_folder: 'Patrick Rothfuss/The Name of the Wind [B002UZMLXM]',
   author_folder_year: 'Patrick Rothfuss/2007 - The Name of the Wind [B002UZMLXM]',
-  author_series: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - The Name of the Wind [B002UZMLXM]',
-  author_series_year: 'Patrick Rothfuss/The Kingkiller Chronicle/1 - 2007 - The Name of the Wind [B002UZMLXM]',
+  author_series: 'Patrick Rothfuss/The Kingkiller Chronicle/01 - The Name of the Wind [B002UZMLXM]',
+  author_series_year: 'Patrick Rothfuss/The Kingkiller Chronicle/01 - 2007 - The Name of the Wind [B002UZMLXM]',
 }
 
 const examplePath = computed(() => {

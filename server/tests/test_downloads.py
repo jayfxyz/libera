@@ -101,7 +101,7 @@ async def test_a_download_is_fetched_then_decrypted(db, books, config, pipeline,
         events = await read_all(subscription)
 
     assert [t.download_id for t in pipeline.fetched] == [t.download_id for t in pipeline.decrypted] == [download_id]
-    book_dir = os.path.join(config.output_dir, "Jane Author - Book 1 [B1]")
+    book_dir = os.path.join(config.output_dir, "Jane Author", "Book 1 [B1]")
     t = pipeline.decrypted[0]
     assert (t.path, t.base_name, t.format, t.audible_account_id) == (book_dir, "Book 1 [B1]", "m4b", "amzn1.account.TEST")
     view = stack.svc.list()[0]
@@ -176,7 +176,7 @@ async def test_where_it_goes_is_decided_when_queued(db, books, config, pipeline,
     await wait_for(lambda: status(db, download_id) == "done")
     t = pipeline.decrypted[0]
     assert (t.path, t.base_name, t.format, t.split_chapters) == (
-        os.path.join(config.output_dir, "Jane Author - Book 1 [B1]"), "Book 1 [B1]", "mp3", True)
+        os.path.join(config.output_dir, "Jane Author", "Book 1 [B1]"), "Book 1 [B1]", "mp3", True)
 
 
 async def test_two_books_with_the_same_name_get_separate_folders(db, books, config, make_stack):
@@ -185,7 +185,7 @@ async def test_two_books_with_the_same_name_get_separate_folders(db, books, conf
     stack = make_stack(start=False)
     first, second = (stack.svc.enqueue(book_id) for book_id in ids)
     paths = {r["id"]: r["path"] for r in db.query("SELECT id, path FROM downloads")}
-    folder = os.path.join(config.output_dir, "Jane Author - Twin")
+    folder = os.path.join(config.output_dir, "Jane Author", "Twin")
     assert (paths[first], paths[second]) == (f"{folder} [T1]", f"{folder} [T2]")
 
 

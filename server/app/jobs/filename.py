@@ -19,7 +19,7 @@ _EMPTY_WITH_SEPARATOR = re.compile(r"\s*[-_,]\s*\x00|\x00\s*[-_,]\s*|\x00")
 # Each preset is a list of folder names, outermost first. A folder whose tags are all empty is left out,
 # so a book with no series goes in Author/Title and one with no author in Title.
 _FOLDERS: dict[NamingPreset, tuple[str, ...]] = {
-    NamingPreset.AUTHOR_TITLE: ("{author} - {title}",),
+    NamingPreset.TITLE: ("{title}",),
     NamingPreset.AUTHOR_FOLDER: ("{author}", "{title}"),
     NamingPreset.AUTHOR_FOLDER_YEAR: ("{author}", "{year} - {title}"),
     NamingPreset.AUTHOR_SERIES: ("{author}", "{series}", "{series_index} - {title}"),
@@ -57,6 +57,13 @@ def book_directory(output_dir: str, naming: NamingPreset, data: FilenameData) ->
     return os.path.join(output_dir, *(folder for folder in folders if folder), (last + suffix).strip())
 
 
+def pad_series_index(index: str) -> str:
+    """"2" → "02" and "2.5" → "02.5", so books sort in order ("10" would otherwise sort before "2").
+    Audiobookshelf reads "02 - Title" as book 2. Anything that is not a number is left alone."""
+    whole, dot, fraction = index.partition(".")
+    return f"{whole.zfill(2)}{dot}{fraction}" if whole.isdigit() and (not dot or fraction.isdigit()) else index
+
+
 def fill(template: str, data: FilenameData, reserve: int = 0) -> str:
     """One folder name: the template's tags filled in, an empty tag dropped with its separator.
     Returns "" when every tag is empty. reserve is how many bytes the caller still adds to the name."""
@@ -64,7 +71,7 @@ def fill(template: str, data: FilenameData, reserve: int = 0) -> str:
         "{title}": data.title,
         "{author}": data.author,
         "{series}": data.series_name,
-        "{series_index}": data.series_index,
+        "{series_index}": pad_series_index(data.series_index),
         "{year}": data.year,
     }
     result = template
