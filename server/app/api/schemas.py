@@ -64,3 +64,4 @@ class SettingsPatch(BaseModel):
     download_workers: int | None = None
     default_format: str | None = None
     naming: NamingPreset | None = None
+    layout_dialog_seen: bool | None = None

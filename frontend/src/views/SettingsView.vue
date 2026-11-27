@@ -61,6 +61,9 @@
             <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ examplePath }}</code>
             <span class="text-xs text-ink-soft">Applies to new downloads. Books already downloaded keep their folders.</span>
           </div>
+          <div>
+            <button type="button" class="btn-secondary" @click="settingsStore.openLayoutDialog()">Compare layouts</button>
+          </div>
         </section>
 
         <section class="card flex flex-col gap-4 p-5 md:p-6" aria-labelledby="s-tools">
@@ -95,11 +98,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { DownloadIcon, MonitorIcon, MoonIcon, SearchIcon, SunIcon } from '@lucide/vue'
 import type { NamingPreset, Settings } from '@/api/client'
 import { api } from '@/api/client'
 import { SelectField, type SelectOption } from '@/components/ui/select'
+import { LAYOUTS, SAMPLE_BOOKS, bookFolders } from '@/lib/layouts'
 import { setThemeChoice, themeChoice, type ThemeChoice } from '@/lib/theme'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -142,26 +146,16 @@ const saving = ref(false)
 const saveError = ref('')
 const loadError = ref('')
 
-// Each layout and where "The Name of the Wind" goes with it.
-const namingOptions: SelectOption<NamingPreset>[] = [
-  { value: 'title', label: 'Title (flat)' },
-  { value: 'author_folder', label: 'Author / Title (recommended)' },
-  { value: 'author_folder_year', label: 'Author / Year - Title' },
-  { value: 'author_series', label: 'Author / Series / Title' },
-  { value: 'author_series_year', label: 'Author / Series / Year - Title' },
-]
-const exampleFolders: Record<NamingPreset, string> = {
-  title: 'The Name of the Wind [B002UZMLXM]',
-  author_folder: 'Patrick Rothfuss/The Name of the Wind [B002UZMLXM]',
-  author_folder_year: 'Patrick Rothfuss/2007 - The Name of the Wind [B002UZMLXM]',
-  author_series: 'Patrick Rothfuss/The Kingkiller Chronicle/01 - The Name of the Wind [B002UZMLXM]',
-  author_series_year: 'Patrick Rothfuss/The Kingkiller Chronicle/01 - 2007 - The Name of the Wind [B002UZMLXM]',
-}
+const namingOptions: SelectOption<NamingPreset>[] = LAYOUTS.map((layout) => ({
+  value: layout.id,
+  label: layout.recommended ? `${layout.name} (recommended)` : layout.name,
+}))
 
 const examplePath = computed(() => {
   if (!settings.value) return ''
   const s = settings.value
-  return `${s.output_dir}/${exampleFolders[s.naming]}/The Name of the Wind [B002UZMLXM].${s.default_format}`.replace(/\/{2,}/g, '/')
+  const folders = bookFolders(s.naming, SAMPLE_BOOKS[0]!)
+  return `${s.output_dir}/${folders.join('/')}/${folders[folders.length - 1]}.${s.default_format}`.replace(/\/{2,}/g, '/')
 })
 
 const namingHint = computed(() => {
@@ -176,6 +170,14 @@ const namingHint = computed(() => {
       return 'One folder per book, all side by side.'
   }
 })
+
+// The dialog can change the layout while this page is open.
+watch(
+  () => settingsStore.naming,
+  (naming) => {
+    if (settings.value) settings.value.naming = naming
+  },
+)
 
 onMounted(async () => {
   try {

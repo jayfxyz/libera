@@ -346,6 +346,10 @@ def not_downloaded_books(s: Session) -> list[dict[str, Any]]:
         WHERE lb.download_status != 'downloaded'""")
 
 
+def has_downloaded_books(s: Session) -> bool:
+    return bool(_rows(s, "SELECT 1 FROM library_books WHERE download_status = 'downloaded' LIMIT 1"))
+
+
 def export_rows(s: Session) -> list[dict[str, Any]]:
     """Every book still in a library, with the columns the export needs."""
     return _rows(s, """

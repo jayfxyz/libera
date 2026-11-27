@@ -1,3 +1,4 @@
+from tests.conftest import add_account, import_books, make_book
 from app.config import Config, NamingPreset
 from app.repositories import settings as settings_repo
 
@@ -106,3 +107,20 @@ def test_the_old_flat_layout_name_still_loads():
     c = Config()
     c.apply("naming", "author_title")
     assert c.naming == NamingPreset.TITLE
+
+
+def test_layout_dialog_is_skipped_on_a_fresh_install(client):
+    assert client.get("/api/settings").json()["layout_dialog_pending"] is False
+
+
+def test_layout_dialog_waits_for_people_upgrading_with_downloads(config, db):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+
+    add_account(db)
+    import_books(db, 1, [make_book("A1")])
+    db.execute("UPDATE library_books SET download_status = 'downloaded'")
+    with TestClient(create_app(config, db)) as c:
+        assert c.get("/api/settings").json()["layout_dialog_pending"] is True
+        assert c.patch("/api/settings", json={"layout_dialog_seen": True}).status_code == 204
+        assert c.get("/api/settings").json()["layout_dialog_pending"] is False

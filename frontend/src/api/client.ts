@@ -125,6 +125,7 @@ export interface Settings {
   download_workers: number
   default_format: 'm4b' | 'mp3'
   naming: NamingPreset
+  layout_dialog_pending: boolean // the "Library structure matters" dialog has not been answered
 }
 
 /** Where a book's files go in the output folder; the audio file is always named after the title. */
@@ -186,6 +187,6 @@ export const api = {
 
   settings: {
     get: () => request<Settings>('GET', '/settings'),
-    update: (patch: Partial<Settings>) => request<void>('PATCH', '/settings', patch),
+    update: (patch: Partial<Settings> & { layout_dialog_seen?: boolean }) => request<void>('PATCH', '/settings', patch),
   },
 }

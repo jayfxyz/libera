@@ -6,12 +6,14 @@
     <main class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <RouterView />
     </main>
+    <LayoutDialog />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppRail from '@/components/shared/AppRail.vue'
+import LayoutDialog from '@/components/shared/LayoutDialog.vue'
 import MobileNav from '@/components/shared/MobileNav.vue'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
