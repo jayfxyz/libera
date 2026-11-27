@@ -1,6 +1,6 @@
 <template>
   <label
-    class="relative block cursor-pointer rounded-[10px] border py-2.5 pr-3.5 pl-10 transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand"
+    class="relative block cursor-pointer rounded-[10px] border py-2.5 pr-3.5 pl-10 transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand"
     :class="selected === layout.id ? 'border-brand bg-brand/10' : 'border-line bg-surface hover:border-ink-soft'"
   >
     <input

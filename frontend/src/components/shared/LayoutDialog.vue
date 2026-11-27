@@ -1,9 +1,9 @@
 <template>
   <Dialog :open="settings.layoutDialogOpen" @update:open="onOpenChange">
-    <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl">
+    <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout">
       <DialogHeader>
         <p class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">
-          {{ settings.layoutDialogPending ? 'New in this version' : 'Settings' }}
+          {{ upgrading ? 'New in this version' : 'Settings' }}
         </p>
         <DialogTitle class="text-2xl">Library structure matters</DialogTitle>
         <DialogDescription>
@@ -13,7 +13,7 @@
         </DialogDescription>
       </DialogHeader>
 
-      <div class="grid min-w-0 gap-6 py-1 md:grid-cols-2">
+      <div v-if="!result" class="grid min-w-0 gap-6 py-1 md:grid-cols-2">
         <div class="flex min-w-0 flex-col gap-2">
           <h3 class="font-mono text-[11px] font-semibold tracking-wider text-ink-soft uppercase">Choose a layout</h3>
           <div role="radiogroup" aria-label="Folder layout" class="flex flex-col gap-2">
@@ -69,7 +69,7 @@
           </div>
         </div>
 
-        <DialogFooter class="items-center">
+        <DialogFooter class="sticky -bottom-4 z-10 items-center bg-paper">
           <span class="text-xs text-ink-soft sm:mr-auto">You can change this later in Settings.</span>
           <button type="button" class="btn-secondary" :disabled="saving" @click="settings.answerLayoutDialog()">Not now</button>
           <button type="button" class="btn-primary" :disabled="saving || (moveBooks && previewLoading)" @click="save">{{ saveLabel }}</button>
@@ -112,6 +112,7 @@ const CAPTIONS: Record<NamingPreset, string> = {
 const caption = computed(() => CAPTIONS[layoutById(selected.value).id])
 
 // The optional second step: move books that are already downloaded.
+const upgrading = ref(false) // opened for the first time after an upgrade (not reopened from Settings)
 const moveBooks = ref(false)
 const preview = ref<MovePreview | null>(null)
 const previewLoading = ref(false)
@@ -148,7 +149,8 @@ watch(
   () => settings.layoutDialogOpen,
   (open) => {
     if (!open) return
-    selected.value = settings.layoutDialogPending ? RECOMMENDED_LAYOUT : settings.naming
+    upgrading.value = settings.layoutDialogPending
+    selected.value = upgrading.value ? RECOMMENDED_LAYOUT : settings.naming
     moveBooks.value = false
     preview.value = null
     result.value = null
@@ -156,6 +158,12 @@ watch(
   },
   { immediate: true },
 )
+
+// Start on the chosen layout instead of the first link, so the keyboard is already in the list.
+function focusSelectedLayout(event: Event) {
+  event.preventDefault()
+  ;(event.target as HTMLElement).querySelector<HTMLInputElement>('input[name="layout"]:checked')?.focus()
+}
 
 function onOpenChange(open: boolean) {
   if (open) return
