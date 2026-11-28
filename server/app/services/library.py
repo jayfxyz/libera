@@ -17,8 +17,9 @@ from ..config import Config
 from ..db import Database, iso_utc
 from ..events import EventBus
 from ..jobs.filename import FilenameData, book_directory, book_file_name
-from ..naming import ASIN_SUFFIX, legacy_file_name, sanitize_filename
+from ..naming import ASIN_SUFFIX, AUDIO_EXTENSIONS, legacy_file_name, sanitize_filename
 from ..repositories import books as repo
+from .book_files import list_book_files
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
 
 
@@ -156,6 +157,14 @@ class LibraryService:
         meta["series_name"], meta["series_index"] = (series[0]["name"], series[0]["idx"]) if series else ("", "")
         return meta
 
+    def book_files(self, book_id: int) -> dict[str, Any] | None:
+        """The files this book has on disk, or None for an unknown book."""
+        with self._db.session() as s:
+            row = repo.get_detail(s, book_id)
+        if row is None:
+            return None
+        return list_book_files(self._config.output_dir, row["file_path"], row["audible_id"])
+
     def planned_path(self, book_id: int) -> str:
         """Where this book's file is, or where a download of it would be saved with the current settings."""
         meta = self.book_meta(book_id)
@@ -273,9 +282,6 @@ def naming_data(meta: dict) -> dict[str, str]:
         "year": year if len(year) == 4 else "",
         "asin": meta["audible_id"],
     }
-
-
-AUDIO_EXTENSIONS = (".m4b", ".mp3")
 
 
 def audio_files_on_disk(root: str) -> dict[str, DiskFile]:

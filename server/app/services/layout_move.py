@@ -19,10 +19,10 @@ from typing import Any
 from ..config import Config
 from ..db import Database
 from ..jobs.filename import FilenameData, book_directory, book_file_name
-from ..naming import ASIN_SUFFIX
+from ..naming import AUDIO_EXTENSIONS, belongs_to_book, named_with_id
 from ..repositories import books as books_repo
 from ..repositories import downloads as downloads_repo
-from .library import AUDIO_EXTENSIONS, LibraryService, naming_data
+from .library import LibraryService, naming_data
 
 log = logging.getLogger(__name__)
 
@@ -92,17 +92,6 @@ def judge(book: dict[str, Any], new_dir: str, output_dir: str, other_files: set[
     if os.path.lexists(new_dir):
         return Outcome.TARGET_EXISTS
     return Outcome.MOVE
-
-
-def named_with_id(asin: str, file_path: str) -> bool:
-    """The folder and the audio file both end in the book's own ID."""
-    names = (os.path.basename(os.path.dirname(file_path)), os.path.splitext(os.path.basename(file_path))[0])
-    return all((match := ASIN_SUFFIX.search(name)) and match.group(1) == asin for name in names)
-
-
-def belongs_to_book(name: str, stem: str) -> bool:
-    """A file in a book's folder that goes with the audio file: its sidecars and its chapter files."""
-    return name.startswith((f"{stem}.", f"{stem} - "))
 
 
 def holds_only_this_book(file_path: str, other_files: set[str]) -> bool:

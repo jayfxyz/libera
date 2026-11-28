@@ -21,7 +21,7 @@
         <div class="mb-2 flex justify-between gap-2 font-mono text-[10px] text-ink-soft">
           <span>/audiobooks</span><span>example books</span>
         </div>
-        <LayoutTree :nodes="tree" />
+        <FileTree :nodes="tree" />
         <p class="mt-3 text-xs text-ink-soft">{{ caption }} A colon in a title becomes “ - ” so every system accepts it.</p>
       </div>
     </div>
@@ -33,7 +33,7 @@ import { computed, useId } from 'vue'
 import { ChevronRightIcon } from '@lucide/vue'
 import type { NamingPreset } from '@/api/client'
 import LayoutOption from '@/components/shared/LayoutOption.vue'
-import LayoutTree from '@/components/shared/LayoutTree.vue'
+import FileTree from '@/components/shared/FileTree.vue'
 import { LAYOUTS, layoutTree } from '@/lib/layouts'
 
 /** Picks a folder layout and shows what the library looks like with it. Used by the welcome dialog and by Settings. */

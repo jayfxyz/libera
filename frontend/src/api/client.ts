@@ -131,6 +131,19 @@ export interface Settings {
 /** Where a book's files go in the output folder; the audio file is always named after the title. */
 export type NamingPreset = 'title' | 'author_folder' | 'author_folder_year' | 'author_series' | 'author_series_year'
 
+/** The files a book has on disk. */
+export interface BookFile {
+  name: string
+  size_bytes: number
+  kind: 'audio' | 'cover' | 'pdf' | 'other'
+}
+export interface BookFiles {
+  root: string // the output folder
+  folders: string[] // from root down to the book's own folder
+  files: BookFile[]
+  found: boolean // false when the book has no file on disk
+}
+
 /** Moving downloaded books to another layout. */
 export interface MoveSkipped {
   book_id: number
@@ -191,6 +204,7 @@ export const api = {
       request<void>('PATCH', `/library/${id}`, patch),
     setHidden: (bookIds: number[], isHidden: boolean) =>
       request<void>('POST', '/library/bulk', { book_ids: bookIds, is_hidden: isHidden }),
+    files: (id: number) => request<BookFiles>('GET', `/library/${id}/files`),
     savePdf: (id: number) => request<{ file_path: string }>('POST', `/library/${id}/pdf`),
   },
 

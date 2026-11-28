@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+AUDIO_EXTENSIONS = (".m4b", ".mp3")  # what Libera writes and what a rescan looks for
 ASIN_SUFFIX = re.compile(r" \[([^\[\]]+)\]$")  # the " [B002UZMLXM]" a file or folder name ends with
 _COLON = re.compile(r"\s*:\s*")
 _RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?=\.|$)", re.IGNORECASE)  # Windows device names
@@ -29,3 +31,14 @@ def sanitize_filename(s: str, reserve: int = 0) -> str:
 def legacy_file_name(title: str) -> str:
     """What a title was called on disk before November 2026, when ":" became "_" (e.g. "Found_ Book")."""
     return _UNSAFE.sub("_", title).strip()[:200]
+
+
+def named_with_id(asin: str, file_path: str) -> bool:
+    """The folder and the audio file both end in the book's own ID, as Libera names them."""
+    names = (os.path.basename(os.path.dirname(file_path)), os.path.splitext(os.path.basename(file_path))[0])
+    return all((match := ASIN_SUFFIX.search(name)) and match.group(1) == asin for name in names)
+
+
+def belongs_to_book(name: str, stem: str) -> bool:
+    """A file in a book's folder that goes with its audio file: its sidecars and its chapter files."""
+    return name.startswith((f"{stem}.", f"{stem} - "))

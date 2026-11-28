@@ -81,7 +81,11 @@
       <p v-if="actionError" class="-mt-2 text-xs text-warn-deep">{{ actionError }}</p>
       <p v-else-if="notice" class="-mt-2 text-xs text-ok-ink break-all">{{ notice }}</p>
 
-      <div v-if="status.state !== 'unavailable' || book.file_path" class="flex flex-col gap-1.5">
+      <div v-if="files?.found" class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-ink-soft">Files</span>
+        <BookFilesTree :files="files" />
+      </div>
+      <div v-else-if="status.state !== 'unavailable' || book.file_path" class="flex flex-col gap-1.5">
         <!-- Downloads from before paths were recorded only have the computed location. -->
         <span class="text-xs font-semibold text-ink-soft">{{ book.file_path ? 'Saved to' : status.state === 'downloaded' ? 'Expected location' : 'Will save to' }}</span>
         <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ book.file_path || book.planned_path }}</code>
@@ -127,7 +131,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from '@lucide/vue'
-import type { BookDetail } from '@/api/client'
+import type { BookDetail, BookFiles } from '@/api/client'
 import { api } from '@/api/client'
 import { SelectField, type SelectOption } from '@/components/ui/select'
 import { bookStatus, formatDuration } from '@/lib/bookStatus'
@@ -135,6 +139,7 @@ import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'
 import { useSettingsStore } from '@/stores/settings'
 import BookCover from './BookCover.vue'
+import BookFilesTree from './BookFilesTree.vue'
 import SplitChaptersPopover from './SplitChaptersPopover.vue'
 import UnavailablePopover from './UnavailablePopover.vue'
 
@@ -146,6 +151,7 @@ const library = useLibraryStore()
 const settings = useSettingsStore()
 
 const book = ref<BookDetail | null>(null)
+const files = ref<BookFiles | null>(null) // what the book has on disk; null while unknown or not downloaded
 const loading = ref(true)
 const loadError = ref('')
 const busy = ref(false)
@@ -155,7 +161,7 @@ const savingPdf = ref(false)
 const format = ref<'default' | 'm4b' | 'mp3'>('default')
 const formatOptions = computed<SelectOption<'default' | 'm4b' | 'mp3'>[]>(() => [
   { value: 'default', label: `Default — ${settings.defaultFormat.toUpperCase()}${settings.defaultFormat === 'm4b' ? ', original' : ''}` },
-  { value: 'm4b', label: 'M4B (original, no re-encode)' },
+  { value: 'm4b', label: 'M4B (recommended: original, no re-encode)' },
   { value: 'mp3', label: 'MP3 (re-encode)' },
 ])
 const splitChapters = ref(false)
@@ -166,6 +172,7 @@ async function load() {
   actionError.value = ''
   try {
     book.value = await api.library.get(props.bookId)
+    files.value = book.value.file_path ? await api.library.files(props.bookId).catch(() => null) : null
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   } finally {

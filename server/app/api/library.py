@@ -11,7 +11,7 @@ from ..deps import DownloadSvc, LayoutMoveSvc, LibrarySvc
 from ..services.downloads import NoPdf, PdfFailed
 from ..services.layout_move import MoveInProgress
 from ..services.library import EXPORT_FIELDS, MAX_PAGE_SIZE, PAGE_SIZE, InvalidSort
-from .schemas import BookPatch, BulkUpdate, MoveRequest
+from .schemas import BookFiles, BookPatch, BulkUpdate, MoveRequest
 
 router = APIRouter()
 
@@ -97,6 +97,15 @@ def get_book(book_id: int, library_svc: LibrarySvc):
         raise HTTPException(404, "book not found")
     book["planned_path"] = library_svc.planned_path(book_id)
     return book
+
+
+@router.get("/library/{book_id}/files", response_model=BookFiles)
+def get_book_files(book_id: int, library_svc: LibrarySvc):
+    """The files this book has on disk."""
+    files = library_svc.book_files(book_id)
+    if files is None:
+        raise HTTPException(404, "book not found")
+    return files
 
 
 @router.post("/library/{book_id}/pdf")

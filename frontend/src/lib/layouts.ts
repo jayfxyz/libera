@@ -1,4 +1,5 @@
 import type { NamingPreset } from '@/api/client'
+import type { TreeNode } from '@/lib/fileTree'
 
 /** The folder layouts, in the order they are offered. Mirrors server/app/jobs/filename.py. */
 export interface Layout {
@@ -53,12 +54,6 @@ export const SAMPLE_BOOKS: SampleBook[] = [
   { title: 'The Two Towers', author: 'J.R.R. Tolkien', series: 'The Lord of the Rings', seriesIndex: '2', year: '1954', asin: 'B007978NQK' },
   { title: 'Angels & Demons', author: 'Dan Brown', series: 'Robert Langdon', seriesIndex: '1', year: '2000', asin: 'B0016LC2QG' },
 ]
-
-export interface TreeNode {
-  name: string
-  kind: 'folder' | 'audio' | 'cover'
-  children: TreeNode[]
-}
 
 export function layoutById(id: NamingPreset): Layout {
   return LAYOUTS.find((layout) => layout.id === id) ?? LAYOUTS[0]!
