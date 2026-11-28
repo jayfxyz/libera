@@ -52,7 +52,8 @@ describe('splitName', () => {
       'Gone': ['Gone', ''],
       'Title [ID] [Unabridged] [B0TESTASIN].pdf': ['Title [ID] [Unabridged]', ' [B0TESTASIN].pdf'],
     }
-    for (const [name, [head, tail]] of Object.entries(cases)) expect(splitName(name), name).toEqual({ head, tail })
+    // The name is folded into both sides so a failure says which case broke.
+    for (const [name, [head, tail]] of Object.entries(cases)) expect({ name, ...splitName(name) }).toEqual({ name, head, tail })
   })
 
   it('never loses a character', () => {
