@@ -2,11 +2,12 @@
   <Dialog :open="settings.layoutDialogOpen" @update:open="onOpenChange">
     <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout" @interact-outside.prevent>
       <DialogHeader>
-        <p class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">
+        <p v-if="!result" class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">
           {{ upgrading ? 'New in this version' : 'Settings' }}
         </p>
-        <DialogTitle class="text-2xl">Library structure matters</DialogTitle>
-        <DialogDescription>
+        <DialogTitle class="text-2xl">{{ result ? 'Library updated' : 'Library structure matters' }}</DialogTitle>
+        <DialogDescription v-if="result" class="sr-only">Your layout was saved and your books were moved.</DialogDescription>
+        <DialogDescription v-else>
           Media players and servers find your books by their folders and file names. Pick a layout they all read,
           and Libera will name every new download that way.
           <a :href="DOCS_URL" target="_blank" rel="noopener" class="text-brand underline underline-offset-2">Why these layouts?</a>
@@ -42,12 +43,28 @@
       </div>
 
       <template v-if="result">
-        <div class="flex flex-col gap-2 border-t border-line pt-4 text-sm" role="status">
-          <p class="font-semibold">Moved {{ result.moved }} {{ result.moved === 1 ? 'book' : 'books' }}.</p>
-          <p v-if="result.skipped_total" class="text-ink-soft">
-            {{ result.skipped_total }} {{ result.skipped_total === 1 ? 'book was' : 'books were' }} left where
-            {{ result.skipped_total === 1 ? 'it is' : 'they are' }}: {{ result.skipped.map((b) => `${b.title} (${b.reason.toLowerCase()})`).join('; ') }}.
-          </p>
+        <div class="flex flex-col gap-4 text-sm" role="status">
+          <div class="flex flex-col gap-1">
+            <p class="flex items-center gap-2 text-base font-semibold">
+              <CircleCheckIcon class="size-5 shrink-0 text-ok" aria-hidden="true" />{{ movedHeadline }}
+            </p>
+            <p v-if="result.to_rename" class="pl-7 text-ink-soft">
+              {{ plural(result.to_rename) }} also had {{ result.to_rename === 1 ? 'its' : 'their' }} files renamed to include the book's ID.
+            </p>
+            <p class="pl-7 text-ink-soft">New downloads use {{ layoutName }} too.</p>
+          </div>
+          <div v-if="result.skipped_total" class="flex flex-col gap-2 rounded-[10px] border border-line bg-paper p-4">
+            <p class="font-semibold">Left where {{ result.skipped_total === 1 ? 'it is' : 'they are' }} ({{ result.skipped_total }})</p>
+            <ul class="flex flex-col gap-1 text-xs">
+              <li v-for="book in result.skipped" :key="book.book_id" class="flex flex-wrap gap-x-2">
+                <span class="font-medium">{{ book.title || 'Untitled' }}</span>
+                <span class="text-ink-soft">{{ book.reason }}</span>
+              </li>
+              <li v-if="result.skipped_total > result.skipped.length" class="text-ink-soft">
+                and {{ result.skipped_total - result.skipped.length }} more
+              </li>
+            </ul>
+          </div>
         </div>
         <DialogFooter>
           <button type="button" class="btn-primary" @click="settings.closeLayoutDialog()">Done</button>
@@ -82,7 +99,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ChevronRightIcon } from '@lucide/vue'
+import { ChevronRightIcon, CircleCheckIcon } from '@lucide/vue'
 import { api, type MovePreview, type MoveResult, type NamingPreset } from '@/api/client'
 import LayoutMovePreview from '@/components/shared/LayoutMovePreview.vue'
 import LayoutOption from '@/components/shared/LayoutOption.vue'
@@ -125,6 +142,17 @@ const saveLabel = computed(() => {
   if (moveBooks.value && preview.value?.to_move) return `Save and move ${preview.value.to_move} ${preview.value.to_move === 1 ? 'book' : 'books'}`
   return 'Save layout'
 })
+
+function plural(count: number): string {
+  return `${count} ${count === 1 ? 'book' : 'books'}`
+}
+
+const layoutName = computed(() => layoutById(selected.value).name)
+const movedHeadline = computed(() =>
+  !result.value || result.value.moved === 0
+    ? 'No books needed moving.'
+    : `Moved ${plural(result.value.moved)} to ${layoutName.value}.`,
+)
 
 async function loadPreview() {
   const request = ++previewRequest
