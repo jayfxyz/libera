@@ -9,8 +9,8 @@
         <div class="flex items-center gap-3">
           <span v-if="saved" class="text-sm font-medium text-ok-ink" role="status">Saved</span>
           <span v-else-if="saveError" class="text-sm text-destructive" role="alert">{{ saveError }}</span>
-          <button type="button" class="btn-primary" :disabled="!settings || saving || (moveBooks && previewLoading)" @click="save">
-            {{ saveLabel }}
+          <button type="button" class="btn-primary" :disabled="!settings || saving" @click="save">
+            {{ saving ? 'Saving…' : 'Save settings' }}
           </button>
         </div>
       </header>
@@ -54,11 +54,7 @@
 
         <section class="lg:col-span-2 card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-naming">
           <h2 id="s-naming" class="text-base font-semibold">File naming</h2>
-          <LayoutPicker v-model="settings.naming" />
-          <div class="flex flex-col gap-4 border-t border-line-faint pt-4">
-            <LayoutMoveOption v-model="moveBooks" :preview="preview" :loading="previewLoading" :error="previewError" :disabled="saving" />
-            <LayoutMoveResult v-if="moveResult" :result="moveResult" :layout-name="layoutName" />
-          </div>
+          <LayoutCurrent :layout="settings.naming" @change="settingsStore.openLayoutDialog()" />
         </section>
 
         <section class="lg:col-span-2 card flex flex-col gap-1.5 p-5 md:p-6" aria-labelledby="s-about">
@@ -75,14 +71,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { DownloadIcon, SearchIcon } from '@lucide/vue'
-import type { MoveResult, Settings } from '@/api/client'
+import type { Settings } from '@/api/client'
 import { api } from '@/api/client'
-import LayoutMoveOption from '@/components/shared/LayoutMoveOption.vue'
-import LayoutMoveResult from '@/components/shared/LayoutMoveResult.vue'
-import LayoutPicker from '@/components/shared/LayoutPicker.vue'
+import LayoutCurrent from '@/components/shared/LayoutCurrent.vue'
 import { SelectField, type SelectOption } from '@/components/ui/select'
-import { useLayoutMove } from '@/composables/useLayoutMove'
-import { bookCount, layoutById } from '@/lib/layouts'
 import { useSettingsStore } from '@/stores/settings'
 
 const formatOptions: SelectOption<Settings['default_format']>[] = [
@@ -109,17 +101,6 @@ const downloadWorkers = computed({
 })
 const settingsStore = useSettingsStore()
 
-// Moving the books already downloaded to the chosen layout happens when the settings are saved.
-const naming = computed(() => settings.value?.naming ?? 'author_folder')
-const { enabled: moveBooks, preview, loading: previewLoading, error: previewError, reset: resetMove } = useLayoutMove(naming)
-const moveResult = ref<MoveResult | null>(null)
-const layoutName = computed(() => layoutById(naming.value).name)
-watch(naming, () => (moveResult.value = null))
-const saveLabel = computed(() => {
-  if (saving.value) return moveBooks.value ? 'Moving…' : 'Saving…'
-  if (moveBooks.value && preview.value?.to_move) return `Save and move ${bookCount(preview.value.to_move)}`
-  return 'Save settings'
-})
 const saved = ref(false)
 const saving = ref(false)
 const saveError = ref('')
@@ -146,26 +127,15 @@ async function save() {
   saving.value = true
   saveError.value = ''
   try {
-    const { download_workers, default_format, naming } = settings.value
-    await api.settings.update({ download_workers, default_format, naming })
+    const { download_workers, default_format } = settings.value // the layout is changed in its own dialog
+    await api.settings.update({ download_workers, default_format })
     await settingsStore.load() // the book panel's "Default — M4B" follows this
     saved.value = true
     setTimeout(() => (saved.value = false), 2500)
-    if (moveBooks.value) await moveBooksToLayout(naming)
   } catch (e) {
     saveError.value = `Couldn't save: ${e instanceof Error ? e.message : e}`
   } finally {
     saving.value = false
-  }
-}
-
-async function moveBooksToLayout(layout: Settings['naming']) {
-  try {
-    moveResult.value = await api.library.moveBooks(layout)
-    resetMove()
-  } catch (e) {
-    saved.value = false
-    saveError.value = `Saved, but couldn't move your books: ${e instanceof Error ? e.message : e}`
   }
 }
 

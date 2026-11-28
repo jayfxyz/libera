@@ -28,8 +28,8 @@
         </div>
 
         <DialogFooter class="sticky -bottom-4 z-10 items-center bg-paper">
-          <span class="text-xs text-ink-soft sm:mr-auto">You can change this later in Settings.</span>
-          <button type="button" class="btn-secondary" :disabled="saving" @click="settings.answerLayoutDialog()">Not now</button>
+          <span v-if="upgrading" class="text-xs text-ink-soft sm:mr-auto">You can change this later in Settings.</span>
+          <button type="button" class="btn-secondary" :disabled="saving" @click="settings.answerLayoutDialog()">{{ upgrading ? 'Not now' : 'Cancel' }}</button>
           <button type="button" class="btn-primary" :disabled="saving || (moveBooks && previewLoading)" @click="save">{{ saveLabel }}</button>
         </DialogFooter>
         <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
