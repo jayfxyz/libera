@@ -35,7 +35,7 @@
           <h2 id="s-tools" class="text-base font-semibold">Library tools</h2>
           <div class="flex flex-col gap-2">
             <span class="text-sm font-medium">Find downloaded files</span>
-            <span class="text-xs text-ink-soft">Marks books as downloaded when their audio file is already in the output folder, e.g. after copying books in.</span>
+            <span class="text-xs text-ink-soft">Looks in the output folder for books' audio files, e.g. after copying books in, and finds downloaded books whose files were moved.</span>
             <div class="flex flex-wrap items-center gap-3">
               <button type="button" class="btn-secondary" :disabled="rescanning" @click="rescan">
                 <SearchIcon class="size-4" />{{ rescanning ? 'Looking…' : 'Find files' }}
@@ -139,14 +139,21 @@ async function save() {
   }
 }
 
+function rescanSummary(matched: number, relinked: number) {
+  const books = (n: number) => `book${n === 1 ? '' : 's'}`
+  const found = matched ? `Found ${matched} more downloaded ${books(matched)}.` : ''
+  const moved = relinked ? `Found where ${relinked} ${books(relinked)} had moved.` : ''
+  return [found, moved].filter(Boolean).join(' ') || 'No new files found.'
+}
+
 const rescanning = ref(false)
 const rescanMessage = ref('')
 async function rescan() {
   rescanning.value = true
   rescanMessage.value = ''
   try {
-    const { matched } = await api.library.rescan()
-    rescanMessage.value = matched ? `Found ${matched} more downloaded book${matched === 1 ? '' : 's'}.` : 'No new files found.'
+    const { matched, relinked } = await api.library.rescan()
+    rescanMessage.value = rescanSummary(matched, relinked)
   } catch (e) {
     rescanMessage.value = `Failed: ${e instanceof Error ? e.message : e}`
   } finally {

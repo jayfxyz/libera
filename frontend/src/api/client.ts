@@ -197,7 +197,7 @@ export const api = {
       const query = qs.toString() ? `?${qs}` : ''
       return request<BookSummary[]>('GET', `/library${query}`)
     },
-    rescan: () => request<{ matched: number }>('POST', '/library/rescan'),
+    rescan: () => request<{ matched: number; relinked: number }>('POST', '/library/rescan'),
     get: (id: number) => request<BookDetail>('GET', `/library/${id}`),
     update: (id: number, patch: Partial<{ tags: string; is_finished: boolean; is_hidden: boolean }>) =>
       request<void>('PATCH', `/library/${id}`, patch),
