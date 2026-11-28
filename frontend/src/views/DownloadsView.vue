@@ -53,7 +53,9 @@
               <div v-if="job.status === 'downloading' || job.status === 'decrypting'" class="h-1 overflow-hidden rounded-full bg-busy-track">
                 <div class="h-1 bg-busy transition-[width]" :style="{ width: `${Math.round(job.percent)}%` }" />
               </div>
-              <p v-if="job.message && ['done', 'failed', 'queued'].includes(job.status)" class="text-xs break-words" :class="job.status === 'failed' ? 'text-warn-deep' : job.status === 'done' ? 'font-mono text-ink-soft' : 'text-ink-soft'">
+              <!-- Where it was saved: one line, ending with the ID and extension. -->
+              <TruncatedName v-if="job.status === 'done' && job.message" :name="job.message" class="font-mono text-xs text-ink-soft" />
+              <p v-else-if="job.message && ['failed', 'queued'].includes(job.status)" class="text-xs break-words" :class="job.status === 'failed' ? 'text-warn-deep' : 'text-ink-soft'">
                 {{ job.message }}<template v-if="job.status === 'queued' && job.retry_at"> Next try at {{ clock(job.retry_at) }}.</template>
               </p>
             </div>
@@ -69,6 +71,7 @@ import { computed, onMounted, ref } from 'vue'
 import { DownloadIcon } from '@lucide/vue'
 import type { Download } from '@/api/client'
 import BookCover from '@/components/library/BookCover.vue'
+import TruncatedName from '@/components/shared/TruncatedName.vue'
 import { isActive } from '@/lib/bookStatus'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useLibraryStore } from '@/stores/library'

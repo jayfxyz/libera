@@ -2,9 +2,9 @@
   <div class="min-w-0 rounded-[10px] border border-line bg-paper p-3.5">
     <div class="mb-2 flex justify-between gap-2 font-mono text-[10px] text-ink-soft">
       <span class="min-w-0 break-all">{{ files.root }}</span>
-      <span class="shrink-0">{{ summary }}</span>
+      <span class="shrink-0">{{ files.found ? summary : "expected" }}</span>
     </div>
-    <FileTree :nodes="tree" />
+    <FileTree :nodes="tree" :ghost="!files.found" />
   </div>
 </template>
 

@@ -3,7 +3,7 @@
   <div class="fixed inset-0 z-30 bg-black/30 xl:hidden" aria-hidden="true" @click="emit('close')" />
   <aside
     aria-label="Book details"
-    class="fixed inset-y-0 right-0 z-40 flex w-full flex-col bg-surface shadow-xl sm:w-[420px] xl:static xl:z-auto xl:w-[400px] xl:shrink-0 xl:border-l xl:border-line-soft xl:shadow-none"
+    class="fixed inset-y-0 right-0 z-40 flex w-full flex-col bg-surface shadow-xl sm:w-[480px] xl:static xl:z-auto xl:w-[460px] xl:shrink-0 xl:border-l xl:border-line-soft xl:shadow-none"
   >
     <div class="flex shrink-0 items-center justify-between px-6 pt-5 pb-3">
       <span class="eyebrow">Book</span>
@@ -17,7 +17,7 @@
 
     <!-- [&>*]:shrink-0: in a scrolling column nothing may shrink (the cover has no height of its own). -->
     <div v-else-if="book" class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pb-[calc(2rem+env(safe-area-inset-bottom))] [&>*]:shrink-0">
-      <BookCover :src="book.cover_url" :title="book.title" :author="book.authors[0]" size="lg" rounded="rounded-xl" />
+      <BookCover class="max-w-[280px]" :src="book.cover_url" :title="book.title" :author="book.authors[0]" size="lg" rounded="rounded-xl" />
 
       <div class="flex flex-col gap-1.5">
         <h2 class="font-display text-2xl font-bold leading-[1.15] tracking-[-0.01em]">{{ book.title }}</h2>
@@ -81,17 +81,13 @@
       <p v-if="actionError" class="-mt-2 text-xs text-warn-deep">{{ actionError }}</p>
       <p v-else-if="notice" class="-mt-2 text-xs text-ok-ink break-all">{{ notice }}</p>
 
-      <div v-if="files?.found" class="flex flex-col gap-1.5">
-        <span class="text-xs font-semibold text-ink-soft">Files</span>
-        <BookFilesTree :files="files" />
-      </div>
-      <div v-else-if="status.state !== 'unavailable' || book.file_path" class="flex flex-col gap-1.5">
+      <div v-if="showFiles" class="flex flex-col gap-1.5">
         <p v-if="filesMissing" class="text-xs text-warn-deep">
           Marked as downloaded, but no files were found in the output folder. If you copied them in, use Find downloaded files in Settings.
         </p>
-        <!-- Downloads from before paths were recorded only have the computed location. -->
-        <span class="text-xs font-semibold text-ink-soft">{{ book.file_path ? 'Saved to' : status.state === 'downloaded' ? 'Expected location' : 'Will save to' }}</span>
-        <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ book.file_path || book.planned_path }}</code>
+        <span class="text-xs font-semibold text-ink-soft">{{ filesLabel }}</span>
+        <BookFilesTree v-if="files?.files.length" :files="files" />
+        <code v-else class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ book.file_path || book.planned_path }}</code>
       </div>
 
       <div v-if="isDownloadable" class="flex flex-col gap-1 border-t border-line-faint pt-4">
@@ -175,8 +171,7 @@ async function load() {
   actionError.value = ''
   try {
     book.value = await api.library.get(props.bookId)
-    const onDisk = book.value.file_path || book.value.download_status === 'downloaded'
-    files.value = onDisk ? await api.library.files(props.bookId).catch(() => null) : null
+    files.value = await api.library.files(props.bookId).catch(() => null)
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -193,6 +188,11 @@ const hasPdf = computed(() => (summary.value ?? book.value)?.has_pdf === true)
 const isDownloadable = computed(() => (summary.value ?? book.value)?.is_downloadable !== false)
 const status = computed(() =>
   bookStatus(summary.value ?? book.value ?? { download_status: 'not_downloaded', last_format: null, is_downloadable: true }, job.value),
+)
+const showFiles = computed(() => status.value.state !== 'unavailable' || !!book.value?.file_path || !!files.value?.found)
+// Downloads from before paths were recorded only have the computed location.
+const filesLabel = computed(() =>
+  files.value?.found ? 'Files' : book.value?.file_path ? 'Saved to' : status.value.state === 'downloaded' ? 'Expected location' : 'Will save to',
 )
 const filesMissing = computed(() => files.value !== null && !files.value.found && status.value.state === 'downloaded')
 // Refresh the saved path once a download finishes.

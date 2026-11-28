@@ -28,6 +28,7 @@ export function formatBytes(bytes: number): string {
 
 /** The folders from the root down to the book's own, with its files inside. */
 export function bookFilesTree(listing: BookFiles): TreeNode[] {
-  const files: TreeNode[] = listing.files.map((file) => ({ name: file.name, kind: file.kind, children: [], size: file.size_bytes }))
+  // A book that is not on disk is listed only where it is expected, so there is no size to show.
+  const files: TreeNode[] = listing.files.map((file) => ({ name: file.name, kind: file.kind, children: [], size: listing.found ? file.size_bytes : undefined }))
   return listing.folders.reduceRight<TreeNode[]>((inner, name) => [{ name, kind: 'folder', children: inner }], files)
 }

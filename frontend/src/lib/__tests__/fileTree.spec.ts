@@ -30,6 +30,11 @@ describe('bookFilesTree', () => {
     ])
   })
 
+  it('has no sizes for a book that is only expected to be somewhere', () => {
+    const tree = bookFilesTree({ root: '/x', folders: ['A'], files: [{ name: 'a.m4b', size_bytes: 0, kind: 'audio' }], found: false })
+    expect(tree[0]!.children[0]!.size).toBeUndefined()
+  })
+
   it('lists the files straight under the root when there are no folders', () => {
     const tree = bookFilesTree({ root: '/x', folders: [], files: [{ name: 'a.m4b', size_bytes: 1, kind: 'audio' }], found: true })
     expect(tree.map((node) => node.name)).toEqual(['a.m4b'])
