@@ -7,6 +7,13 @@ export interface TreeNode {
   size?: number // bytes, for a real file
 }
 
+/** A name in two parts, so a long one can be cut in the middle and still end with its ID and extension:
+ *  "A very long title [B017TDZGTA].m4b" → ["A very long title", " [B017TDZGTA].m4b"]. */
+export function splitName(name: string): { head: string; tail: string } {
+  const match = /^(.*?)((?: \[[^[\]]+\])?(?:\.[^.\s[\]]+){0,2})$/.exec(name)
+  return { head: match?.[1] ?? name, tail: match?.[2] ?? '' }
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   const units = ['KB', 'MB', 'GB', 'TB']
