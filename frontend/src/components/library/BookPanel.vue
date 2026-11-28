@@ -83,7 +83,7 @@
 
       <div v-if="showFiles" class="flex flex-col gap-1.5">
         <p v-if="filesMissing" class="text-xs text-warn-deep">
-          Marked as downloaded, but no files were found in the output folder. If you copied them in, use Find downloaded files in Settings.
+          Marked as downloaded, but no files were found in the output folder. If they were moved or copied in, use Find downloaded files in Settings.
         </p>
         <span class="text-xs font-semibold text-ink-soft">{{ filesLabel }}</span>
         <BookFilesTree v-if="files?.files.length" :files="files" />
@@ -195,9 +195,11 @@ const filesLabel = computed(() =>
   files.value?.found ? 'Files' : book.value?.file_path ? 'Saved to' : status.value.state === 'downloaded' ? 'Expected location' : 'Will save to',
 )
 const filesMissing = computed(() => files.value !== null && !files.value.found && status.value.state === 'downloaded')
-// Refresh the saved path once a download finishes.
-watch(() => status.value.state, (now, before) => {
-  if (now === 'downloaded' && before === 'downloading') load()
+// Refresh the saved path and the file list once a download finishes. The state can pass through
+// 'none' on the way, when the job leaves the queue before the summary says downloaded, so react to
+// it becoming 'downloaded' from any state rather than only from 'downloading'.
+watch(() => status.value.state, (now) => {
+  if (now === 'downloaded') load()
 })
 
 function enqueue() {
