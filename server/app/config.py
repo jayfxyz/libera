@@ -25,7 +25,7 @@ class NamingPreset(StrEnum):
     AUTHOR_SERIES_YEAR = "author_series_year"  # Author/Series/1 - 2007 - Title [ASIN]/
 
 
-LEGACY_PRESETS = {"author_title": "title"}  # the flat layout used to be "Author - Title"
+LEGACY_PRESETS = {"author_title": "title"}  # the old flat "Author - Title/" layout stays flat
 
 
 @dataclass

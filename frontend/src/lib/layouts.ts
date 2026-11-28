@@ -20,8 +20,8 @@ export const LAYOUTS: Layout[] = [
     why: 'Works with every player and server we checked.', author: true, series: false, year: false,
   },
   {
-    id: 'title', name: 'Title',
-    why: 'Flat and no author folder. The author comes from the tags.', author: false, series: false, year: false,
+    id: 'title', name: 'Title (flat)',
+    why: 'No author folder. The author comes from the tags.', author: false, series: false, year: false,
   },
   {
     id: 'author_series', name: 'Author / Series / Number - Title',

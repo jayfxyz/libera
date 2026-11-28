@@ -104,7 +104,7 @@ def test_iso_utc():
 
 
 def test_the_old_flat_layout_name_still_loads():
-    c = Config()
+    c = Config(naming=NamingPreset.AUTHOR_SERIES)
     c.apply("naming", "author_title")
     assert c.naming == NamingPreset.TITLE
 

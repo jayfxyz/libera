@@ -3,9 +3,9 @@
     <label class="flex items-start gap-2.5 text-sm">
       <input v-model="enabled" type="checkbox" class="mt-0.5 size-4 accent-brand" :disabled="disabled" />
       <span>
-        <span class="font-semibold">Update previously downloaded books to this layout</span>
+        <span class="font-semibold">Update previously downloaded books to this layout?</span>
         <span class="block text-xs text-ink-soft">
-          {{ enabled ? 'When you save, Libera moves each book folder and remembers the new location.' : 'Off: only new downloads use the layout, and your existing files stay where they are.' }}
+          {{ enabled ? 'Libera will move each book folder and remember the new location when you save.' : 'Off: only new downloads use the layout, and your existing files stay where they are.' }}
         </span>
       </span>
     </label>

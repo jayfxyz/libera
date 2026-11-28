@@ -6,8 +6,8 @@
         <span>/audiobooks</span><span>example books</span>
       </div>
       <FileTree :nodes="tree" />
-      <p class="mt-3 text-xs text-ink-soft">{{ caption }} A colon in a title becomes “ - ” so every system accepts it.</p>
     </div>
+    <p class="text-xs text-ink-soft">{{ caption }} A colon in a title becomes “ - ” so every system accepts it.</p>
   </div>
 </template>
 

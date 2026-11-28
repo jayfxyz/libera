@@ -52,8 +52,8 @@
           </div>
         </section>
 
-        <section class="lg:col-span-2 card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-naming">
-          <h2 id="s-naming" class="text-base font-semibold">File naming</h2>
+        <section class="lg:col-span-2 card flex flex-col gap-5 p-5 md:p-6" aria-labelledby="s-layout">
+          <h2 id="s-layout" class="text-base font-semibold">Library structure</h2>
           <LayoutCurrent :layout="settings.naming" @change="settingsStore.openLayoutDialog()" />
         </section>
 

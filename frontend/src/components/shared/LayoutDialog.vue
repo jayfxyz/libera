@@ -2,15 +2,19 @@
   <Dialog :open="settings.layoutDialogOpen" @update:open="onOpenChange">
     <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout" @interact-outside.prevent>
       <DialogHeader>
-        <p v-if="!result" class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">
-          {{ upgrading ? 'New in this version' : 'Settings' }}
+        <p v-if="!result && !upgrading" class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">Settings</p>
+        <p v-if="upgrading && !result" class="mb-1 text-sm text-ink-soft">
+          <span class="mr-1 rounded-full bg-brand/10 px-2 py-0.5 align-[1px] font-mono text-[10px] font-semibold tracking-wider text-brand uppercase">New</span>
+          Every book's folder and file name now ends in its audiobook ID (ASIN), like
+          <span class="font-mono text-xs">Title [B002UZMLXM]</span>.
+          <AsinWhyPopover />
         </p>
         <DialogTitle class="text-2xl">{{ result ? 'Library updated' : 'Library structure matters' }}</DialogTitle>
         <DialogDescription v-if="result" class="sr-only">Your layout was saved and your books were moved.</DialogDescription>
         <DialogDescription v-else>
           Media players and servers find your books by their folders and file names. Pick a layout they all read,
           and Libera will name every new download that way.
-          <a :href="DOCS_URL" target="_blank" rel="noopener" class="text-brand underline underline-offset-2">Why these layouts?</a>
+          <a :href="DOCS_URL" target="_blank" rel="noopener" class="text-brand underline underline-offset-2">See more details</a>
         </DialogDescription>
       </DialogHeader>
 
@@ -41,6 +45,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { api, type MoveResult, type NamingPreset } from '@/api/client'
+import AsinWhyPopover from '@/components/shared/AsinWhyPopover.vue'
 import LayoutMoveOption from '@/components/shared/LayoutMoveOption.vue'
 import LayoutMoveResult from '@/components/shared/LayoutMoveResult.vue'
 import LayoutPicker from '@/components/shared/LayoutPicker.vue'
@@ -66,13 +71,13 @@ const saveLabel = computed(() => {
   return 'Save layout'
 })
 
-// Someone upgrading starts on the recommended layout.
+// Start on the layout in use, so saving without a change never switches it.
 watch(
   () => settings.layoutDialogOpen,
   (open) => {
     if (!open) return
     upgrading.value = settings.layoutDialogPending
-    selected.value = upgrading.value ? RECOMMENDED_LAYOUT : settings.naming
+    selected.value = settings.naming
     resetMove()
     result.value = null
     error.value = ''
