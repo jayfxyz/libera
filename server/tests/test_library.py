@@ -158,7 +158,7 @@ def test_rescan_marks_found_books_downloaded(db, config, library_svc, tmp_path):
     (tmp_path / "Someone" / "Nested - Book").mkdir(parents=True)
     (tmp_path / "Someone" / "Nested - Book" / "Nested - Book.mp3").write_bytes(b"")
     config.output_dir = str(tmp_path)
-    assert library_svc.rescan() == 2
+    assert library_svc.rescan() == (2, 0)
     status = {r["audible_id"]: (r["download_status"], r["last_format"]) for r in db.query(
         "SELECT b.audible_id, lb.download_status, lb.last_format FROM books b "
         "JOIN library_books lb ON lb.book_id = b.id")}
@@ -179,12 +179,84 @@ def test_rescan_matches_duplicate_titles_by_asin(db, config, library_svc, tmp_pa
     (tmp_path / "Same.mp3").write_bytes(b"")  # older file: could be any of the three, so none
     (tmp_path / "Solo.mp3").write_bytes(b"")  # older file of a title nobody else has
     config.output_dir = str(tmp_path)
-    assert library_svc.rescan() == 2
+    assert library_svc.rescan() == (2, 0)
     status = {r["audible_id"]: r["last_format"] for r in db.query(
         "SELECT b.audible_id, lb.last_format FROM books b JOIN library_books lb ON lb.book_id = b.id")}
     assert status == {"B000000001": None, "B000000002": "m4b", "B000000003": None, "B000000004": "mp3"}
     assert library_svc.planned_path(db.scalar("SELECT id FROM books WHERE audible_id = 'B000000002'")) == str(
         folder / "Same [B000000002].m4b")
+
+
+def test_rescan_finds_a_downloaded_books_file_again_by_its_id(db, config, library_svc, tmp_path):
+    """A book marked downloaded whose recorded file is gone, e.g. a layout move cut off by a crash."""
+    add_account(db)
+    import_books(db, 1, [make_book("B000000001", title="Moved"), make_book("B000000002", title="Fine"),
+                         make_book("B000000003", title="Gone"), make_book("B000000004", title="Renamed")])
+    ids = {r["audible_id"]: r["id"] for r in db.query("SELECT id, audible_id FROM books")}
+
+    def put(*parts):
+        path = tmp_path.joinpath(*parts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        return str(path)
+
+    moved = put("Jane", "Moved [B000000001]", "Moved [B000000001].m4b")
+    fine = put("Fine [B000000002]", "Fine [B000000002].m4b")
+    put("Renamed.m4b")  # named after the title only: not enough to relink a book
+    library_svc.mark_downloaded(ids["B000000001"], "m4b", str(tmp_path / "Moved [B000000001]" / "Moved [B000000001].m4b"))
+    library_svc.mark_downloaded(ids["B000000002"], "m4b", fine)
+    library_svc.mark_downloaded(ids["B000000003"], "m4b", str(tmp_path / "Gone [B000000003]" / "Gone [B000000003].m4b"))
+    library_svc.mark_downloaded(ids["B000000004"], "m4b", str(tmp_path / "Old" / "Renamed.m4b"))
+    config.output_dir = str(tmp_path)
+
+    assert library_svc.rescan() == (0, 1)
+    paths = {r["audible_id"]: r["file_path"] for r in db.query(
+        "SELECT b.audible_id, lb.file_path FROM books b JOIN library_books lb ON lb.book_id = b.id")}
+    assert paths["B000000001"] == moved
+    assert paths["B000000002"] == fine
+    assert paths["B000000003"].endswith("Gone [B000000003].m4b"), "nothing to find: left as it was"
+    assert paths["B000000004"] == str(tmp_path / "Old" / "Renamed.m4b")
+    assert library_svc.rescan() == (0, 0)
+
+
+def test_rescan_moves_only_that_books_downloads_out_of_a_shared_folder(db, config, library_svc, tmp_path):
+    """A loose file in the output folder, later put in its own ID-named folder: other books' downloads
+    recorded in the output folder stay where they are."""
+    add_account(db)
+    import_books(db, 1, [make_book("B000000001", title="Loose"), make_book("B000000002", title="Neighbour")])
+    ids = {r["audible_id"]: r["id"] for r in db.query("SELECT id, audible_id FROM books")}
+    entry = {r["book_id"]: r["id"] for r in db.query("SELECT id, book_id FROM library_books")}
+    found = tmp_path / "Loose [B000000001]" / "Loose [B000000001].m4b"
+    found.parent.mkdir()
+    found.write_bytes(b"x")
+    (tmp_path / "Neighbour.m4b").write_bytes(b"x")
+    library_svc.mark_downloaded(ids["B000000001"], "m4b", str(tmp_path / "Loose.m4b"))
+    library_svc.mark_downloaded(ids["B000000002"], "m4b", str(tmp_path / "Neighbour.m4b"))
+    for download_id, asin in (("d1", "B000000001"), ("d2", "B000000002")):
+        db.execute("INSERT INTO downloads (id, library_book_id, format, status, path, base_name) "
+                   "VALUES (?, ?, 'm4b', 'done', ?, 'x')", (download_id, entry[ids[asin]], str(tmp_path)))
+    config.output_dir = str(tmp_path)
+    assert library_svc.rescan() == (0, 1)
+    paths = {r["id"]: r["path"] for r in db.query("SELECT id, path FROM downloads")}
+    assert paths == {"d1": str(found.parent), "d2": str(tmp_path)}
+
+
+def test_rescan_leaves_a_book_alone_while_any_account_has_its_file(db, config, library_svc, tmp_path):
+    add_account(db, 1)
+    add_account(db, 2, "amzn1.account.OTHER")
+    import_books(db, 1, [make_book("B000000001", title="Both")])
+    import_books(db, 2, [make_book("B000000001", title="Both")])
+    real = tmp_path / "Both [B000000001]" / "Both [B000000001].m4b"
+    real.parent.mkdir()
+    real.write_bytes(b"x")
+    copy = tmp_path / "Elsewhere" / "Both [B000000001]" / "Both [B000000001].m4b"
+    copy.parent.mkdir(parents=True)
+    copy.write_bytes(b"x")
+    db.execute("UPDATE library_books SET download_status = 'downloaded', file_path = ? WHERE account_id = 1", (str(real),))
+    db.execute("UPDATE library_books SET download_status = 'downloaded', file_path = ? WHERE account_id = 2",
+               (str(tmp_path / "gone.m4b"),))
+    config.output_dir = str(tmp_path)
+    assert library_svc.rescan().relinked == 0
 
 
 def test_has_pdf_comes_from_the_sync_and_survives_a_scan_without_it(db, library_svc):

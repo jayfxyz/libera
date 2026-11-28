@@ -46,6 +46,14 @@ def move_folder(s: Session, old_path: str, new_path: str) -> None:
     s.execute(update(Download).where(Download.path == old_path).values(path=new_path))
 
 
+def move_book_folder(s: Session, book_id: int, old_path: str, new_path: str) -> None:
+    """This book's downloads that wrote into old_path now live in new_path. Other books' downloads in a
+    shared folder (or loose in the output folder) are left alone."""
+    entries = select(LibraryBook.id).where(LibraryBook.book_id == book_id)
+    s.execute(update(Download).where(Download.path == old_path, Download.library_book_id.in_(entries))
+              .values(path=new_path))
+
+
 def rename_files(s: Session, path: str, renames: dict[str, str], old_base: str, new_base: str) -> None:
     """Downloads in this folder: their files and base name follow a rename of the files on disk."""
     for d in s.scalars(select(Download).where(Download.path == path)):

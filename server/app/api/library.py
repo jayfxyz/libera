@@ -85,7 +85,7 @@ def export_library(library_svc: LibrarySvc, format: str = Query("json")):
 @router.post("/library/rescan")
 def rescan_files(library_svc: LibrarySvc):
     try:
-        return {"matched": library_svc.rescan()}
+        return library_svc.rescan()._asdict()
     except OSError as e:
         raise HTTPException(500, f"cannot read output directory: {e}")
 

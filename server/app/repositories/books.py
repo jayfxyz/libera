@@ -346,6 +346,14 @@ def not_downloaded_books(s: Session) -> list[dict[str, Any]]:
         WHERE lb.download_status != 'downloaded'""")
 
 
+def downloaded_books(s: Session) -> list[dict[str, Any]]:
+    """Every downloaded book with the path of its audio file as recorded, which may be missing or stale."""
+    return _rows(s, """
+        SELECT DISTINCT b.id AS book_id, b.audible_id, lb.file_path
+        FROM books b JOIN library_books lb ON lb.book_id = b.id
+        WHERE lb.download_status = 'downloaded'""")
+
+
 def downloaded_files(s: Session) -> list[dict[str, Any]]:
     """Every downloaded book with the path of its audio file, as recorded."""
     return _rows(s, """

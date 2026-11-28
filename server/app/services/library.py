@@ -19,6 +19,7 @@ from ..events import EventBus
 from ..jobs.filename import FilenameData, book_directory, book_file_name
 from ..naming import ASIN_SUFFIX, AUDIO_EXTENSIONS, legacy_file_name, sanitize_filename
 from ..repositories import books as repo
+from ..repositories import downloads as downloads_repo
 from .book_files import BookFiles, list_book_files
 from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, order_by  # noqa: F401 (re-exported)
 
@@ -189,11 +190,16 @@ class LibraryService:
 
     # --- find downloaded files ------------------------------------------------------------------
 
-    def rescan(self) -> int:
-        """Mark books whose audio file is in the output folder as downloaded. Returns matches."""
+    def rescan(self) -> "RescanResult":
+        """Find books' audio files in the output folder.
+
+        - matched: books not marked downloaded whose file is there, now marked downloaded.
+        - relinked: books marked downloaded whose recorded file is gone (e.g. a move was cut off between
+          renaming the folder and saving the new path), pointed at their file again. Only a file named
+          with the book's own ID counts, so a book is never linked to someone else's file."""
         on_disk = audio_files_on_disk(self._config.output_dir)
         if not on_disk:
-            return 0
+            return RescanResult(matched=0, relinked=0)
         by_asin = asin_files_on_disk(on_disk)
         with self._db.session() as s:
             matches = [(r["id"], file) for r in repo.not_downloaded_books(s)
@@ -202,9 +208,15 @@ class LibraryService:
                                                  on_disk=on_disk))]
             for book_id, file in matches:
                 repo.mark_downloaded(s, book_id, file.format, file.path)
-        for book_id, _ in matches:
+            relinks = [(r["book_id"], r["file_path"], file) for r in _lost_files(repo.downloaded_books(s))
+                       if (file := by_asin.get(r["audible_id"]))]
+            for book_id, old_path, file in relinks:
+                repo.set_file_path(s, book_id, file.path)
+                if old_path:  # its downloads were saved in the old folder too
+                    downloads_repo.move_book_folder(s, book_id, os.path.dirname(old_path), os.path.dirname(file.path))
+        for book_id in [m[0] for m in matches] + [r[0] for r in relinks]:
             self.publish_book(book_id)
-        return len(matches)
+        return RescanResult(matched=len(matches), relinked=len(relinks))
 
     # --- export ------------------------------------------------------------------------------------
 
@@ -234,6 +246,21 @@ class LibraryService:
 
 
 # --- pure helpers (no database) ---------------------------------------------------------------
+
+def _lost_files(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The downloaded books whose recorded audio file is gone. A book has a row per account, and is left
+    alone if any of them still points at a real file."""
+    by_book: dict[int, list[dict[str, Any]]] = {}
+    for r in rows:
+        by_book.setdefault(r["book_id"], []).append(r)
+    return [next((r for r in rs if r["file_path"]), rs[0]) for rs in by_book.values()
+            if not any(r["file_path"] and os.path.isfile(r["file_path"]) for r in rs)]
+
+
+class RescanResult(NamedTuple):
+    matched: int  # newly marked downloaded
+    relinked: int  # already downloaded, file found again after it moved
+
 
 class DiskFile(NamedTuple):
     """An audio file found in the output folder."""

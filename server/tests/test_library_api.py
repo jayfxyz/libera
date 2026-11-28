@@ -60,4 +60,4 @@ def test_rescan_endpoint(client, db, config, tmp_path):
     import os
     os.makedirs(config.output_dir)
     open(os.path.join(config.output_dir, "One.m4b"), "wb").close()
-    assert client.post("/api/library/rescan").json() == {"matched": 1}
+    assert client.post("/api/library/rescan").json() == {"matched": 1, "relinked": 0}

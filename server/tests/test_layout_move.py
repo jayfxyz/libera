@@ -225,6 +225,40 @@ def test_a_failed_save_puts_the_folder_back(mover, db, config, library_svc, monk
     assert sorted(os.listdir(config.output_dir)) == sorted(os.path.basename(os.path.dirname(p)) for p in paths.values())
 
 
+def test_a_book_cut_off_by_a_crash_is_found_again_by_find_downloaded_files(mover, db, config, library_svc,
+                                                                           monkeypatch):
+    """The process dies after a book's folder was renamed but before its new path was saved."""
+    paths = download_all(db, config, library_svc, WITH_ID[:2])
+    first = WITH_ID[0]["asin"]
+    old_folder = os.path.dirname(paths[first])
+    db.execute("INSERT INTO downloads (id, library_book_id, format, status, path, base_name) "
+               "SELECT 'd1', lb.id, 'm4b', 'done', ?, 'x' FROM library_books lb JOIN books b ON b.id = lb.book_id "
+               "WHERE b.audible_id = ?", (old_folder, first))
+
+    class Killed(BaseException):  # like SIGKILL: no cleanup runs
+        pass
+
+    def die(plan, renames):
+        raise Killed
+
+    monkeypatch.setattr(mover, "_remember", die)
+    with pytest.raises(Killed):
+        mover.move(NamingPreset.AUTHOR_FOLDER)
+    monkeypatch.undo()
+
+    assert not os.path.exists(saved_paths(db)[first]), "stuck: the book points at a folder that is gone"
+    assert mover.preview(NamingPreset.AUTHOR_FOLDER)["skipped"][0]["reason"] == layout_move.REASONS[Outcome.FILE_MISSING]
+
+    assert library_svc.rescan() == (0, 1)
+    found = saved_paths(db)[first]
+    assert os.path.isfile(found) and os.path.dirname(found) == book_directory(
+        config.output_dir, NamingPreset.AUTHOR_FOLDER, names(WITH_ID[0]))
+    assert db.scalar("SELECT path FROM downloads WHERE id = 'd1'") == os.path.dirname(found)
+    preview = mover.preview(NamingPreset.AUTHOR_FOLDER)
+    assert preview["skipped_total"] == 0 and preview["in_place"] == 1 and preview["to_move"] == 1
+    assert mover.move(NamingPreset.AUTHOR_FOLDER)["moved"] == 1
+
+
 def test_only_one_move_runs_at_a_time(mover):
     mover._busy.acquire()
     with pytest.raises(MoveInProgress):
