@@ -17,7 +17,7 @@
 
     <!-- [&>*]:shrink-0: in a scrolling column nothing may shrink (the cover has no height of its own). -->
     <div v-else-if="book" class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 pb-[calc(2rem+env(safe-area-inset-bottom))] [&>*]:shrink-0">
-      <BookCover class="max-w-[280px]" :src="book.cover_url" :title="book.title" :author="book.authors[0]" size="lg" rounded="rounded-xl" />
+      <BookCover class="mx-auto w-full max-w-[280px]" :src="book.cover_url" :title="book.title" :author="book.authors[0]" size="lg" rounded="rounded-xl" />
 
       <div class="flex flex-col gap-1.5">
         <h2 class="font-display text-2xl font-bold leading-[1.15] tracking-[-0.01em]">{{ book.title }}</h2>
