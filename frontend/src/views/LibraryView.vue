@@ -236,7 +236,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ChevronDownIcon, LayoutGridIcon, ListIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
 import type { Account, BookSummary } from '@/api/client'
@@ -332,14 +332,22 @@ const summaryLine = computed(() => {
   return parts.join(' · ')
 })
 
+// When the last download finishes, leave the tab that just went away.
+watch(
+  () => library.segmentBooks.in_progress.length,
+  (count) => {
+    if (count === 0 && library.segment === 'in_progress') library.segment = 'all'
+  },
+)
+
 const segments = computed(() => {
   const list: { value: Segment; label: string }[] = [
     { value: 'all', label: 'All' },
     { value: 'downloaded', label: 'Downloaded' },
     { value: 'not_downloaded', label: 'Not downloaded' },
-    { value: 'in_progress', label: 'In progress' },
   ]
-  // Only shown when there's something in them (or they're the current tab).
+  // Only shown while a download is running. Hidden and removed also stay while they are the current tab.
+  if (library.segmentBooks.in_progress.length) list.push({ value: 'in_progress', label: 'In progress' })
   if (library.segmentBooks.hidden.length || library.segment === 'hidden') list.push({ value: 'hidden', label: 'Hidden' })
   if (library.segmentBooks.removed.length || library.segment === 'removed') list.push({ value: 'removed', label: 'Removed from Audible' })
   return list
