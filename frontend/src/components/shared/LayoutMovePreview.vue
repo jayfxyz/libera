@@ -5,13 +5,13 @@
     <template v-else-if="preview">
       <div class="flex flex-wrap gap-2">
         <span class="rounded-full bg-ok-soft px-2.5 py-0.5 text-xs font-medium text-ok-ink">
-          {{ plural(preview.to_move) }} will move
+          {{ bookCount(preview.to_move) }} will move
         </span>
         <span v-if="preview.in_place" class="rounded-full bg-chip-soft px-2.5 py-0.5 text-xs text-ink-soft">
-          {{ plural(preview.in_place) }} already there
+          {{ bookCount(preview.in_place) }} already there
         </span>
         <span v-if="preview.skipped_total" class="rounded-full bg-warn-soft px-2.5 py-0.5 text-xs font-medium text-warn-ink">
-          {{ plural(preview.skipped_total) }} can't be moved safely
+          {{ bookCount(preview.skipped_total) }} can't be moved safely
         </span>
       </div>
       <p class="text-xs text-ink-soft">
@@ -19,7 +19,7 @@
       </p>
 
       <p v-if="preview.to_rename" class="text-xs text-ink-soft">
-        {{ plural(preview.to_rename) }} from older versions also {{ preview.to_rename === 1 ? 'gets its' : 'get their' }} files
+        {{ bookCount(preview.to_rename) }} from older versions also {{ preview.to_rename === 1 ? 'gets its' : 'get their' }} files
         renamed to include the book's ID, like a new download.
       </p>
 
@@ -55,10 +55,7 @@
 <script setup lang="ts">
 import { ArrowRightIcon, ChevronRightIcon } from '@lucide/vue'
 import type { MovePreview } from '@/api/client'
+import { bookCount } from '@/lib/layouts'
 
 defineProps<{ preview: MovePreview | null; loading: boolean; error: string }>()
-
-function plural(count: number): string {
-  return `${count} ${count === 1 ? 'book' : 'books'}`
-}
 </script>

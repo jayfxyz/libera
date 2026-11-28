@@ -55,6 +55,11 @@ export const SAMPLE_BOOKS: SampleBook[] = [
   { title: 'Angels & Demons', author: 'Dan Brown', series: 'Robert Langdon', seriesIndex: '1', year: '2000', asin: 'B0016LC2QG' },
 ]
 
+/** "1 book" or "3 books". */
+export function bookCount(count: number): string {
+  return `${count} ${count === 1 ? 'book' : 'books'}`
+}
+
 export function layoutById(id: NamingPreset): Layout {
   return LAYOUTS.find((layout) => layout.id === id) ?? LAYOUTS[0]!
 }
