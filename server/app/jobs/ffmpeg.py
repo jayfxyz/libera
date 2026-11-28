@@ -48,5 +48,11 @@ def decrypt_args(info: DownloadInfo, src: str, out: str, fmt: str, chapters_file
 
 
 def chapter_args(src: str, out: str, start_sec: float, end_sec: float) -> list[str]:
-    """Cut one chapter out of a decrypted file (stream copy)."""
-    return ["ffmpeg", "-y", "-ss", f"{start_sec:f}", "-to", f"{end_sec:f}", "-i", src, "-c", "copy", out]
+    """Cut one chapter out of a decrypted file (stream copy).
+
+    -map_chapters -1 drops the source's chapter list. Without it a stream copy keeps every chapter of
+    the whole book, and the mp4 muxer then sizes the file to cover them, so a four-second chapter
+    reports the rest of the book as its duration and players show the wrong length.
+    """
+    return ["ffmpeg", "-y", "-ss", f"{start_sec:f}", "-to", f"{end_sec:f}", "-i", src,
+            "-map_chapters", "-1", "-c", "copy", out]

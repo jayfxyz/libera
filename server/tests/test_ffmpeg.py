@@ -32,7 +32,14 @@ def test_chapters_file_is_second_input_after_decryption_options():
 
 def test_chapter_args():
     assert chapter_args("d.m4b", "c.m4b", 0, 3723.456) == [
-        "ffmpeg", "-y", "-ss", "0.000000", "-to", "3723.456000", "-i", "d.m4b", "-c", "copy", "c.m4b"]
+        "ffmpeg", "-y", "-ss", "0.000000", "-to", "3723.456000", "-i", "d.m4b",
+        "-map_chapters", "-1", "-c", "copy", "c.m4b"]
+
+
+def test_chapter_args_drops_the_books_chapters():
+    """A stream copy would otherwise keep every chapter of the whole book, and the mp4 muxer would
+    then size the cut to cover them, so each chapter file reported the wrong duration."""
+    assert pair(chapter_args("d.m4b", "c.m4b", 0, 4), "-map_chapters") == "-1"
 
 
 FFPROBE = """{"chapters": [
