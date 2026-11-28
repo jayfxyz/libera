@@ -195,6 +195,22 @@ async def test_failing_task_is_retried_until_max_attempts_then_fails(db, make):
     assert r["attempts"] == 3 and "boom" in r["error"]
 
 
+async def test_a_network_error_a_handler_did_not_word_is_stored_without_its_url(db, make):
+    import httpx
+    signed = "https://dcdn.audible.com/book.aaxc?Signature=SECRET123"
+
+    async def handler(p, ctx):
+        raise httpx.ConnectError(f"cannot reach {signed}", request=httpx.Request("GET", signed))
+
+    rig = make()
+    worker = rig.worker(Retrying, handler)
+    task_id = rig.queue.enqueue(Retrying(payload=Payload()))
+    worker.start()
+    await wait_for(lambda: status(db, task_id) == "failed")
+    error = row(db, task_id)["error"]
+    assert "SECRET123" not in error and error == "Couldn't connect to Audible. Check the internet connection."
+
+
 async def test_permanent_failure_is_not_retried(db, make):
     rig = make()
     queue = rig.queue

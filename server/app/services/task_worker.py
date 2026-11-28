@@ -23,9 +23,11 @@ import random
 import time
 from typing import NamedTuple
 
+import httpx
 from opentelemetry import context as otel_context
 from pydantic import BaseModel
 
+from .. import http_errors
 from ..db.models import Task
 from ..tasks.base import TaskContext, TaskDeferred, TaskFailed
 from ..tasks.registry import Handler, TaskRegistry
@@ -147,9 +149,12 @@ class TaskWorker:
             return Outcome(str(e), e.retry)
         except TaskDeferred as e:
             return Outcome(str(e), defer=e.delay)
+        except httpx.HTTPError as e:  # a network error a handler didn't word itself: its message holds the URL
+            log.warning("task %s (%s) failed: %s", task.id, task.type, http_errors.for_log(e))
+            return Outcome(http_errors.describe(e), retry=True)
         except Exception as e:  # a bug in a handler must not kill the worker
             log.exception("task %s (%s) failed", task.id, task.type)
-            return Outcome(f"{type(e).__name__}: {e}", retry=True)
+            return Outcome(http_errors.redact_urls(f"{type(e).__name__}: {e}"), retry=True)
         finally:
             monitor.cancel()
             await asyncio.gather(monitor, return_exceptions=True)

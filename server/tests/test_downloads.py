@@ -241,14 +241,14 @@ async def test_a_late_progress_report_cannot_revive_a_cancelled_download(db, boo
 
 async def test_network_errors_are_retried_then_the_download_fails(db, books, pipeline, make_stack):
     async def flaky(t, report):
-        raise DownloadFailed("download: connection reset", retry=True)
+        raise DownloadFailed("The connection to Audible dropped before the download finished.", retry=True)
 
     pipeline.on_fetch = flaky
     stack = make_stack()
     download_id = stack.svc.enqueue(books["B1"])
     await wait_for(lambda: status(db, download_id) == "failed")
     assert len(pipeline.fetched) == 3  # DownloadBook.max_attempts
-    assert row(db, download_id)["error"] == "download: connection reset"
+    assert row(db, download_id)["error"] == "The connection to Audible dropped before the download finished."
     assert db.scalar("SELECT download_status FROM library_books WHERE book_id = ?", (books["B1"],)) == "error"
 
 

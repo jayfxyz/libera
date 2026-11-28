@@ -26,6 +26,7 @@ from opentelemetry.trace import Status, StatusCode
 
 from ..audible_api.auth import APP_USER_AGENT
 from ..audible_api.client import AudibleClient
+from .. import http_errors
 from ..audible_api.content import ContentError, DownloadInfo
 from ..telemetry import tracer
 from .chapters import split_into_chapters
@@ -214,7 +215,9 @@ async def _download_encrypted(info: DownloadInfo, t: Target, work_dir: str, repo
     try:
         await _stream_download(info.download_url, partial, lambda pct: report_progress("downloading", pct))
     except httpx.HTTPError as e:
-        raise DownloadFailed(f"download: {e}", retry=True)
+        # The message is stored and shown; httpx's own one holds the signed download URL.
+        log.warning("download %s: %s", t.download_id, http_errors.for_log(e))
+        raise DownloadFailed(http_errors.describe(e), retry=True) from e
     log.info("download %s: %d bytes", t.download_id, os.path.getsize(partial))
     return partial
 
@@ -264,7 +267,7 @@ async def _fetch_pdf(audible: AudibleClient, t: Target) -> bytes | None:
     try:
         return await audible.get_pdf(t.audible_account_id, t.audible_id) or None
     except Exception as e:
-        log.warning("download %s: PDF download failed (non-fatal): %s", t.download_id, e)
+        log.warning("download %s: PDF download failed (non-fatal): %s", t.download_id, http_errors.for_log(e))
         return None
 
 
@@ -275,7 +278,7 @@ async def _fetch_cover(url: str, download_id: str) -> bytes | None:
     try:
         data = await _fetch_bytes(url)
     except httpx.HTTPError as e:
-        log.warning("download %s: cover download failed (non-fatal): %s", download_id, e)
+        log.warning("download %s: cover download failed (non-fatal): %s", download_id, http_errors.for_log(e))
         return None
     if not data.startswith(b"\xff\xd8"):  # embedding copies the stream, so it must be JPEG
         log.warning("download %s: cover is not a JPEG, skipping", download_id)
