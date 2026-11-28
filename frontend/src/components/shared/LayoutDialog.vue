@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="settings.layoutDialogOpen" @update:open="onOpenChange">
-    <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout">
+    <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout" @interact-outside.prevent>
       <DialogHeader>
         <p class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">
           {{ upgrading ? 'New in this version' : 'Settings' }}
