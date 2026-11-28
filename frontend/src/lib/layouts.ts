@@ -16,7 +16,7 @@ export interface Layout {
 export const LAYOUTS: Layout[] = [
   {
     id: 'author_folder', name: 'Author / Title', recommended: true,
-    why: 'Works with every server we checked.', author: true, series: false, year: false,
+    why: 'Works with every player and server we checked.', author: true, series: false, year: false,
   },
   {
     id: 'title', name: 'Title',
