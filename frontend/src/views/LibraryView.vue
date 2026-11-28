@@ -117,8 +117,8 @@
           </button>
         </nav>
 
-        <!-- Selection: only once a book is ticked (each row has its own checkbox). -->
-        <div v-if="library.selecting" class="flex min-h-[52px] flex-wrap items-center gap-2">
+        <!-- Selection: only once a book is ticked (each row has its own checkbox). Stays at the top while the list scrolls. -->
+        <div v-if="library.selecting" class="sticky top-0 z-20 -mx-4 flex min-h-[52px] flex-wrap items-center gap-2 bg-paper/95 px-4 py-1.5 backdrop-blur md:-mx-9 md:px-9">
           <label class="mr-auto flex h-11 cursor-pointer items-center gap-2.5 px-1 text-[13px] text-ink-soft">
             <input
               type="checkbox"
