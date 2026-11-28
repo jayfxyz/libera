@@ -18,6 +18,11 @@
         Each book's whole folder moves, so its cover, PDF and chapter files go with it. Nothing is overwritten.
       </p>
 
+      <p v-if="preview.to_rename" class="text-xs text-ink-soft">
+        {{ plural(preview.to_rename) }} from older versions also {{ preview.to_rename === 1 ? 'gets its' : 'get their' }} files
+        renamed to include the book's ID, like a new download.
+      </p>
+
       <div v-if="preview.examples.length" class="min-w-0 overflow-hidden rounded-[10px] border border-line">
         <div v-for="example in preview.examples" :key="example.from" class="grid gap-1 border-b border-line-faint px-3 py-2 font-mono text-xs last:border-b-0 sm:grid-cols-[1fr_auto_1fr] sm:gap-2">
           <span class="min-w-0 break-words text-ink-soft">{{ example.from }}</span>

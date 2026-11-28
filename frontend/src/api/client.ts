@@ -139,6 +139,7 @@ export interface MoveSkipped {
 }
 export interface MovePreview {
   to_move: number
+  to_rename: number // of those, books from older versions whose files also get the ID in their names
   in_place: number
   skipped_total: number
   skipped: MoveSkipped[] // the first few

@@ -38,10 +38,16 @@ its first author. Anything missing, such as a series, is left out of the name. C
 ## Moving books you already downloaded
 
 When you change layout, Libera offers to move your existing books too. It shows what would move first, and only
-moves a book when it can be sure the folder belongs to that one book: the folder and the audio file must both end
-in the book's own `[ID]`. Books from older versions, files loose in the output folder, and anything stored outside
-the output folder stay where they are, and the dialog lists them. A book's whole folder moves together (cover, PDF,
-chapter files), nothing is overwritten, and folders left empty are removed.
+moves a book when it can be sure the folder holds just that book:
+
+- The folder and the audio file both end in the book's own `[ID]`, as new downloads do, or
+- It is a book folder from an older version: no other book's file is inside it and its only audio is this book's.
+  These books also get their files renamed to include the `[ID]` (`Title.m4b` becomes `Title [ID].m4b`, with its
+  PDF, cue and chapter files).
+
+Everything else stays where it is and the dialog lists it: folders shared with other books or audio, files loose in
+the output folder, anything outside the output folder, symlinks, missing files, and books downloading right now. A
+book's whole folder moves together, nothing is overwritten, and folders left empty are removed.
 
 ## Tags matter most
 

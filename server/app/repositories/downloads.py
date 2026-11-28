@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import Row, delete, exists, func, or_, select, update
@@ -43,6 +44,18 @@ def is_downloading(s: Session, book_id: int) -> bool:
 def move_folder(s: Session, old_path: str, new_path: str) -> None:
     """Downloads that wrote into old_path now live in new_path."""
     s.execute(update(Download).where(Download.path == old_path).values(path=new_path))
+
+
+def rename_files(s: Session, path: str, renames: dict[str, str], old_base: str, new_base: str) -> None:
+    """Downloads in this folder: their files and base name follow a rename of the files on disk."""
+    for d in s.scalars(select(Download).where(Download.path == path)):
+        if d.base_name == old_base:
+            d.base_name = new_base
+        if d.files:
+            entries = json.loads(d.files)
+            for entry in entries:
+                entry["name"] = renames.get(entry["name"], entry["name"])
+            d.files = json.dumps(entries)
 
 
 def latest_done(s: Session, library_book_id: int) -> Download | None:

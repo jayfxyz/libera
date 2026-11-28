@@ -275,6 +275,9 @@ def naming_data(meta: dict) -> dict[str, str]:
     }
 
 
+AUDIO_EXTENSIONS = (".m4b", ".mp3")
+
+
 def audio_files_on_disk(root: str) -> dict[str, DiskFile]:
     """Basename (no extension) → file, for every .m4b/.mp3 under root,
     including inside per-book folders. Hidden directories are skipped."""
@@ -284,7 +287,7 @@ def audio_files_on_disk(root: str) -> dict[str, DiskFile]:
         for name in filenames:
             p = Path(name)
             ext = p.suffix.lower()
-            if ext in (".m4b", ".mp3"):
+            if ext in AUDIO_EXTENSIONS:
                 found[p.stem] = DiskFile(format=ext[1:], path=os.path.join(dirpath, name))
     return found
 
