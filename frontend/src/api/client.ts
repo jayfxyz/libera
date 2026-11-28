@@ -20,6 +20,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(`${method} ${path} → ${res.status}: ${text}`, res.status)
   }
   if (res.status === 204) return undefined as T
+  // A proxy in front of Libera (or Libera still starting) can answer with an HTML page instead.
+  if (!res.headers.get('content-type')?.includes('application/json')) {
+    throw new ApiError("Libera didn't answer as expected. It may be starting up; try again in a moment.", res.status)
+  }
   return res.json()
 }
 
