@@ -86,6 +86,9 @@
         <BookFilesTree :files="files" />
       </div>
       <div v-else-if="status.state !== 'unavailable' || book.file_path" class="flex flex-col gap-1.5">
+        <p v-if="filesMissing" class="text-xs text-warn-deep">
+          Marked as downloaded, but no files were found in the output folder. If you copied them in, use Find downloaded files in Settings.
+        </p>
         <!-- Downloads from before paths were recorded only have the computed location. -->
         <span class="text-xs font-semibold text-ink-soft">{{ book.file_path ? 'Saved to' : status.state === 'downloaded' ? 'Expected location' : 'Will save to' }}</span>
         <code class="block rounded-[10px] bg-paper px-3 py-2.5 font-mono text-xs leading-normal break-all">{{ book.file_path || book.planned_path }}</code>
@@ -172,7 +175,8 @@ async function load() {
   actionError.value = ''
   try {
     book.value = await api.library.get(props.bookId)
-    files.value = book.value.file_path ? await api.library.files(props.bookId).catch(() => null) : null
+    const onDisk = book.value.file_path || book.value.download_status === 'downloaded'
+    files.value = onDisk ? await api.library.files(props.bookId).catch(() => null) : null
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -190,6 +194,7 @@ const isDownloadable = computed(() => (summary.value ?? book.value)?.is_download
 const status = computed(() =>
   bookStatus(summary.value ?? book.value ?? { download_status: 'not_downloaded', last_format: null, is_downloadable: true }, job.value),
 )
+const filesMissing = computed(() => files.value !== null && !files.value.found && status.value.state === 'downloaded')
 // Refresh the saved path once a download finishes.
 watch(() => status.value.state, (now, before) => {
   if (now === 'downloaded' && before === 'downloading') load()
