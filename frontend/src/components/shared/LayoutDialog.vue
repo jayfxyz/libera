@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="settings.layoutDialogOpen" @update:open="onOpenChange">
-    <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout" @interact-outside.prevent>
+    <DialogContent class="max-h-[92dvh] overflow-y-auto sm:max-w-4xl" @open-auto-focus="focusSelectedLayout" @interact-outside="onInteractOutside">
       <DialogHeader>
         <p v-if="!result && !upgrading" class="font-mono text-[11px] font-medium tracking-wider text-brand uppercase">Settings</p>
         <p v-if="upgrading && !result" class="mb-1 text-sm text-ink-soft">
@@ -89,6 +89,12 @@ watch(
 function focusSelectedLayout(event: Event) {
   event.preventDefault()
   ;(event.target as HTMLElement).querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus()
+}
+
+// Onboarding asks for a deliberate answer, so a stray click outside must not dismiss it. Opened from
+// Settings it is an ordinary dialog, and once the move has run there is nothing left to answer.
+function onInteractOutside(event: Event) {
+  if (upgrading.value && !result.value) event.preventDefault()
 }
 
 function onOpenChange(open: boolean) {
