@@ -33,7 +33,13 @@ layouts are the best fit for Audiobookshelf, but only it reads series from the p
 | Author / Series / Number - Year - Title | `Author/Series/01 - 2007 - Title [ASIN]/` |
 
 Folders use the first author only, so a co-authored book is filed under
-its first author. Anything missing, such as a series, is left out of the name. Changing the layout affects future downloads only.
+its first author. Anything missing, such as a series, is left out of the name. Changing the layout always applies to
+future downloads, and Libera offers to move the books you already have as well — see below.
+
+Upgrading from v0.2 or earlier: the old default, `Author - Title/`, no longer exists. An install that saved it
+stays flat and moves to Title; one that never saved a layout gets the new default, Author / Title. Every layout now
+also ends the book's folder and file with its ASIN, so books that share a title never collide and a rescan matches
+files by ID, not by title.
 
 ## Moving books you already downloaded
 
@@ -48,6 +54,10 @@ moves a book when it can be sure the folder holds just that book:
 Everything else stays where it is and the dialog lists it: folders shared with other books or audio, files loose in
 the output folder, anything outside the output folder, symlinks, missing files, and books downloading right now. A
 book's whole folder moves together, nothing is overwritten, and folders left empty are removed.
+
+If Libera stops in the middle of a move (a restart or power cut), a book can end up in its new folder while Libera
+still remembers the old one, and shows its files as missing. **Find downloaded files** in Settings fixes that: it
+finds the book's audio by its `[ID]` and remembers the new location.
 
 ## Tags matter most
 
