@@ -65,7 +65,7 @@ def test_0004_downgrades_cleanly(tmp_path):
     db.execute("UPDATE tasks SET status = 'anything'")  # the enum's CHECK went with the downgrade
     db.execute("UPDATE tasks SET status = 'completed'")
     db.migrate()  # and up again
-    assert db.scalar("SELECT version_num FROM alembic_version") == "0010"
+    assert db.scalar("SELECT version_num FROM alembic_version") == "0011"
     db.close()
 
 
@@ -172,4 +172,20 @@ def test_0010_downgrades_cleanly(tmp_path):
     assert db.scalar("SELECT liberation_status FROM library_books WHERE id = 100") == "liberated"
     db.migrate()
     assert db.scalar("SELECT download_status FROM library_books WHERE id = 100") == "downloaded"
+    db.close()
+
+
+def test_0011_drops_user_rating_and_downgrades(tmp_path):
+    db = at_revision(tmp_path, "0010")
+    db.execute("INSERT INTO accounts (id, account_name, email, locale) VALUES (1, 'A', 'a@x', 'uk')")
+    db.execute("INSERT INTO books (id, audible_id, title, locale) VALUES (10, 'B1', 'One', 'uk')")
+    db.execute("INSERT INTO library_books (id, book_id, account_id, date_added, user_rating, tags) "
+               "VALUES (100, 10, 1, '2024-01-01', 1e400, 'fav')")
+    db.migrate()
+    cols = {r["name"] for r in db.query("PRAGMA table_info(library_books)")}
+    assert "user_rating" not in cols
+    assert db.scalar("SELECT tags FROM library_books WHERE id = 100") == "fav"
+    with db.engine.begin() as conn:
+        command.downgrade(_config(conn), "0010")
+    assert "user_rating" in {r["name"] for r in db.query("PRAGMA table_info(library_books)")}
     db.close()

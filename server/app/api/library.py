@@ -73,8 +73,7 @@ def export_library(library_svc: LibrarySvc, format: str = Query("json")):
         w.writerow([
             r["audible_id"], r["title"], r["authors"], r["narrators"], r["series"],
             r["length_minutes"], r["publisher"], r["language"], f'{r["audible_rating"]:.2f}',
-            r["download_status"], str(r["is_finished"]).lower(), r["tags"],
-            "" if r["user_rating"] is None else r["user_rating"], r["date_added"],
+            r["download_status"], str(r["is_finished"]).lower(), r["tags"], r["date_added"],
         ])
     return Response(
         buf.getvalue(),
@@ -127,6 +126,5 @@ async def save_pdf(book_id: int, download_svc: DownloadSvc, account_id: int | No
 
 @router.patch("/library/{book_id}", status_code=204)
 def update_book(book_id: int, patch: BookPatch, library_svc: LibrarySvc):
-    library_svc.update_book(book_id, tags=patch.tags, user_rating=patch.user_rating,
-                            is_finished=patch.is_finished, is_hidden=patch.is_hidden)
+    library_svc.update_book(book_id, tags=patch.tags, is_finished=patch.is_finished, is_hidden=patch.is_hidden)
     return Response(status_code=204)

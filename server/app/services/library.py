@@ -25,7 +25,7 @@ from ..repositories.books import MAX_PAGE_SIZE, PAGE_SIZE, SORTS, InvalidSort, o
 
 EXPORT_FIELDS = [
     "audible_id", "title", "authors", "narrators", "series", "length_minutes", "publisher",
-    "language", "audible_rating", "download_status", "is_finished", "tags", "user_rating", "date_added",
+    "language", "audible_rating", "download_status", "is_finished", "tags", "date_added",
 ]
 
 
@@ -121,13 +121,10 @@ class LibraryService:
         with self._db.session() as s:
             return repo.genres(s, book_ids)
 
-    def update_book(self, book_id: int, *, tags: str | None = None, user_rating: float | None = None,
-                    is_finished: bool | None = None, is_hidden: bool | None = None) -> None:
+    def update_book(self, book_id: int, *, tags: str | None = None, is_finished: bool | None = None, is_hidden: bool | None = None) -> None:
         fields: dict[str, Any] = {}
         if tags is not None:
             fields["tags"] = tags
-        if user_rating is not None:
-            fields["user_rating"] = user_rating
         if is_finished is not None:
             fields["is_finished"] = int(is_finished)
         if is_hidden is not None:
@@ -230,7 +227,6 @@ class LibraryService:
                 "download_status": r["download_status"],
                 "is_finished": bool(r["is_finished"]),
                 "tags": r["tags"],
-                "user_rating": None if r["user_rating"] is None else int(r["user_rating"]),
                 "date_added": r["date_added"],
             }
             for r in rows

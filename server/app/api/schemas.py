@@ -33,7 +33,6 @@ class BulkUpdate(BaseModel):
 
 class BookPatch(BaseModel):
     tags: str | None = None
-    user_rating: float | None = None
     is_finished: bool | None = None
     is_hidden: bool | None = None
 

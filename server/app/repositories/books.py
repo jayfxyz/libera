@@ -255,7 +255,7 @@ def get_detail(s: Session, book_id: int) -> dict[str, Any] | None:
                COALESCE(b.description,'') AS description, COALESCE(b.cover_url,'') AS cover_url,
                b.length_minutes, COALESCE(b.publisher,'') AS publisher,
                COALESCE(b.language,'') AS language, COALESCE(b.audible_rating,0) AS audible_rating,
-               lb.download_status, lb.is_finished, lb.tags, lb.user_rating, lb.account_id,
+               lb.download_status, lb.is_finished, lb.tags, lb.account_id,
                lb.is_hidden, lb.is_downloadable, lb.last_format, lb.file_path, b.has_pdf, lb.updated_at
         FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE b.id = :id ORDER BY lb.is_deleted, lb.is_downloadable DESC, lb.id LIMIT 1""", id=book_id)
@@ -309,8 +309,8 @@ def download_meta(s: Session, book_id: int, account_id: int | None = None) -> di
 
 
 def update_fields(s: Session, book_id: int, **fields: Any) -> None:
-    """Update library_books columns (tags, user_rating, is_finished, is_hidden) for a book."""
-    allowed = {"tags", "user_rating", "is_finished", "is_hidden"}
+    """Update library_books columns (tags, is_finished, is_hidden) for a book."""
+    allowed = {"tags", "is_finished", "is_hidden"}
     for column, value in fields.items():
         if column not in allowed:
             raise ValueError(column)
@@ -370,7 +370,7 @@ def export_rows(s: Session) -> list[dict[str, Any]]:
         SELECT b.id, b.audible_id, b.title, COALESCE(b.length_minutes,0) AS length_minutes,
                COALESCE(b.publisher,'') AS publisher, COALESCE(b.language,'') AS language,
                COALESCE(b.audible_rating,0) AS audible_rating, lb.download_status, lb.is_finished,
-               lb.tags, lb.user_rating, lb.date_added
+               lb.tags, lb.date_added
         FROM books b JOIN library_books lb ON lb.book_id = b.id
         WHERE lb.is_deleted = 0 ORDER BY b.title""")
 

@@ -84,7 +84,6 @@ class LibraryBook(Base):
     is_downloadable: Mapped[int] = mapped_column(Integer, server_default="1")  # offline download rights on Audible
     download_status: Mapped[str] = mapped_column(Text, server_default="not_downloaded")  # | downloaded | error
     tags: Mapped[str] = mapped_column(Text, server_default="")
-    user_rating: Mapped[float | None] = mapped_column(Float)
     is_finished: Mapped[int] = mapped_column(Integer, server_default="0")
     last_downloaded: Mapped[str | None] = mapped_column(String)
     last_format: Mapped[str | None] = mapped_column(Text)

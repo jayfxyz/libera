@@ -78,7 +78,6 @@ export interface BookDetail {
   is_hidden: boolean
   is_downloadable: boolean
   tags: string
-  user_rating: number | null
   account_id: number
   authors: string[]
   narrators: string[]
@@ -200,7 +199,7 @@ export const api = {
     },
     rescan: () => request<{ matched: number }>('POST', '/library/rescan'),
     get: (id: number) => request<BookDetail>('GET', `/library/${id}`),
-    update: (id: number, patch: Partial<{ tags: string; user_rating: number | null; is_finished: boolean; is_hidden: boolean }>) =>
+    update: (id: number, patch: Partial<{ tags: string; is_finished: boolean; is_hidden: boolean }>) =>
       request<void>('PATCH', `/library/${id}`, patch),
     setHidden: (bookIds: number[], isHidden: boolean) =>
       request<void>('POST', '/library/bulk', { book_ids: bookIds, is_hidden: isHidden }),

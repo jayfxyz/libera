@@ -127,11 +127,12 @@ def test_get_and_update_book(db, library_svc):
     import_books(db, 1, [make_book("A", title="T", authors=["Au"], narrators=["Na"],
                                              series=[{"asin": "S", "title": "Saga", "sequence": "3"}])])
     book_id = db.scalar("SELECT id FROM books WHERE audible_id = 'A'")
-    library_svc.update_book(book_id, tags="fav", is_finished=True, user_rating=4)
+    library_svc.update_book(book_id, tags="fav", is_finished=True)
     book = library_svc.get_book(book_id)
     assert book["authors"] == ["Au"] and book["narrators"] == ["Na"]
     assert book["series"] == [{"name": "Saga", "index": "3"}]
-    assert (book["tags"], book["is_finished"], book["user_rating"]) == ("fav", True, 4)
+    assert (book["tags"], book["is_finished"]) == ("fav", True)
+    assert "user_rating" not in book
     assert library_svc.get_book(999) is None
 
 
