@@ -1,11 +1,10 @@
-"""Request bodies of the API, and the responses that are not plain dicts."""
+"""Request bodies of the API."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel
 
 from ..config import NamingPreset
-from ..services.book_files import FileKind
 
 # --- accounts -------------------------------------------------------------------------
 
@@ -55,22 +54,6 @@ class EnqueueRequest(DownloadOptions):
 
 class BulkEnqueueRequest(DownloadOptions):
     book_ids: list[int]
-
-
-# --- a book's files on disk ------------------------------------------------------------
-
-
-class BookFile(BaseModel):
-    name: str
-    size_bytes: int
-    kind: FileKind
-
-
-class BookFiles(BaseModel):
-    root: str  # the output folder (or, for a book outside it, the folder above the book's)
-    folders: list[str]  # from root down to the book's own folder
-    files: list[BookFile]
-    found: bool  # False when the book has no file on disk
 
 
 # --- moving downloaded books ----------------------------------------------------------

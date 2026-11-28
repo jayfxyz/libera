@@ -9,9 +9,10 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from ..config import NamingPreset
 from ..deps import DownloadSvc, LayoutMoveSvc, LibrarySvc
 from ..services.downloads import NoPdf, PdfFailed
+from ..services.book_files import BookFiles
 from ..services.layout_move import MoveInProgress
 from ..services.library import EXPORT_FIELDS, MAX_PAGE_SIZE, PAGE_SIZE, InvalidSort
-from .schemas import BookFiles, BookPatch, BulkUpdate, MoveRequest
+from .schemas import BookPatch, BulkUpdate, MoveRequest
 
 router = APIRouter()
 

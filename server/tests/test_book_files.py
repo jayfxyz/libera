@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from app.services.book_files import FileKind, file_kind, list_book_files
+from app.services.book_files import BookFile, BookFiles, FileKind, file_kind, list_book_files
 from tests.conftest import add_account, import_books, make_book
 
 ASIN = "B0TESTASIN"
@@ -17,8 +17,8 @@ def touch(path: str, size: int = 1) -> str:
     return path
 
 
-def names(listing: dict) -> list[str]:
-    return [f["name"] for f in listing["files"]]
+def names(listing: BookFiles) -> list[str]:
+    return [f.name for f in listing.files]
 
 
 @pytest.mark.parametrize("name, kind", [
@@ -37,11 +37,11 @@ def test_a_book_folder_named_with_its_id_lists_everything_in_it(tmp_path):
     for name in ("cover.jpg", f"Title [{ASIN}].pdf", f"Title [{ASIN}].cue", f"Title [{ASIN}] - 01 - Intro.m4b", ".hidden"):
         touch(os.path.join(folder, name))
     listing = list_book_files(root, audio, ASIN)
-    assert listing["found"] and listing["root"] == root and listing["folders"] == ["Jane", f"Title [{ASIN}]"]
+    assert listing.found and listing.root == root and listing.folders == ["Jane", f"Title [{ASIN}]"]
     assert names(listing)[0] == f"Title [{ASIN}].m4b", "the audiobook comes first"
     assert sorted(names(listing)) == sorted([f"Title [{ASIN}].m4b", "cover.jpg", f"Title [{ASIN}].pdf", f"Title [{ASIN}].cue",
                                              f"Title [{ASIN}] - 01 - Intro.m4b"])
-    assert listing["files"][0] == {"name": f"Title [{ASIN}].m4b", "size_bytes": 500, "kind": FileKind.AUDIO}
+    assert listing.files[0] == BookFile(name=f"Title [{ASIN}].m4b", size_bytes=500, kind=FileKind.AUDIO)
 
 
 def test_a_folder_you_arranged_yourself_lists_only_this_books_files(tmp_path):
@@ -55,8 +55,24 @@ def test_a_folder_you_arranged_yourself_lists_only_this_books_files(tmp_path):
 
 def test_a_book_with_no_file_on_disk_says_so(tmp_path):
     root = str(tmp_path)
-    assert list_book_files(root, None, ASIN)["found"] is False
-    assert list_book_files(root, os.path.join(root, "gone.m4b"), ASIN) == {"root": root, "folders": [], "files": [], "found": False}
+    assert list_book_files(root, None, ASIN) == BookFiles(root=root, folders=[], files=[], found=False)
+
+
+def test_a_missing_file_is_listed_where_it_was_recorded(tmp_path):
+    root = str(tmp_path)
+    gone = os.path.join(root, "Jane", "Title", "Title.m4b")
+    assert list_book_files(root, gone, ASIN) == BookFiles(
+        root=root, folders=["Jane", "Title"], found=False, files=[BookFile(name="Title.m4b", size_bytes=0, kind=FileKind.AUDIO)])
+
+
+def test_a_book_not_downloaded_is_listed_where_it_would_be_saved(tmp_path):
+    root = str(tmp_path)
+    planned = os.path.join(root, "Jane", f"Title [{ASIN}]", f"Title [{ASIN}].m4b")
+    listing = list_book_files(root, None, ASIN, expected_path=planned)
+    assert listing.found is False and listing.folders == ["Jane", f"Title [{ASIN}]"]
+    assert names(listing) == [f"Title [{ASIN}].m4b"]
+    recorded = os.path.join(root, "Elsewhere", "Title.m4b")
+    assert list_book_files(root, recorded, ASIN, expected_path=planned).folders == ["Elsewhere"], "a recorded path wins"
 
 
 def test_a_book_outside_the_output_folder_hangs_off_its_parent(tmp_path):
@@ -64,7 +80,7 @@ def test_a_book_outside_the_output_folder_hangs_off_its_parent(tmp_path):
     os.makedirs(root)
     audio = touch(str(tmp_path / "elsewhere" / "Book" / "Title.m4b"))
     listing = list_book_files(root, audio, ASIN)
-    assert listing["root"] == str(tmp_path / "elsewhere") and listing["folders"] == ["Book"]
+    assert listing.root == str(tmp_path / "elsewhere") and listing.folders == ["Book"]
 
 
 def test_the_api_lists_a_downloaded_books_files(client, db, config, library_svc):
@@ -83,8 +99,11 @@ def test_the_api_lists_a_downloaded_books_files(client, db, config, library_svc)
     assert client.get(f"/api/library/{book_id}/files").status_code == 200
 
 
-def test_the_api_says_when_a_book_has_no_files(client, db):
+def test_the_api_shows_where_a_book_not_downloaded_would_go(client, db, config):
     add_account(db)
-    import_books(db, 1, [make_book(ASIN)])
+    import_books(db, 1, [make_book(ASIN, title="Title", authors=["Jane Author"])])
     book_id = db.query("SELECT id FROM books")[0]["id"]
-    assert client.get(f"/api/library/{book_id}/files").json()["found"] is False
+    got = client.get(f"/api/library/{book_id}/files").json()
+    assert got["found"] is False and got["root"] == os.path.abspath(config.output_dir)
+    assert got["folders"] == [f"Jane Author", f"Title [{ASIN}]"] or got["folders"][-1] == f"Title [{ASIN}]"
+    assert [f["name"] for f in got["files"]] == [f"Title [{ASIN}].m4b"]
