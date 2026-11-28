@@ -34,3 +34,6 @@ docker-compose.override.yml
 
 # Per-developer editor settings (launch.json stays shared)
 .vscode/settings.json
+
+# Agent scratch: QA sweeps, review notes, session transcripts
+agents/
