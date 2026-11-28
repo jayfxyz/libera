@@ -147,8 +147,9 @@
               :disabled="savingPdfs"
               @click="savePdfs"
             >{{ savingPdfs ? 'Saving PDFs…' : `Save ${selectionWithPdf.length} PDF${selectionWithPdf.length === 1 ? '' : 's'}` }}</button>
-            <button type="button" class="btn h-9 rounded-lg border border-white/20 px-3 text-[13px]" @click="hideSelected">
-              {{ library.segment === 'hidden' ? 'Show' : 'Hide' }}
+            <!-- Hiding is done from a book's own panel; here, only bringing hidden books back. -->
+            <button v-if="library.segment === 'hidden'" type="button" class="btn h-9 rounded-lg border border-white/20 px-3 text-[13px]" @click="showSelected">
+              Show
             </button>
             <button type="button" class="btn h-9 rounded-lg px-2.5 text-[13px] text-rail-muted" @click="library.clearSelection()">Clear</button>
           </div>
@@ -454,11 +455,10 @@ async function savePdfs() {
   library.clearSelection()
 }
 
-async function hideSelected() {
+async function showSelected() {
   const ids = [...library.selected]
-  const hide = library.segment !== 'hidden'
-  await library.setHidden(ids, hide)
-  flash(`${hide ? 'Hid' : 'Restored'} ${ids.length} book${ids.length === 1 ? '' : 's'}.`)
+  await library.setHidden(ids, false)
+  flash(`Restored ${ids.length} book${ids.length === 1 ? '' : 's'}.`)
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
