@@ -5,7 +5,7 @@
   >
     <input
       type="radio"
-      name="layout"
+      :name="name"
       class="absolute top-3.5 left-3.5 size-4 accent-brand"
       :value="layout.id"
       :checked="selected === layout.id"
@@ -23,6 +23,6 @@
 import type { NamingPreset } from '@/api/client'
 import type { Layout } from '@/lib/layouts'
 
-defineProps<{ layout: Layout; selected: NamingPreset }>()
+defineProps<{ layout: Layout; selected: NamingPreset; name: string }>()
 const emit = defineEmits<{ pick: [id: NamingPreset] }>()
 </script>

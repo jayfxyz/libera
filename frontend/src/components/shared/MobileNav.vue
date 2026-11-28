@@ -53,6 +53,10 @@
             >{{ activeDownloads }}</span>
           </a>
         </RouterLink>
+        <div class="mt-1 flex flex-col gap-2 border-t border-bar-line px-3 pt-3">
+          <span class="text-xs font-medium text-rail-muted">Appearance</span>
+          <ThemeChoices />
+        </div>
       </nav>
     </template>
   </header>
@@ -62,6 +66,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { MenuIcon, XIcon } from '@lucide/vue'
+import ThemeChoices from './ThemeChoices.vue'
 import { navItems } from './navItems'
 
 defineProps<{ activeDownloads: number }>()

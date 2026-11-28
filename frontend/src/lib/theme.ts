@@ -1,5 +1,7 @@
 /** Light or dark: follows the device unless this device chose one. index.html applies it before the first paint. */
 
+import { ref } from 'vue'
+
 export type ThemeChoice = 'system' | 'light' | 'dark'
 
 const KEY = 'libera.theme'
@@ -14,7 +16,11 @@ export function themeChoice(): ThemeChoice {
   }
 }
 
+/** The choice on this device, for anything that shows it. */
+export const currentTheme = ref<ThemeChoice>(themeChoice())
+
 export function setThemeChoice(choice: ThemeChoice) {
+  currentTheme.value = choice
   try {
     if (choice === 'system') localStorage.removeItem(KEY)
     else localStorage.setItem(KEY, choice)

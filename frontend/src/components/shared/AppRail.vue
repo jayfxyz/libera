@@ -34,10 +34,14 @@
         >{{ activeDownloads }}</span>
       </a>
     </RouterLink>
+    <div class="mt-auto">
+      <ThemeMenu />
+    </div>
   </nav>
 </template>
 
 <script setup lang="ts">
+import ThemeMenu from './ThemeMenu.vue'
 import { navItems } from './navItems'
 
 defineProps<{ activeDownloads: number }>()
