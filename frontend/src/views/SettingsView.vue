@@ -34,13 +34,6 @@
         <section class="card flex flex-col gap-4 p-5 md:p-6" aria-labelledby="s-tools">
           <h2 id="s-tools" class="text-base font-semibold">Library tools</h2>
           <div class="flex flex-col gap-2">
-            <span class="text-sm font-medium">Export the library</span>
-            <div class="flex flex-wrap gap-2">
-              <a class="btn-secondary" href="/api/library/export?format=csv" download="library.csv"><DownloadIcon class="size-4" />CSV</a>
-              <a class="btn-secondary" href="/api/library/export?format=json" download="library.json"><DownloadIcon class="size-4" />JSON</a>
-            </div>
-          </div>
-          <div class="flex flex-col gap-2 border-t border-line-faint pt-4">
             <span class="text-sm font-medium">Find downloaded files</span>
             <span class="text-xs text-ink-soft">Marks books as downloaded when their audio file is already in the output folder, e.g. after copying books in.</span>
             <div class="flex flex-wrap items-center gap-3">
@@ -48,6 +41,13 @@
                 <SearchIcon class="size-4" />{{ rescanning ? 'Looking…' : 'Find files' }}
               </button>
               <span v-if="rescanMessage" class="text-sm text-ink-soft" role="status">{{ rescanMessage }}</span>
+            </div>
+          </div>
+          <div class="flex flex-col gap-2 border-t border-line-faint pt-4">
+            <span class="text-sm font-medium">Export the library</span>
+            <div class="flex flex-wrap gap-2">
+              <a class="btn-secondary" href="/api/library/export?format=csv" download="library.csv"><DownloadIcon class="size-4" />CSV</a>
+              <a class="btn-secondary" href="/api/library/export?format=json" download="library.json"><DownloadIcon class="size-4" />JSON</a>
             </div>
           </div>
         </section>
@@ -84,7 +84,7 @@ import { SelectField, type SelectOption } from '@/components/ui/select'
 import { useSettingsStore } from '@/stores/settings'
 
 const formatOptions: SelectOption<Settings['default_format']>[] = [
-  { value: 'm4b', label: 'M4B (original audio, no re-encode)' },
+  { value: 'm4b', label: 'M4B (recommended: original audio, no re-encode)' },
   { value: 'mp3', label: 'MP3 (re-encoded with LAME)' },
 ]
 
